@@ -58,6 +58,11 @@ public struct ImErrorCode: RawRepresentable, Hashable, Sendable, Codable, Custom
     public static let replayDetected = ImErrorCode(1106)
     public static let kickedByOtherDevice = ImErrorCode(1107)
 
+    /// The page's origin is not on the app's web allowlist. A tenant sets that list in the console; it does not vary by user, so retrying or re-authenticating will not help and the SDK must not.
+    ///
+    /// 页面来源不在该应用的 Web 安全域名表里。这张表由租户在控制台设置、与用户无关——重试或重新登录都没有用，SDK 也不该那么做。
+    public static let originNotAllowed = ImErrorCode(1109)
+
     // 1200-1299 tenant & quota
     public static let appNotFound = ImErrorCode(1200)
     public static let appDisabled = ImErrorCode(1201)

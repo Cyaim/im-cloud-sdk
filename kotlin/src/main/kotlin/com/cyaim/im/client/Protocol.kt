@@ -146,6 +146,13 @@ public object ImErrorCode {
     /** Arrives both as a `conn.kick` push and as a close reason. Never reconnect into it. */
     public const val KickedByOtherDevice: Int = 1107
 
+    /**
+     * The page's origin is not on the app's web allowlist. A tenant sets that list in the console; it does not vary by user, so retrying or re-authenticating will not help and the SDK must not.
+     *
+     * 页面来源不在该应用的 Web 安全域名表里。这张表由租户在控制台设置、与用户无关——重试或重新登录都没有用，SDK 也不该那么做。
+     */
+    public const val OriginNotAllowed: Int = 1109
+
     // ---- 1200: tenant and plan ----
     public const val AppNotFound: Int = 1200
     public const val AppDisabled: Int = 1201

@@ -166,6 +166,11 @@ abstract final class ImErrorCode {
   static const int replayDetected = 1106;
   static const int kickedByOtherDevice = 1107;
 
+  /// The page's origin is not on the app's web allowlist. A tenant sets that list in the console; it does not vary by user, so retrying or re-authenticating will not help and the SDK must not.
+  ///
+  /// 页面来源不在该应用的 Web 安全域名表里。这张表由租户在控制台设置、与用户无关——重试或重新登录都没有用，SDK 也不该那么做。
+  static const int originNotAllowed = 1109;
+
   // 1200-1299 tenant and quota
   static const int appNotFound = 1200;
   static const int appDisabled = 1201;

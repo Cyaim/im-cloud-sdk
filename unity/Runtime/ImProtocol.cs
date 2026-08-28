@@ -70,6 +70,10 @@ namespace Cyaim.Im
         /// <summary>Another device took this session over under the multi-login policy.</summary>
         public const int KickedByOtherDevice = 1107;
 
+        /// <summary>The page's origin is not on the app's web allowlist. A tenant sets that list in the console; it does not vary by user, so retrying or re-authenticating will not help and the SDK must not.</summary>
+        /// <remarks>页面来源不在该应用的 Web 安全域名表里。这张表由租户在控制台设置、与用户无关——重试或重新登录都没有用，SDK 也不该那么做。</remarks>
+        public const int OriginNotAllowed = 1109;
+
         /// <summary>The tenant app was disabled in the console.</summary>
         public const int AppDisabled = 1201;
 

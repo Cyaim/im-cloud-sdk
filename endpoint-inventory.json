@@ -5683,6 +5683,8 @@
     "SignatureInvalid": 1105,
     "ReplayDetected": 1106,
     "KickedByOtherDevice": 1107,
+    "IpNotAllowed": 1108,
+    "OriginNotAllowed": 1109,
     "AppNotFound": 1200,
     "AppDisabled": 1201,
     "QuotaExceeded": 1202,
