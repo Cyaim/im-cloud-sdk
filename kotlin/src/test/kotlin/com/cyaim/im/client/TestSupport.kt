@@ -59,7 +59,23 @@ internal class FakeSocket(
     override fun send(text: String): Boolean {
         val request = ImJson.parseToJsonElement(text).jsonObject
         sent += request
-        gateway.onRequest?.invoke(request)?.let { deliver(it) }
+
+        val scripted = gateway.onRequest?.invoke(request)
+
+        when {
+            scripted != null -> deliver(scripted)
+
+            // Answered even when a test scripted nothing, because the client sends it on every
+            // connect exactly as conn.sync and conn.heartbeat are sent. A fake that leaves it
+            // hanging leaves one pending request in every test — invisible until something counts
+            // them, and then it fails somewhere that does not name the cause. Swift's mock had this
+            // hole and it cost a red CI run.
+            // 即使用例没有脚本也要答：客户端每次连接都会发它，与 conn.sync 一样。
+            // 不答就在每个用例里留下一条挂起的请求——它一直看不见，直到有东西去数它。
+            request.target == "diag.logRequests" ->
+                deliver(serverFrame(id = request.id, target = request.target, data = JsonArray(emptyList())))
+        }
+
         return true
     }
 

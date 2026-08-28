@@ -288,11 +288,29 @@ final class MockGateway: ImWebSocketConnector, @unchecked Sendable {
         return .object(page)
     }
 
-    /// Answers `conn.heartbeat` and `conn.sync`. Returns true when it handled the request, so a
-    /// test's own responder can delegate the boring half.
+    /// Answers the three calls every connect makes: `conn.heartbeat`, `conn.sync` and
+    /// `diag.logRequests`. Returns true when it handled the request, so a test's own responder can
+    /// delegate the boring half.
+    ///
+    /// **`diag.logRequests` belongs here, and leaving it out cost a red CI run.** It is issued on
+    /// every connect exactly as the other two are, so a mock that does not answer it leaves a
+    /// request pending in every test — which shows up as a leaked pending entry in one suite and as
+    /// delivery ordering going wrong in another, neither of which names the cause. A mock gateway
+    /// that answers only some of what the client always sends is not a smaller mock, it is a wrong
+    /// one.
+    /// diag.logRequests 属于这里：它与另外两条一样，每次连接都会发。
+    /// 不答复它，每个用例里都会留下一条挂起的请求——表现为一个套件里「挂起项泄漏」、
+    /// 另一个套件里「投递顺序不对」，而两者都不说出原因。
     @discardableResult
     static func answerHousekeeping(_ request: SentRequest, _ channel: MockChannel) -> Bool {
         switch request.target {
+        case "diag.logRequests":
+            // An empty list: nobody has asked this device for a log. That is the answer in every
+            // test here, because a test that wanted otherwise would say so itself.
+            // 空列表：没人要这台设备的日志——想要别的答案的用例会自己说。
+            channel.reply(to: request, data: .array([]))
+            return true
+
         case "conn.heartbeat":
             channel.reply(to: request, data: .object([
                 "serverTime": .int(ImClock.nowMilliseconds()),

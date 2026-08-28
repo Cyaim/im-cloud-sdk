@@ -125,5 +125,14 @@ export async function openClient(
     FakeSocket.latest.replyLatest('conn.sync', resume);
   }
 
+  // Answered here for the same reason `conn.sync` is: the client sends it on every connect, so a
+  // double that leaves it hanging leaves one pending request in every test. That is invisible until
+  // a test counts pending entries or a scripted responder gets one call further along than it
+  // expected — and then it fails somewhere that does not name the cause.
+  // 与 conn.sync 同理：每次连接都会发，不答复就在每个用例里留下一条挂起的请求——
+  // 它一直看不见，直到某个用例去数挂起项，或某个按脚本回应的替身多走了一步。
+  await until(() => FakeSocket.latest.requestsTo('diag.logRequests').length > 0);
+  FakeSocket.latest.replyLatest('diag.logRequests', []);
+
   return { client, delivered, reloads, errors };
 }
