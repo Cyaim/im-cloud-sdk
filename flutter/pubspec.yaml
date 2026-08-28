@@ -1,0 +1,44 @@
+name: cyaim_im
+description: >-
+  Client SDK for Cyaim IM Cloud. Multiplexed WebSocket, full-jitter reconnect,
+  kick-aware close handling, offline push registration, and a two-cursor delivery
+  model that survives a process restart. Mobile, desktop and web.
+
+# Semantic Versioning 2.0.0, in lockstep across all five Cyaim IM SDKs: one number identifies a
+# *contract*, so "we're on 0.9.0" answers "which endpoints do you have" without anyone asking which
+# platform. See sdk/CONTRACT.md §9.1.
+#
+# 0.9.0 rather than 1.0.0 on purpose. 1.0.0 is reserved for T0+T1 complete on all five platforms
+# plus §5 and §6 implemented everywhere; claiming it before that is a promise the fleet does not
+# keep, and correcting it after the first publish costs a major-version apology.
+# Keep in step with ImSdk.packageVersion in lib/src/version.dart.
+version: 0.9.0
+
+homepage: https://github.com/Cyaim/IM
+repository: https://github.com/Cyaim/IM
+issue_tracker: https://github.com/Cyaim/IM/issues
+documentation: https://github.com/Cyaim/IM/blob/main/sdk/flutter/README.md
+topics:
+  - im
+  - chat
+  - websocket
+  - messaging
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  # The only runtime dependency, and the reason one codebase covers iOS, Android, Windows,
+  # macOS, Linux and web: web_socket_channel picks dart:io or the browser WebSocket for us.
+  # The range is deliberately wide — an app already pinned to 2.x should not be forced through
+  # a major upgrade just to add a chat SDK.
+  #
+  # Note what is *not* here: no path_provider, no firebase_messaging, no build_runner. The host
+  # app supplies the cursor-store directory and the vendor push token, which keeps this package
+  # usable from plain Dart — including its own test suite, which runs under the Dart SDK with no
+  # Flutter toolchain at all.
+  web_socket_channel: '>=2.4.0 <4.0.0'
+
+dev_dependencies:
+  lints: ^5.0.0
+  test: ^1.25.0

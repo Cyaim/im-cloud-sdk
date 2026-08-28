@@ -1,0 +1,15 @@
+{
+  // Tests compile to ESM alongside the sources into a scratch directory, then run under
+  // `node --test`. It mirrors the shipped build exactly — same module format, same resolution —
+  // so a package that passes its tests is a package Node can actually import. Running the tests
+  // against a CommonJS transpile would have hidden the missing import extensions this build
+  // depends on.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist-test",
+    "rootDir": ".",
+    "declaration": false,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

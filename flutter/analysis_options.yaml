@@ -1,0 +1,31 @@
+# Sound null safety is the floor, not the ceiling: strict-casts and strict-inference stop a
+# `dynamic` from a decoded JSON frame leaking into typed code without an explicit cast.
+include: package:lints/recommended.yaml
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  errors:
+    todo: error
+
+linter:
+  rules:
+    - always_declare_return_types
+    - avoid_print
+    - cancel_subscriptions
+    - close_sinks
+    - prefer_final_locals
+    - prefer_single_quotes
+    - sort_pub_dependencies
+    - unawaited_futures
+
+# Page width for `dart format`, which pub.dev's analyzer also runs and scores. 100 is the width
+# this package was written to; leaving the 80-column default would rewrap almost every file and
+# then score the package down for the difference. Declaring it here means the formatter, the
+# analyzer and pana all agree, and "is it formatted" becomes a question CI can answer instead of a
+# review comment.
+# 声明页宽让格式化工具、分析器和 pana 三者一致，"格式对不对"就变成 CI 能回答的问题。
+formatter:
+  page_width: 100

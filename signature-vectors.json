@@ -1,0 +1,55 @@
+{
+  "$comment": [
+    "SPEC-04 §1.2 请求签名的固定向量。signature = base64(HMAC-SHA256(utf8(appSecret), utf8(timestamp) || utf8(nonce) || bodyBytes))。",
+    "",
+    "这份文件是那一行规范的可执行形式。它同时被两处读取:",
+    "  tests/IM.Tests.Unit/SignatureVectorTests.cs      —— 服务端验签与出站签名(C#)",
+    "  console/src/api/__tests__/sign.spec.ts           —— 浏览器内的实现(TypeScript / WebCrypto)",
+    "两边读同一份,所以它们不可能各自漂移;若只让两个实现互相对照,它们会永远一致——包括一起错的那天。",
+    "",
+    "它也是交给客户的对照物。租户后端会在 Java / Go / PHP / Node 里各实现一遍这套 HMAC,",
+    "而他们手上只有规范里那一行。签名漂移的症状是彻底鉴权失败,且日志里看不出原因——",
+    "先跑通这四条向量,能把'我方实现错了'与'你方实现错了'当场分开。",
+    "",
+    "四条向量各自防的东西:",
+    "  json     基础形状。",
+    "  empty    GET 之类无体请求:body 为空时仍然要签 timestamp||nonce,不是跳过签名。",
+    "  cjk      非 ASCII 正文必须按 UTF-8 字节参与签名。按 UTF-16 或按字符数处理的实现在这里才会露馅。",
+    "  spacing  与 json 是同一份 JSON、只多了空格,签名不同。**签的是将要发出去的那串字节**,",
+    "           不是重新序列化的副本——任何'先解析再重新序列化'的中间层都会在这里破坏签名。",
+    "",
+    "expected 由规范独立算出,不是从任何被测实现里抄来的。改动这份文件等于改动对外契约。"
+  ],
+  "algorithm": "HMAC-SHA256",
+  "encoding": "base64",
+  "construction": "utf8(timestamp) || utf8(nonce) || bodyBytes",
+  "appSecret": "sk_test_0123456789abcdef",
+  "timestamp": "1767225600",
+  "nonce": "9f2c4a1b7e3d4f5a8c0b1d2e3f405162",
+  "vectors": [
+    {
+      "name": "json",
+      "note": "基础形状:一份紧凑 JSON 请求体。",
+      "body": "{\"userId\":\"alice\",\"text\":\"hello\"}",
+      "expected": "3g0q1PnK3JXZBo/znjaKg/O9jZJoiseGm8Z6pAzeaHE="
+    },
+    {
+      "name": "empty",
+      "note": "无体请求(GET/DELETE)。body 为空仍要签 timestamp||nonce。",
+      "body": "",
+      "expected": "r+ft8KVz3DuuzIRVxXLAc3WJRRLKUV91AvGxUGTAbdE="
+    },
+    {
+      "name": "cjk",
+      "note": "非 ASCII 正文按 UTF-8 字节参与签名(含一个四字节 emoji)。",
+      "body": "{\"text\":\"你好，世界 🌏\"}",
+      "expected": "gsWMXpp8hhW1k9HIXg56pJnAsRcQYxpJE01WY11xFuM="
+    },
+    {
+      "name": "spacing",
+      "note": "与 json 语义相同、字节不同。证明签的是字节而不是解析后的对象。",
+      "body": "{\"userId\": \"alice\", \"text\": \"hello\"}",
+      "expected": "rUkxajOQRREtFQYG2CHXqJGPxzM+ImNDRw6hWwHl7Ag="
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "name": "com.cyaim.im",
+  "version": "0.9.0",
+  "displayName": "Cyaim IM Client",
+  "description": "Client SDK for Cyaim IM Cloud. Multiplexed WebSocket with a typed surface over conn/msg/conv/user/friend/group/media/push, full-jitter reconnect, kick handling, in-place token renewal, offline push registration, and a durable two-cursor model that repairs gaps across a process restart instead of silently skipping them. Callbacks are marshalled to the Unity main thread, and WebGL is supported through a browser WebSocket transport.",
+  "unity": "2022.3",
+  "license": "Apache-2.0",
+  "licensesUrl": "https://github.com/Cyaim/IM/blob/main/sdk/unity/LICENSE.md",
+  "documentationUrl": "https://github.com/Cyaim/IM/blob/main/sdk/unity/README.md",
+  "changelogUrl": "https://github.com/Cyaim/IM/blob/main/sdk/unity/CHANGELOG.md",
+  "author": {
+    "name": "Cyaim",
+    "url": "https://github.com/Cyaim"
+  },
+  "keywords": [
+    "im",
+    "chat",
+    "messaging",
+    "websocket",
+    "networking",
+    "multiplayer"
+  ],
+  "dependencies": {
+    "com.unity.modules.unitywebrequest": "1.0.0",
+    "com.unity.test-framework": "1.1.33"
+  },
+  "samples": [
+    {
+      "displayName": "Chat Quickstart",
+      "description": "A MonoBehaviour that connects, persists its cursors, registers for offline push, renders incoming messages, and fetches a user token from your own backend.",
+      "path": "Samples~/ChatQuickstart"
+    }
+  ]
+}

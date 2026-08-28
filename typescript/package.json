@@ -1,0 +1,58 @@
+{
+  "name": "@cyaim/im-client",
+  "version": "0.9.0",
+  "description": "Client SDK for Cyaim IM Cloud — multiplexed WebSocket, full-jitter reconnect, persistent seq cursors with gap repair, offline push registration.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "tsc -p tsconfig.test.json",
+    "test": "node --test \"dist-test/test/**/*.test.js\"",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "keywords": [
+    "im",
+    "chat",
+    "websocket",
+    "messaging",
+    "sdk",
+    "realtime",
+    "push"
+  ],
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/Cyaim/IM/tree/main/sdk/typescript#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Cyaim/IM.git",
+    "directory": "sdk/typescript"
+  },
+  "bugs": {
+    "url": "https://github.com/Cyaim/IM/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

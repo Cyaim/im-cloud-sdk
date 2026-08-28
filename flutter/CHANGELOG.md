@@ -1,0 +1,104 @@
+# Changelog
+
+Versions are in lockstep across all five Cyaim IM client SDKs (`sdk/CONTRACT.md` §9.1): one number
+identifies a *contract*, not one platform's release train.
+
+## 0.9.0
+
+First published release. It is deliberately **not** `1.0.0` — `1.0.0` is reserved for contract
+tiers T0 and T1 complete on all five platforms with §5 and §6 implemented everywhere. The previous
+`1.0.0` in this manifest had never been published and was a promise the SDK did not keep.
+
+### Fixed — silent data loss on cold start
+
+**This SDK lost every message that arrived while the app was closed.** `_maxSeq` lived in a private
+`Map` with no accessor and nothing that outlived the process, so each launch reported an empty
+`convSeqs` to `conn.sync`, got no `gapsFrom` back — the server can only diff against what it is
+told — and then adopted the server's newest `maxSeq` in the first-sight branch. Everything in
+between fell behind the cursor: never requested, never delivered, no error and no log line.
+
+The fix is the two-cursor model in `sdk/CONTRACT.md` §5, implemented literally:
+
+- **`ImCursorStore` is now a required argument** on `ImOptions`. `ImCursorStore.file(path)` for a
+  JSON file the host app chooses the directory for, or an explicit `ImCursorStore.inMemory()`,
+  which logs one warning saying what it costs. There is no implicit default, because defaulting to
+  no persistence is what produced the bug.
+- Two cursors per conversation: `deliveredSeq` in memory, `committedSeq` written through to the
+  store. `convSeqs` reports `committedSeq`, never `deliveredSeq`, and `deliveredSeq` is pulled back
+  to `committedSeq` before every `conn.sync` so redelivery actually reaches the application.
+- `ImClient.commit(conversationId, seq)` — the application calls it once the message is durably in
+  its own store. The SDK never infers durability from a listener returning.
+- Adoption of an unseen conversation flushes to the store **synchronously**, before the next
+  `conn.sync` page. Ordinary commits may be debounced (`ImOptions.cursorSaveDebounce`); a lost
+  debounced commit costs one duplicate delivery, a lost adoption costs permanent silent loss.
+- `conn.sync` now **pages until `hasMore` is false**, and `conversationCursor` advances only after
+  a run completes. The list is sorted newest-first, so the old behaviour — take the maximum from
+  page one and stop — pushed the cursor past every conversation on pages 2…N, which the server
+  then never returns again.
+- `msg.sync` repair pages too, looping on `hasMore` rather than on `messages.length` (the server
+  computes `hasMore` on the raw window before per-user hidden messages are filtered out).
+- An over-`maxAutoRepairSeq` gap now raises `conversationNeedsReload` on the **live** path as well
+  as the resume path. It used to accept the jump silently: the cursor stayed honest and the
+  application was never told a stretch of conversation had been skipped.
+- A cursor store that fails to `load()` freezes every cursor for the session and surfaces on
+  `ImClient.errors` instead of looking like a fresh install. Adopting on a failed load destroys
+  history that is sitting intact in the application's own database.
+
+Delivery is therefore **at-least-once**. Deduplicate on `ImMessage.messageId`.
+
+### Added — offline push registration
+
+`push.register` / `push.unregister` shipped on the server and no SDK called them, so offline push
+was unreachable from any official client.
+
+- `im.push.setToken(provider, token, language:)` caches the vendor token and registers it on every
+  successful connect — not once at install, because the vendor may replace a token while the
+  process is frozen.
+- `im.logout()` sends `push.unregister` **before** closing the socket. `disconnect()` never
+  unregisters: a dead socket is precisely the state offline push exists to serve.
+- `ImPushProvider` names every channel the server routes (`apns` `fcm` `huawei` `xiaomi` `oppo`
+  `vivo` `honor`). Android must always send one explicitly.
+
+### Added — typed endpoint coverage, tiers T0 / T1 / T2
+
+Namespaced to match the endpoint prefix, so `im.group.memberList(…)` is `group.memberList`:
+`im.conn` `im.msg` `im.conv` `im.user` `im.friend` `im.group` `im.media` `im.push`. 49 endpoints
+typed, up from 11 referenced.
+
+- **T0 (3/3)** — `conn.heartbeat`, `conn.reauth`, `conn.sync`. `conn.reauth` is new: an expired
+  token now costs one frame on the socket that is already open rather than a full reconnect.
+- **T1 (18/18)** — the 1:1 chat MVP, including `msg.delete`, `conv.get`, all four `user.*` profile
+  calls, both `media.*` and both `push.*`.
+- **T2 (28/28)** — all ten core `group.*`, eight `friend.*` including `friend.block`, the three
+  presence calls, `conv.setting` / `delete` / `clear`, and `msg.edit` / `forward` / `react` /
+  `receipt`.
+
+Every typed method takes one request object named for the server DTO, and every one is a thin
+wrapper over the same internal request path `invoke()` uses.
+
+### Added — cancellation
+
+`ImCancelToken`, passed as the trailing argument to any typed call. Cancelling abandons the reply,
+removes the pending entry, and does **not** cancel the server-side effect — reissue with the same
+`clientMsgId`. It raises `ImCancelledException`, not an `ImException` with an invented code.
+
+### Changed
+
+- Errors now carry `traceId` and `target`, and expose `isRetryable` / `requiresReauth` computed
+  from the code alone, identically in all five SDKs.
+- `status: 2` (no such target) maps to `1008 UnsupportedOperation`, not `1002 NotFound` — the
+  signal an SDK newer than a private-deployment server produces.
+- A socket that drops with requests in flight fails them `1004 Timeout`, not `1005`: the request
+  may well have executed, and 1005 would be claiming otherwise.
+- Enums are open (`extension type` over the wire value), so an unknown content type keeps its own
+  number instead of being coerced to a default member.
+- The nine flat convenience methods (`send`, `sendText`, `history`, `recall`, `react`, `setTyping`,
+  `conversations`, `markRead`, `totalUnread`) are deprecated for 2.0 and delegate to the namespaced
+  surface.
+- `ImSdk.contractVersion` (`"1.0"`) and `ImSdk.packageVersion` are exposed; the package version
+  goes on the wire as the handshake's `cv`.
+- Apache-2.0 `LICENSE` added, and a runnable `example/main.dart`.
+
+## 1.0.0 — withdrawn
+
+Never published. Superseded by 0.9.0; see §9.1 of the contract for why the number moved down.

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Directory.Build.props pins a single TargetFramework for the service; this package ships
+         for the frameworks a tenant backend is likely to be on, so clear it before multi-targeting. -->
+    <TargetFramework></TargetFramework>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Cyaim.Im.ServerSdk</RootNamespace>
+    <AssemblyName>Cyaim.Im.ServerSdk</AssemblyName>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IsPackable>true</IsPackable>
+    <PackageId>Cyaim.Im.ServerSdk</PackageId>
+    <Description>Server-side SDK for Cyaim IM Cloud. For tenant backends only — it holds the app secret and mints user tokens.</Description>
+    <Authors>Cyaim Studio</Authors>
+    <PackageTags>im;chat;messaging;sdk</PackageTags>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+</Project>

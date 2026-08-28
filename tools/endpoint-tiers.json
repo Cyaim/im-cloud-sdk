@@ -1,0 +1,165 @@
+{
+  "$comment": "Ship tiers for every [WebSocket] endpoint. This is the ONE hand-maintained input to Build-EndpointInventory.ps1: everything else in endpoint-inventory.json is derived from src/IM.Server. Adding a server endpoint without tiering it here fails the generator on purpose. Rationale for the tier boundaries is sdk/CONTRACT.md §3. 这是生成器唯一的人工输入：新增服务端端点却不在此分层，生成器会刻意失败。",
+  "contractVersion": "1.0",
+
+  "tiers": {
+    "T0": {
+      "title": "Session floor",
+      "titleZh": "会话地基",
+      "rule": "No client of any shape works without these. They are transport lifecycle, not product features: an SDK that omits one is broken rather than incomplete."
+    },
+    "T1": {
+      "title": "1:1 chat MVP",
+      "titleZh": "单聊最小可用",
+      "rule": "The smallest set that ships a two-person chat app a customer would actually launch: send, receive, backfill, read state, profiles, attachments, offline push. Cutting any one of these leaves a hole the tenant must fill with raw invoke() on day one."
+    },
+    "T2": {
+      "title": "Social graph and groups",
+      "titleZh": "关系链与群组",
+      "rule": "What turns a 1:1 chat into a messenger: contacts, blocking, group create/join/manage, presence, and the message operations users expect once more than two people can see a message."
+    },
+    "T3": {
+      "title": "Competitive parity",
+      "titleZh": "竞品对齐",
+      "rule": "Not needed to ship, needed to win. These are the rows a buyer ticks off against 融云 / 环信 / 网易云信 feature matrices. A tenant can live without each one individually; a buyer comparing tables cannot."
+    },
+    "T4": {
+      "title": "Specialist verticals",
+      "titleZh": "垂直能力",
+      "rule": "Load-bearing for a minority of tenants and dead weight for the rest: calls, service desk, end-to-end encryption, live chat rooms, AI streaming, scheduling, folders. Correctly typed when a customer asks; never a reason to delay T0–T3."
+    }
+  },
+
+  "endpoints": {
+    "conn.heartbeat": { "tier": "T0", "note": "Cadence is server-owned: obey intervalSeconds from the reply, never a client constant." },
+    "conn.reauth": { "tier": "T0", "note": "Untyped in all five SDKs today. Without it a long-lived session dies at token expiry instead of renewing in place." },
+    "conn.sync": { "tier": "T0", "note": "Cold-start correctness hinges on this call's convSeqs. See sdk/CONTRACT.md §5." },
+
+    "msg.send": { "tier": "T1" },
+    "msg.sync": { "tier": "T1", "note": "Both the gap-repair primitive and a public method: tenants with their own store call it directly." },
+    "msg.history": { "tier": "T1" },
+    "msg.recall": { "tier": "T1", "note": "Window is per-tenant (App.Settings.RecallWindowMinutes); expect 1403 outside it." },
+    "msg.delete": { "tier": "T1", "note": "Delete-for-me. Distinct from recall, which withdraws for everyone." },
+    "msg.typing": { "tier": "T1", "feature": "EnableTypingIndicator" },
+
+    "conv.list": { "tier": "T1" },
+    "conv.get": { "tier": "T1" },
+    "conv.read": { "tier": "T1" },
+    "conv.unreadTotal": { "tier": "T1", "note": "Drives the app badge; a chat app cannot ship a correct badge without it." },
+
+    "user.me": { "tier": "T1" },
+    "user.profile": { "tier": "T1" },
+    "user.batchProfile": { "tier": "T1", "note": "The one that keeps a conversation list from issuing N profile calls." },
+    "user.updateProfile": { "tier": "T1" },
+
+    "media.uploadTicket": { "tier": "T1", "note": "A chat app without images is not shippable, and images cannot be sent without a ticket." },
+    "media.downloadUrl": { "tier": "T1" },
+
+    "push.register": { "tier": "T1", "note": "See sdk/CONTRACT.md §6. Registration is a client responsibility on every connect, not a one-time setup step." },
+    "push.unregister": { "tier": "T1", "note": "Logout must call this BEFORE disconnecting; after the socket closes only the tenant backend can remove the token." },
+    "push.clicked": { "tier": "T2", "note": "SPEC-05 §6.2 / SPEC-02 §2.6.3: report a notification tap with { pushId?, messageId? } (messageId is the payload's msgId). Best-effort statistics; identity comes from the socket, never retry on failure." },
+
+    "msg.edit": { "tier": "T2", "feature": null, "note": "Window is App.Settings.EditWindowMinutes; expect 1405 outside it." },
+    "msg.forward": { "tier": "T2" },
+    "msg.react": { "tier": "T2" },
+    "msg.receipt": { "tier": "T2", "note": "Per-message delivered/read marks, distinct from the conversation read pointer in conv.read." },
+
+    "conv.setting": { "tier": "T2", "note": "Pin, mute, draft and tags in one call." },
+    "conv.delete": { "tier": "T2" },
+    "conv.clear": { "tier": "T2" },
+
+    "user.presence": { "tier": "T2", "feature": "EnablePresence" },
+    "user.subscribePresence": { "tier": "T2", "note": "NOT gated by EnablePresence server-side, unlike user.presence: a subscribe on a presence-disabled app succeeds and then never fires. SDKs must not infer the flag from this call." },
+    "user.unsubscribePresence": { "tier": "T2" },
+
+    "friend.list": { "tier": "T2" },
+    "friend.add": { "tier": "T2" },
+    "friend.handleRequest": { "tier": "T2" },
+    "friend.requestList": { "tier": "T2" },
+    "friend.delete": { "tier": "T2" },
+    "friend.blockList": { "tier": "T2" },
+    "friend.block": { "tier": "T2", "note": "App-store review treats user blocking as mandatory for any app with user-generated content." },
+    "friend.unblock": { "tier": "T2" },
+
+    "group.create": { "tier": "T2" },
+    "group.info": { "tier": "T2" },
+    "group.update": { "tier": "T2" },
+    "group.dismiss": { "tier": "T2" },
+    "group.memberList": { "tier": "T2" },
+    "group.joined": { "tier": "T2" },
+    "group.invite": { "tier": "T2" },
+    "group.kick": { "tier": "T2" },
+    "group.quit": { "tier": "T2" },
+    "group.join": { "tier": "T2" },
+
+    "msg.receiptDetail": { "tier": "T3", "note": "Group read-by list; server caps it at App.Settings.ReceiptGroupMemberLimit." },
+    "msg.search": { "tier": "T3", "feature": "EnableSearch", "note": "Off by default (EnableSearch defaults false) and separately rate limited with 1003." },
+    "msg.pin": { "tier": "T3" },
+    "msg.unpin": { "tier": "T3" },
+    "msg.pins": { "tier": "T3" },
+    "msg.favourite": { "tier": "T3" },
+    "msg.unfavourite": { "tier": "T3" },
+    "msg.favourites": { "tier": "T3" },
+    "msg.burn": { "tier": "T3", "note": "Burn-after-reading. Widely expected in the CN market this product competes in." },
+
+    "conv.markUnread": { "tier": "T3" },
+    "user.setStatus": { "tier": "T3" },
+    "friend.setRemark": { "tier": "T3" },
+
+    "group.transfer": { "tier": "T3" },
+    "group.applicationList": { "tier": "T3" },
+    "group.handleApplication": { "tier": "T3" },
+    "group.setRole": { "tier": "T3" },
+    "group.mute": { "tier": "T3" },
+    "group.muteMember": { "tier": "T3" },
+    "group.setNickname": { "tier": "T3" },
+    "group.announcement": { "tier": "T3" },
+
+    "msg.translate": { "tier": "T4", "note": "IM.Modules.Ai; returns 1203 when no provider is configured." },
+    "msg.schedule": { "tier": "T4" },
+    "msg.scheduled": { "tier": "T4" },
+    "msg.cancelScheduled": { "tier": "T4" },
+    "msg.streamBegin": { "tier": "T4", "note": "Streaming assistant replies. Pairs with the evt.stream push." },
+    "msg.streamAppend": { "tier": "T4" },
+    "msg.streamComplete": { "tier": "T4" },
+    "msg.streamAbort": { "tier": "T4" },
+
+    "conv.folders": { "tier": "T4" },
+    "conv.upsertFolder": { "tier": "T4" },
+    "conv.deleteFolder": { "tier": "T4" },
+
+    "room.join": { "tier": "T4", "note": "Chat rooms are best-effort and carry seq 0: they must bypass the gap-repair path entirely." },
+    "room.quit": { "tier": "T4" },
+    "room.send": { "tier": "T4" },
+    "room.onlineCount": { "tier": "T4" },
+    "room.memberList": { "tier": "T4" },
+    "room.mute": { "tier": "T4" },
+    "room.kick": { "tier": "T4" },
+
+    "call.invite": { "tier": "T4", "note": "IM.Modules.Calls; signalling only, the SDK never carries media." },
+    "call.accept": { "tier": "T4" },
+    "call.reject": { "tier": "T4" },
+    "call.hangup": { "tier": "T4" },
+    "call.inviteMore": { "tier": "T4" },
+    "call.media": { "tier": "T4" },
+    "call.get": { "tier": "T4" },
+
+    "desk.request": { "tier": "T4", "note": "Agent-console surface. The customer side of a desk session arrives as ordinary messages." },
+    "desk.accept": { "tier": "T4" },
+    "desk.transfer": { "tier": "T4" },
+    "desk.close": { "tier": "T4" },
+    "desk.status": { "tier": "T4" },
+    "desk.queue": { "tier": "T4" },
+    "desk.rate": { "tier": "T4", "note": "The customer rates a finished desk session. Tiered on 2026-08-27: it shipped untiered, which stopped the generator and froze the inventory." },
+    "desk.suggest": { "tier": "T4", "note": "LLM reply suggestions for an agent; returns 1203 when no provider is configured. Tiered on 2026-08-27 with desk.rate and desk.canned." },
+    "desk.canned": { "tier": "T4", "note": "The agent's canned-reply list. Its request body is optional, which is what the generator's parameter regex could not read until 2026-08-27." },
+
+    "keys.publish": { "tier": "T4", "note": "E2EE key directory. The SDK stores and transports keys; it performs no cryptography." },
+    "keys.claim": { "tier": "T4" },
+    "keys.devices": { "tier": "T4" },
+    "keys.upload": { "tier": "T4" },
+    "keys.remaining": { "tier": "T4" },
+    "keys.revoke": { "tier": "T4" },
+    "keys.safetyNumber": { "tier": "T4" }
+  }
+}

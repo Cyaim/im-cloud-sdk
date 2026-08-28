@@ -1,0 +1,8 @@
+{
+  // Editors resolve a file against the nearest tsconfig, and the package's own one deliberately
+  // includes only `src` and ships without Node types — so without this file every `node:test`
+  // import shows up red in an editor while `npm test` passes. This points the editor at the same
+  // configuration the test run actually uses.
+  "extends": "../tsconfig.test.json",
+  "include": ["./**/*.ts"]
+}
