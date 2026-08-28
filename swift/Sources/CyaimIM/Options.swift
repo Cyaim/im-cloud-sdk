@@ -99,6 +99,22 @@ public struct ImClientOptions: Sendable {
     /// right answer when the user has been signed out of your app entirely.
     public var tokenProvider: (@Sendable () async -> String?)?
 
+    /// Where the SDK's own runtime log lives between launches. **Optional, and the default is honest.**
+    ///
+    /// Unlike ``cursorStore`` this has a default, and the asymmetry is deliberate: losing cursors
+    /// loses a user's messages, while losing logs loses a diagnostic. Supplying one is what makes
+    /// "pull a log from that handset" answer questions about anything before the current launch — a
+    /// crash, a night the app was closed, the reconnect storm at 3am. Supplying none keeps a bounded
+    /// ring in memory, and the console shows a support engineer which of the two they are reading.
+    ///
+    /// The SDK does not pick a location for you — see `ADR-003`. On iOS that would be `Documents`
+    /// or `Library/Caches`, whose backup behaviour differs, and "do chat logs reach iCloud" is a
+    /// question you answer to a regulator. ``ImLogStore/file(at:maxBytes:)`` is there for when you
+    /// have made that decision.
+    ///
+    /// SDK 不替你选写入位置：不提供也是一个完整的选择，而控制台会把这个区别显示出来。
+    public var logStore: ImLogStore
+
     /// Transport factory. The default opens a `URLSessionWebSocketTask`; tests substitute their own.
     public var connector: any ImWebSocketConnector
 
@@ -122,6 +138,7 @@ public struct ImClientOptions: Sendable {
         maxResumePages: Int = 100,
         warningHandler: (@Sendable (String) -> Void)? = nil,
         tokenProvider: (@Sendable () async -> String?)? = nil,
+        logStore: ImLogStore = .inMemory(),
         connector: any ImWebSocketConnector = URLSessionWebSocketConnector()
     ) {
         self.endpoint = endpoint
@@ -130,6 +147,7 @@ public struct ImClientOptions: Sendable {
         self.deviceId = deviceId
         self.userId = userId
         self.cursorStore = cursorStore
+        self.logStore = logStore
         self.platform = platform
         self.channelPath = channelPath
         self.clientVersion = clientVersion

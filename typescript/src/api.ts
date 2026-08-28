@@ -15,6 +15,7 @@
  */
 
 import type { ImRequestOptions } from './connection.js';
+import type { DeviceLogAnswer, PendingDeviceLog } from './devicelogs.js';
 import type {
   AddFriendRequest,
   BlockEntry,
@@ -595,5 +596,45 @@ export class ModerationApi {
    */
   report(request: SubmitReportRequest, options?: ImRequestOptions): Promise<ReportReceipt> {
     return this.io.request<ReportReceipt>('moderation.report', request, options);
+  }
+}
+
+/**
+ * `diag.*` — this device's half of troubleshooting.
+ *
+ * **Ordinary applications never call these.** {@link ImClient} drives both: it asks once after
+ * every connect and answers whatever is waiting. They are public because the SDK's rule is that
+ * every endpoint has a typed method — a capability reachable only through `invoke()` is one a
+ * support engineer cannot find — and because an application that manages its own lifecycle may want
+ * to choose the moment.
+ * 一般应用不会调用它们：客户端自己驱动。公开是因为本 SDK 的规矩是每个端点都有类型化方法，
+ * 而只能靠 invoke() 够到的能力是支持工程师找不到的能力。
+ *
+ * See `ADR-003` for why the log store belongs to the integrating application.
+ */
+export class DiagApi {
+  constructor(private readonly io: ImInvoker) {}
+
+  /**
+   * Open log requests for this device, each with a freshly signed upload target.
+   *
+   * **Once per connect, never on a timer.** Requests are raised by a person looking at a support
+   * ticket, so the rate is at most one every few days; polling would turn a human-paced feature
+   * into background traffic on every handset a tenant has.
+   * 每次连接一次，不要轮询：这是一件由人按工单节奏发起的事。
+   */
+  requests(options?: ImRequestOptions): Promise<PendingDeviceLog[]> {
+    return this.io.request<PendingDeviceLog[]>('diag.logRequests', undefined, options);
+  }
+
+  /**
+   * Reports what happened to one request — a bundle, or why there is none.
+   *
+   * **A refusal is an answer and must be sent.** Silence is indistinguishable from a device that
+   * never received the request, and the two send a support engineer in opposite directions.
+   * 拒绝也是一种答复，必须发出去：沉默与「根本没收到」分不出区别。
+   */
+  async uploaded(answer: DeviceLogAnswer, options?: ImRequestOptions): Promise<void> {
+    await this.io.request<void>('diag.logUploaded', answer, options);
   }
 }

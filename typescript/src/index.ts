@@ -14,6 +14,7 @@ export {
 export {
   ConnApi,
   ConvApi,
+  DiagApi,
   FriendApi,
   GroupApi,
   MediaApi,
@@ -23,6 +24,22 @@ export {
   UserApi,
   type ImInvoker,
 } from './api.js';
+export {
+  ImDeviceLogs,
+  defaultDeviceLogUploader,
+  type DeviceLogAnswer,
+  type DeviceLogTransport,
+  type DeviceLogUploader,
+  type PendingDeviceLog,
+} from './devicelogs.js';
+export {
+  ImLog,
+  inMemoryLogStore,
+  isVolatileLogStore,
+  renderLogBundle,
+  type ImLogLine,
+  type ImLogStore,
+} from './logs.js';
 export {
   ImCursorScope,
   ImCursorStore,

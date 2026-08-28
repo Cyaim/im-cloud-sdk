@@ -6,6 +6,8 @@ import 'cancel.dart';
 import 'connection.dart';
 import 'cursor_store.dart';
 import 'cursors.dart';
+import 'device_logs.dart';
+import 'log_store.dart';
 import 'models.dart';
 import 'options.dart';
 import 'protocol.dart';
@@ -55,6 +57,18 @@ class ImClient {
       logger: options.logger,
     );
     moderation = ImModerationApi(_connection);
+    diag = ImDiagApi(_connection);
+
+    // Defaulted rather than required, unlike the cursor store, and the asymmetry is deliberate:
+    // losing cursors loses a user's messages, while losing logs loses a diagnostic (ADR-003).
+    // 与游标存储不同这里有默认值：丢游标丢的是用户的消息，丢日志丢的是一次排障。
+    log = ImLog(options.logStore ?? ImLogStore.inMemory(), options.logger);
+    _deviceLogs = ImDeviceLogs(
+      diag: diag,
+      log: log,
+      deviceId: options.deviceId,
+      upload: options.deviceLogUploader,
+    );
 
     _cursors.onSaveError = (Object error) => _raise(ImException(
           ImErrorCode.serviceUnavailable,
@@ -63,6 +77,15 @@ class ImClient {
         ));
 
     _connection.on(ImPushTarget.message, _handleMessage);
+
+    // A log request arrives inside evt.system rather than on a target of its own, so a client built
+    // before this feature existed receives an action it does not recognise and ignores it. A new
+    // target would instead be silently dropped by every existing build, and there would be no way
+    // to tell that apart from a device that was offline (ADR-003).
+    // 走 evt.system 里的一个 action 而不是新事件名：旧版本收到不认识的 action 会忽略它，那是对的。
+    _connection.on(ImPushTarget.system, (ImFrame frame) {
+      unawaited(_deviceLogs.onSystemEvent(frame.body?.data));
+    });
     _states = _connection.states.listen((ImConnectionState state) {
       if (state == ImConnectionState.open) unawaited(_onConnected());
     });
@@ -113,6 +136,19 @@ class ImClient {
   /// `moderation.*` — reporting a user or a message. The other half of [friend]'s blocklist, and
   /// app-store review wants both.
   late final ImModerationApi moderation;
+
+  /// `diag.*` — this device's half of troubleshooting. Driven by the client; see [ImDiagApi].
+  late final ImDiagApi diag;
+
+  /// The SDK's own runtime log: written here, read when the server asks this device for it.
+  ///
+  /// Exposed so an application can add its own lines — the ones that explain what the *user* was
+  /// doing when it went wrong, which the SDK cannot see and which are usually the half that makes a
+  /// log worth reading.
+  /// 公开出来是为了让应用写自己的行：SDK 看不见用户当时在做什么，而那往往是让日志值得读的那一半。
+  late final ImLog log;
+
+  late final ImDeviceLogs _deviceLogs;
 
   /// One in-flight worker per conversation. This is what guarantees the ordering rule: for a given
   /// conversation, messages reach the application in seq order and never concurrently, a live
@@ -461,6 +497,12 @@ class ImClient {
     // Deliberately not awaited before the resume: a slow push registration must never delay the
     // one path that repairs missing messages.
     unawaited(push.registerOnConnect());
+
+    // Least urgent of the three and never awaited before the resume, for the same reason: a device
+    // that cannot answer a log request is still a device that can chat, and gap repair is the one
+    // path that must not wait for anything.
+    // 三件里最不紧急，也同样不在补洞前面 await：答不出日志请求的设备仍然是能聊天的设备。
+    unawaited(_deviceLogs.check());
 
     await _resume();
   }

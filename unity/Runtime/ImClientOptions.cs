@@ -36,6 +36,28 @@ namespace Cyaim.Im
         public IImCursorStore CursorStore { get; private set; }
 
         /// <summary>
+        /// Where the SDK's own runtime log lives between runs. <b>Optional; null means in memory.</b>
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Unlike <see cref="CursorStore"/> this has a default, and the asymmetry is deliberate:
+        /// losing cursors loses a player's messages, while losing logs loses a diagnostic. Supplying
+        /// one is what makes "pull a log from that device" answer questions about anything before the
+        /// current process — a crash, a session that ended badly, the reconnect storm during a raid.
+        /// Null keeps a bounded ring in memory, and the console shows a support engineer which of the
+        /// two they are reading.
+        /// </para>
+        /// <para>
+        /// The SDK does not pick a location for you — see <c>ADR-003</c>. Most games want
+        /// <c>ImLogStore.File(Application.persistentDataPath + "/im.log")</c>, but that is the game's
+        /// decision to make rather than the SDK's: it is about where its players' runtime detail may
+        /// be written.
+        /// SDK 不替你选写入位置：不提供也是一个完整的选择，而控制台会把这个区别显示出来。
+        /// </para>
+        /// </remarks>
+        public IImLogStore LogStore { get; set; }
+
+        /// <summary>
         /// Largest gap the client will backfill message by message before giving up and skipping
         /// the conversation forward.
         /// </summary>

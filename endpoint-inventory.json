@@ -26,14 +26,14 @@
     "jsonPolicy": "camelCase property names; nulls omitted on write; numbers may arrive as JSON strings; property matching is case-insensitive on read"
   },
   "totals": {
-    "endpoints": 112,
-    "controllers": 13,
+    "endpoints": 114,
+    "controllers": 14,
     "implemented": {
-      "typescript": 51,
-      "kotlin": 51,
-      "swift": 51,
-      "flutter": 51,
-      "unity": 51
+      "typescript": 53,
+      "kotlin": 53,
+      "swift": 53,
+      "flutter": 53,
+      "unity": 53
     }
   },
   "tiers": {
@@ -76,36 +76,35 @@
         "push.register",
         "push.unregister",
         "user.updateProfile",
+        "user.batchProfile",
         "user.profile",
         "user.me",
         "media.downloadUrl",
         "media.uploadTicket",
-        "user.batchProfile",
         "msg.send",
         "conv.unreadTotal",
+        "conv.read",
         "conv.get",
-        "conv.list",
-        "conv.read"
+        "conv.list"
       ]
     },
     "T2": {
       "title": "Social graph and groups",
       "titleZh": "关系链与群组",
       "rule": "What turns a 1:1 chat into a messenger: contacts, blocking, group create/join/manage, presence, and the message operations users expect once more than two people can see a message.",
-      "endpoints": 30,
+      "endpoints": 32,
       "implemented": {
-        "typescript": 30,
-        "kotlin": 30,
-        "swift": 30,
-        "flutter": 30,
-        "unity": 30
+        "typescript": 32,
+        "kotlin": 32,
+        "swift": 32,
+        "flutter": 32,
+        "unity": 32
       },
       "targets": [
         "msg.receipt",
         "msg.react",
         "msg.forward",
         "msg.edit",
-        "push.clicked",
         "friend.blockList",
         "friend.delete",
         "friend.requestList",
@@ -115,10 +114,12 @@
         "user.unsubscribePresence",
         "user.subscribePresence",
         "user.presence",
+        "push.clicked",
         "moderation.report",
         "conv.clear",
         "conv.delete",
         "conv.setting",
+        "friend.block",
         "group.join",
         "group.quit",
         "group.kick",
@@ -129,7 +130,8 @@
         "group.update",
         "group.info",
         "group.create",
-        "friend.block",
+        "diag.logUploaded",
+        "diag.logRequests",
         "friend.unblock"
       ]
     },
@@ -152,9 +154,9 @@
         "msg.favourite",
         "msg.pins",
         "msg.unpin",
+        "msg.pin",
         "msg.search",
         "msg.receiptDetail",
-        "msg.pin",
         "friend.setRemark",
         "user.setStatus",
         "conv.markUnread",
@@ -182,14 +184,14 @@
       },
       "targets": [
         "call.invite",
-        "msg.streamComplete",
         "msg.streamAppend",
         "msg.streamBegin",
         "msg.cancelScheduled",
         "msg.scheduled",
         "msg.schedule",
-        "msg.streamAbort",
+        "msg.streamComplete",
         "msg.translate",
+        "msg.streamAbort",
         "room.kick",
         "room.mute",
         "room.memberList",
@@ -198,6 +200,8 @@
         "room.quit",
         "room.join",
         "keys.safetyNumber",
+        "keys.revoke",
+        "desk.status",
         "desk.close",
         "desk.transfer",
         "desk.accept",
@@ -205,7 +209,6 @@
         "conv.deleteFolder",
         "conv.upsertFolder",
         "conv.folders",
-        "desk.status",
         "call.get",
         "call.media",
         "call.inviteMore",
@@ -214,14 +217,13 @@
         "call.accept",
         "desk.queue",
         "desk.rate",
-        "desk.suggest",
-        "keys.revoke",
+        "desk.canned",
         "keys.remaining",
         "keys.upload",
         "keys.devices",
         "keys.claim",
         "keys.publish",
-        "desk.canned"
+        "desk.suggest"
       ]
     }
   },
@@ -235,22 +237,6 @@
       "responseType": "CallSession",
       "tier": "T4",
       "note": "IM.Modules.Calls; signalling only, the SDK never carries media.",
-      "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
-      }
-    },
-    {
-      "target": "msg.streamComplete",
-      "controller": "MsgController",
-      "method": "StreamComplete",
-      "source": "src/IM.Server/WsControllers/MsgController.cs:480",
-      "requestType": "CompleteStreamRequest",
-      "responseType": "SendMessageResult",
-      "tier": "T4",
       "implementedIn": {
         "typescript": false,
         "kotlin": false,
@@ -422,22 +408,6 @@
       }
     },
     {
-      "target": "msg.streamAbort",
-      "controller": "MsgController",
-      "method": "StreamAbort",
-      "source": "src/IM.Server/WsControllers/MsgController.cs:500",
-      "requestType": "StreamAbortRequest",
-      "responseType": null,
-      "tier": "T4",
-      "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
-      }
-    },
-    {
       "target": "msg.unpin",
       "controller": "MsgController",
       "method": "Unpin",
@@ -454,14 +424,29 @@
       }
     },
     {
-      "target": "msg.translate",
+      "target": "msg.streamComplete",
       "controller": "MsgController",
-      "method": "Translate",
-      "source": "src/IM.Server/WsControllers/MsgController.cs:250",
-      "requestType": "TranslateRequest",
-      "responseType": "TranslationResult",
+      "method": "StreamComplete",
+      "source": "src/IM.Server/WsControllers/MsgController.cs:480",
+      "requestType": "CompleteStreamRequest",
+      "responseType": "SendMessageResult",
       "tier": "T4",
-      "note": "IM.Modules.Ai; returns 1203 when no provider is configured.",
+      "implementedIn": {
+        "typescript": false,
+        "kotlin": false,
+        "swift": false,
+        "flutter": false,
+        "unity": false
+      }
+    },
+    {
+      "target": "msg.pin",
+      "controller": "MsgController",
+      "method": "Pin",
+      "source": "src/IM.Server/WsControllers/MsgController.cs:273",
+      "requestType": "ConversationMessageRequest",
+      "responseType": null,
+      "tier": "T3",
       "implementedIn": {
         "typescript": false,
         "kotlin": false,
@@ -640,22 +625,6 @@
       }
     },
     {
-      "target": "msg.pin",
-      "controller": "MsgController",
-      "method": "Pin",
-      "source": "src/IM.Server/WsControllers/MsgController.cs:273",
-      "requestType": "ConversationMessageRequest",
-      "responseType": null,
-      "tier": "T3",
-      "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
-      }
-    },
-    {
       "target": "msg.sync",
       "controller": "MsgController",
       "method": "Sync",
@@ -670,6 +639,39 @@
         "swift": true,
         "flutter": true,
         "unity": true
+      }
+    },
+    {
+      "target": "msg.translate",
+      "controller": "MsgController",
+      "method": "Translate",
+      "source": "src/IM.Server/WsControllers/MsgController.cs:250",
+      "requestType": "TranslateRequest",
+      "responseType": "TranslationResult",
+      "tier": "T4",
+      "note": "IM.Modules.Ai; returns 1203 when no provider is configured.",
+      "implementedIn": {
+        "typescript": false,
+        "kotlin": false,
+        "swift": false,
+        "flutter": false,
+        "unity": false
+      }
+    },
+    {
+      "target": "msg.streamAbort",
+      "controller": "MsgController",
+      "method": "StreamAbort",
+      "source": "src/IM.Server/WsControllers/MsgController.cs:500",
+      "requestType": "StreamAbortRequest",
+      "responseType": null,
+      "tier": "T4",
+      "implementedIn": {
+        "typescript": false,
+        "kotlin": false,
+        "swift": false,
+        "flutter": false,
+        "unity": false
       }
     },
     {
@@ -690,14 +692,14 @@
       }
     },
     {
-      "target": "push.clicked",
+      "target": "push.unregister",
       "controller": "PushController",
-      "method": "Clicked",
-      "source": "src/IM.Server/WsControllers/PushController.cs:114",
-      "requestType": "PushClickedRequest",
+      "method": "Unregister",
+      "source": "src/IM.Server/WsControllers/PushController.cs:90",
+      "requestType": null,
       "responseType": null,
-      "tier": "T2",
-      "note": "SPEC-05 §6.2 / SPEC-02 §2.6.3: report a notification tap with { pushId?, messageId? } (messageId is the payload's msgId). Best-effort statistics; identity comes from the socket, never retry on failure.",
+      "tier": "T1",
+      "note": "Logout must call this BEFORE disconnecting; after the socket closes only the tenant backend can remove the token.",
       "implementedIn": {
         "typescript": true,
         "kotlin": true,
@@ -885,14 +887,13 @@
       }
     },
     {
-      "target": "push.unregister",
-      "controller": "PushController",
-      "method": "Unregister",
-      "source": "src/IM.Server/WsControllers/PushController.cs:90",
-      "requestType": null,
+      "target": "user.updateProfile",
+      "controller": "UserController",
+      "method": "UpdateProfile",
+      "source": "src/IM.Server/WsControllers/UserController.cs:57",
+      "requestType": "UpdateProfileRequest",
       "responseType": null,
       "tier": "T1",
-      "note": "Logout must call this BEFORE disconnecting; after the socket closes only the tenant backend can remove the token.",
       "implementedIn": {
         "typescript": true,
         "kotlin": true,
@@ -902,13 +903,14 @@
       }
     },
     {
-      "target": "user.updateProfile",
+      "target": "user.batchProfile",
       "controller": "UserController",
-      "method": "UpdateProfile",
-      "source": "src/IM.Server/WsControllers/UserController.cs:57",
-      "requestType": "UpdateProfileRequest",
-      "responseType": null,
+      "method": "BatchProfile",
+      "source": "src/IM.Server/WsControllers/UserController.cs:37",
+      "requestType": "UserIdsRequest",
+      "responseType": "List<UserProfile>",
       "tier": "T1",
+      "note": "The one that keeps a conversation list from issuing N profile calls.",
       "implementedIn": {
         "typescript": true,
         "kotlin": true,
@@ -1096,14 +1098,14 @@
       }
     },
     {
-      "target": "user.batchProfile",
-      "controller": "UserController",
-      "method": "BatchProfile",
-      "source": "src/IM.Server/WsControllers/UserController.cs:37",
-      "requestType": "UserIdsRequest",
-      "responseType": "List<UserProfile>",
-      "tier": "T1",
-      "note": "The one that keeps a conversation list from issuing N profile calls.",
+      "target": "push.clicked",
+      "controller": "PushController",
+      "method": "Clicked",
+      "source": "src/IM.Server/WsControllers/PushController.cs:114",
+      "requestType": "PushClickedRequest",
+      "responseType": null,
+      "tier": "T2",
+      "note": "SPEC-05 §6.2 / SPEC-02 §2.6.3: report a notification tap with { pushId?, messageId? } (messageId is the payload's msgId). Best-effort statistics; identity comes from the socket, never retry on failure.",
       "implementedIn": {
         "typescript": true,
         "kotlin": true,
@@ -1152,6 +1154,38 @@
       "source": "src/IM.Server/WsControllers/KeysController.cs:196",
       "requestType": "SafetyNumberRequest",
       "responseType": "string",
+      "tier": "T4",
+      "implementedIn": {
+        "typescript": false,
+        "kotlin": false,
+        "swift": false,
+        "flutter": false,
+        "unity": false
+      }
+    },
+    {
+      "target": "keys.revoke",
+      "controller": "KeysController",
+      "method": "Revoke",
+      "source": "src/IM.Server/WsControllers/KeysController.cs:175",
+      "requestType": "RevokeDeviceRequest",
+      "responseType": null,
+      "tier": "T4",
+      "implementedIn": {
+        "typescript": false,
+        "kotlin": false,
+        "swift": false,
+        "flutter": false,
+        "unity": false
+      }
+    },
+    {
+      "target": "desk.status",
+      "controller": "DeskController",
+      "method": "Status",
+      "source": "src/IM.Server/WsControllers/DeskController.cs:107",
+      "requestType": "DeskStatusRequest",
+      "responseType": null,
       "tier": "T4",
       "implementedIn": {
         "typescript": false,
@@ -1340,22 +1374,6 @@
       }
     },
     {
-      "target": "desk.status",
-      "controller": "DeskController",
-      "method": "Status",
-      "source": "src/IM.Server/WsControllers/DeskController.cs:107",
-      "requestType": "DeskStatusRequest",
-      "responseType": null,
-      "tier": "T4",
-      "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
-      }
-    },
-    {
       "target": "conv.setting",
       "controller": "ConvController",
       "method": "Setting",
@@ -1364,6 +1382,22 @@
       "responseType": null,
       "tier": "T2",
       "note": "Pin, mute, draft and tags in one call.",
+      "implementedIn": {
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
+      }
+    },
+    {
+      "target": "conv.read",
+      "controller": "ConvController",
+      "method": "Read",
+      "source": "src/IM.Server/WsControllers/ConvController.cs:54",
+      "requestType": "ReadRequest",
+      "responseType": null,
+      "tier": "T1",
       "implementedIn": {
         "typescript": true,
         "kotlin": true,
@@ -1552,22 +1586,6 @@
       }
     },
     {
-      "target": "conv.read",
-      "controller": "ConvController",
-      "method": "Read",
-      "source": "src/IM.Server/WsControllers/ConvController.cs:54",
-      "requestType": "ReadRequest",
-      "responseType": null,
-      "tier": "T1",
-      "implementedIn": {
-        "typescript": true,
-        "kotlin": true,
-        "swift": true,
-        "flutter": true,
-        "unity": true
-      }
-    },
-    {
       "target": "desk.queue",
       "controller": "DeskController",
       "method": "Queue",
@@ -1581,6 +1599,23 @@
         "swift": false,
         "flutter": false,
         "unity": false
+      }
+    },
+    {
+      "target": "friend.block",
+      "controller": "FriendController",
+      "method": "Block",
+      "source": "src/IM.Server/WsControllers/UserController.cs:211",
+      "requestType": "BlockRequest",
+      "responseType": null,
+      "tier": "T2",
+      "note": "App-store review treats user blocking as mandatory for any app with user-generated content.",
+      "implementedIn": {
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1601,30 +1636,14 @@
       }
     },
     {
-      "target": "desk.suggest",
+      "target": "desk.canned",
       "controller": "DeskController",
-      "method": "Suggest",
-      "source": "src/IM.Server/WsControllers/DeskController.cs:157",
-      "requestType": "DeskSuggestRequest",
-      "responseType": "IReadOnlyList<string>",
+      "method": "Canned",
+      "source": "src/IM.Server/WsControllers/DeskController.cs:168",
+      "requestType": "DeskCannedRequest",
+      "responseType": "IReadOnlyList<DeskCannedReply>",
       "tier": "T4",
-      "note": "LLM reply suggestions for an agent; returns 1203 when no provider is configured. Tiered on 2026-08-27 with desk.rate and desk.canned.",
-      "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
-      }
-    },
-    {
-      "target": "keys.revoke",
-      "controller": "KeysController",
-      "method": "Revoke",
-      "source": "src/IM.Server/WsControllers/KeysController.cs:175",
-      "requestType": "RevokeDeviceRequest",
-      "responseType": null,
-      "tier": "T4",
+      "note": "The agent's canned-reply list. Its request body is optional, which is what the generator's parameter regex could not read until 2026-08-27.",
       "implementedIn": {
         "typescript": false,
         "kotlin": false,
@@ -2003,37 +2022,54 @@
       }
     },
     {
-      "target": "desk.canned",
-      "controller": "DeskController",
-      "method": "Canned",
-      "source": "src/IM.Server/WsControllers/DeskController.cs:168",
-      "requestType": "DeskCannedRequest",
-      "responseType": "IReadOnlyList<DeskCannedReply>",
-      "tier": "T4",
-      "note": "The agent's canned-reply list. Its request body is optional, which is what the generator's parameter regex could not read until 2026-08-27.",
-      "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
-      }
-    },
-    {
-      "target": "friend.block",
-      "controller": "FriendController",
-      "method": "Block",
-      "source": "src/IM.Server/WsControllers/UserController.cs:211",
-      "requestType": "BlockRequest",
+      "target": "diag.logUploaded",
+      "controller": "DiagController",
+      "method": "LogUploaded",
+      "source": "src/IM.Server/WsControllers/DiagController.cs:72",
+      "requestType": "DeviceLogAnswer",
       "responseType": null,
       "tier": "T2",
-      "note": "App-store review treats user blocking as mandatory for any app with user-generated content.",
+      "note": "ADR-003. Answer every request, including a refusal: silence is indistinguishable from a device that never received the frame, and the two send a support engineer in opposite directions. Report `volatile` from the store's identity, never from a flag the store declares. 拒绝也要答复；volatile 由 SDK 判断而不是由存储自称。",
       "implementedIn": {
         "typescript": true,
         "kotlin": true,
         "swift": true,
         "flutter": true,
         "unity": true
+      }
+    },
+    {
+      "target": "diag.logRequests",
+      "controller": "DiagController",
+      "method": "LogRequests",
+      "source": "src/IM.Server/WsControllers/DiagController.cs:58",
+      "requestType": null,
+      "responseType": "IReadOnlyList<PendingDeviceLog>",
+      "tier": "T2",
+      "note": "ADR-003. Call once after every connect, never on a timer: requests are raised by a person looking at a support ticket. Each row carries a freshly signed upload target — the one issued when the request was raised may already have expired. 每次连接后调一次，不要轮询。",
+      "implementedIn": {
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
+      }
+    },
+    {
+      "target": "desk.suggest",
+      "controller": "DeskController",
+      "method": "Suggest",
+      "source": "src/IM.Server/WsControllers/DeskController.cs:157",
+      "requestType": "DeskSuggestRequest",
+      "responseType": "IReadOnlyList<string>",
+      "tier": "T4",
+      "note": "LLM reply suggestions for an agent; returns 1203 when no provider is configured. Tiered on 2026-08-27 with desk.rate and desk.canned.",
+      "implementedIn": {
+        "typescript": false,
+        "kotlin": false,
+        "swift": false,
+        "flutter": false,
+        "unity": false
       }
     },
     {
@@ -3119,6 +3155,41 @@
         }
       ]
     },
+    "DeviceLogAnswer": {
+      "source": "IM.Server/src/IM.Server/WsControllers/DiagController.cs",
+      "properties": [
+        {
+          "name": "requestId",
+          "type": "string?",
+          "nullable": true
+        },
+        {
+          "name": "uploaded",
+          "type": "bool",
+          "nullable": false
+        },
+        {
+          "name": "sizeBytes",
+          "type": "long",
+          "nullable": false
+        },
+        {
+          "name": "coveredFromMs",
+          "type": "long?",
+          "nullable": true
+        },
+        {
+          "name": "volatile",
+          "type": "bool",
+          "nullable": false
+        },
+        {
+          "name": "detail",
+          "type": "string?",
+          "nullable": true
+        }
+      ]
+    },
     "DownloadUrlRequest": {
       "source": "IM.Server/src/IM.Server/WsControllers/RoomController.cs",
       "properties": [
@@ -4105,6 +4176,46 @@
         {
           "name": "limit",
           "type": "int",
+          "nullable": false
+        }
+      ]
+    },
+    "PendingDeviceLog": {
+      "source": "IM.Server/src/IM.Abstractions/Multitenancy/DeviceLog.cs",
+      "properties": [
+        {
+          "name": "requestId",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "uploadUrl",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "formFields",
+          "type": "Dictionary<string, string>?",
+          "nullable": true
+        },
+        {
+          "name": "objectKey",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "expiresAt",
+          "type": "long",
+          "nullable": false
+        },
+        {
+          "name": "maxBytes",
+          "type": "long",
+          "nullable": false
+        },
+        {
+          "name": "reason",
+          "type": "string",
           "nullable": false
         }
       ]

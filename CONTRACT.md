@@ -633,6 +633,67 @@ integrator who does not know it ships the bug.
 
 ---
 
+## 6A. The device log
+
+The console can ask a running device for the SDK's own runtime log — `diag.logRequests` and
+`diag.logUploaded`, plus an `evt.system` frame whose `event` is `device.logRequest`. The decision
+underneath is [`ADR-003`](../Docs/ADR-003-设备日志由谁保存.md), and it is the same one §5.3 makes
+about cursors.
+
+### 6A.1 The store belongs to the integrator
+
+`logStore` (Kotlin/Swift/Dart/Unity: `LogStore`) is an option, shaped exactly like the cursor store:
+`append` / `read` / `clear`, any of which may throw. The SDK does **not** choose a write location.
+On Android that is app-private storage whose backup behaviour the app configures; on iOS it is
+`Documents` or `Library/Caches`, whose backup behaviour differs; on the web it is a browser store
+the integrator may be legally obliged to clear on logout and cannot clear if they do not know it
+exists. "Do chat logs reach iCloud" is a question an integrator answers to a regulator.
+
+SDK 不替接入方选写入位置——那个选择的后果由他承担、由他被问责。
+
+### 6A.2 Not supplying one is a complete choice
+
+Unlike the cursor store, this one **has a default**: a bounded in-memory ring. The asymmetry is
+deliberate — losing cursors loses a user's messages, losing logs loses a diagnostic — and the
+default says what it costs rather than hiding it. A log with no store covers this process only, so
+it answers "what is happening now" completely and "what happened when it crashed" not at all.
+
+That is why every answer carries `coveredFromMs` and `volatile`: **a three-minute log and a
+seven-day log are otherwise identical**, and reading the first as the second is how a support
+engineer concludes nothing went wrong on that device.
+
+### 6A.3 `volatile` is the SDK's judgement, never the store's claim
+
+Same rule as `isVolatileCursorStore`: whether a store is persistent is decided from the store's
+identity. A declared flag would let *any* store — including one written over a real database —
+announce itself persistent, and the only thing that answer drives is the one sentence standing
+between a misconfigured integration and a wrong conclusion.
+
+### 6A.4 The four rules of answering
+
+1. **Call `diag.logRequests` once per connect, never on a timer.** Requests are raised by a person
+   looking at a support ticket. Polling turns a human-paced feature into background traffic on
+   every handset a tenant has. A device that stays connected receives later requests as
+   `evt.system`.
+2. **A refusal is an answer and must be sent.** Silence is indistinguishable from a device that
+   never received the frame, and the two send a support engineer in opposite directions.
+3. **`maxBytes` is a ceiling, not a target.** Hold more than it and upload the *newest* slice: the
+   failure being investigated is at the end of the log, and an upload that failed outright is
+   recorded as "the device refused", which is the wrong sentence to put in front of whoever is
+   waiting.
+4. **Clear the store only after the server has been told.** Clearing first and then failing to
+   report destroys the evidence and leaves the row saying nothing arrived.
+
+### 6A.5 The frame rides on `evt.system`
+
+Not a push target of its own. A client built before this feature existed receives an action it does
+not recognise and ignores it, which is correct and needs no code; a new target would be silently
+dropped by every existing build, and nothing could tell that apart from a device that was offline.
+The frame names a `deviceId` because delivery is per user — every device of theirs sees it, and
+exactly one should answer.
+
+---
+
 ## 7. Errors
 
 ### 7.1 One error type per SDK

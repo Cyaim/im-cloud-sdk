@@ -93,6 +93,8 @@ namespace Cyaim.Im
         private readonly ImConnection _connection;
         private readonly IImDispatcher _dispatcher;
         private readonly IDisposable _messageSubscription;
+        private readonly IDisposable _systemSubscription;
+        private readonly ImDeviceLogs _deviceLogs;
         private readonly Dictionary<string, Inbox> _inboxes = new Dictionary<string, Inbox>(StringComparer.Ordinal);
         private readonly long _maxAutoRepair;
         private readonly int _maxRepairPages;
@@ -179,8 +181,25 @@ namespace Cyaim.Im
             Media = new ImMediaApi(this);
             Push = new ImPushApi(this);
             Moderation = new ImModerationApi(this);
+            Diag = new ImDiagApi(this);
+
+            // Defaulted rather than required, unlike the cursor store: losing cursors loses a
+            // player's messages, while losing logs loses a diagnostic (ADR-003).
+            // 与游标存储不同这里有默认值：丢游标丢的是玩家的消息，丢日志丢的是一次排障。
+            Log = new ImLogRecorder(
+                options.LogStore ?? ImLogStore.InMemory(),
+                message => ImLog.Info(message));
+
+            _deviceLogs = new ImDeviceLogs(Diag, Log, options.DeviceId);
 
             _messageSubscription = _connection.On(ImPushTarget.Message, HandleMessageFrame);
+
+            // A log request arrives inside evt.system rather than on a target of its own, so a
+            // client built before this feature existed receives an action it does not recognise and
+            // ignores it. A new target would instead be silently dropped by every existing build,
+            // and there would be no way to tell that apart from a device that was offline (ADR-003).
+            // 走 evt.system 里的一个 action 而不是新事件名：旧版本收到不认识的 action 会忽略它。
+            _systemSubscription = _connection.On(ImPushTarget.System, HandleSystemFrame);
             _connection.StateChanged += HandleStateChanged;
             _connection.Kicked += HandleKicked;
 
@@ -217,6 +236,20 @@ namespace Cyaim.Im
 
         /// <summary><c>moderation.*</c> — reporting a user or one of their messages.</summary>
         public ImModerationApi Moderation { get; private set; }
+
+        /// <summary><c>diag.*</c> — this device's half of troubleshooting. Driven by the client.</summary>
+        public ImDiagApi Diag { get; private set; }
+
+        /// <summary>
+        /// The SDK's own runtime log: written here, read when the server asks this device for it.
+        /// </summary>
+        /// <remarks>
+        /// Exposed so a game can add its own lines — the ones that explain what the <i>player</i> was
+        /// doing when it went wrong, which the SDK cannot see and which are usually the half that
+        /// makes a log worth reading.
+        /// 公开出来是为了让游戏写自己的行：SDK 看不见玩家当时在做什么，而那往往是让日志值得读的那一半。
+        /// </remarks>
+        public ImLogRecorder Log { get; private set; }
 
         // ------------------------------------------------------------------ properties
 
@@ -440,6 +473,7 @@ namespace Cyaim.Im
             _connection.StateChanged -= HandleStateChanged;
             _connection.Kicked -= HandleKicked;
             _messageSubscription.Dispose();
+            _systemSubscription.Dispose();
             _connection.Dispose();
 
             MessageReceived = null;
@@ -616,7 +650,13 @@ namespace Cyaim.Im
                 new ImRecallMessageRequest
                 {
                     ConversationId = conversationId,
-                    MessageId = messageId,
+
+                    // The request carries the id as a string, because the gateway reads it as a
+                    // number written as one. This overload takes a long, so the conversion happens
+                    // here — and it did not, which is why this assembly did not compile at all.
+                    // 请求体里是字符串（网关按「写成字符串的数字」来读），而这个重载收的是 long：
+                    // 换算要在这里做——它原本没有做，这也正是整个程序集根本编译不过的原因。
+                    MessageId = messageId.ToString(CultureInfo.InvariantCulture),
                     Reason = reason,
                 },
                 cancellationToken);
@@ -635,7 +675,7 @@ namespace Cyaim.Im
                 new ImReactRequest
                 {
                     ConversationId = conversationId,
-                    MessageId = messageId,
+                    MessageId = messageId.ToString(CultureInfo.InvariantCulture),
                     Emoji = emoji,
                     Add = add,
                 },
@@ -1045,12 +1085,30 @@ namespace Cyaim.Im
                 // have replaced it while the process was frozen and the server has no other way to
                 // find out. An unchanged token costs no write; the server debounces it.
                 Push.RegisterOnConnect();
+
+                // Least urgent of the post-connect work: a device that cannot answer a log request
+                // is still a device that can chat, and nothing here may delay gap repair.
+                // 连接后最不紧急的一件：答不出日志请求的设备仍然是能聊天的设备。
+                var alsoIgnored = _deviceLogs.CheckAsync();
             }
         }
 
         private void HandleKicked(ImKick kick)
         {
             ImSafeEvent.Raise(Kicked, kick);
+        }
+
+        /// <summary>
+        /// Routes an <c>evt.system</c> frame to the device-log runner, and ignores everything else.
+        /// </summary>
+        /// <remarks>
+        /// Fire and forget for the same reason the resume is: this runs on the frame the socket
+        /// delivered on, and blocking it on an upload would stall the game.
+        /// 与 resume 同理不等待：它跑在 socket 投递的那一帧上，卡在上传上会拖住游戏。
+        /// </remarks>
+        private void HandleSystemFrame(ImFrame frame)
+        {
+            var ignored = _deviceLogs.OnSystemEventAsync(frame.Data);
         }
 
         private void HandleMessageFrame(ImFrame frame)

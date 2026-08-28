@@ -1,4 +1,6 @@
 import 'cursor_store.dart';
+import 'device_logs.dart';
+import 'log_store.dart';
 import 'logging.dart';
 import 'protocol.dart';
 import 'socket.dart';
@@ -20,6 +22,8 @@ class ImOptions {
     this.maxAutoRepairSeq = 500,
     this.cursorSaveDebounce = const Duration(milliseconds: 1000),
     this.logger = defaultImLogger,
+    this.logStore,
+    this.deviceLogUploader,
     this.onTokenExpired,
     this.socketFactory,
   });
@@ -98,6 +102,24 @@ class ImOptions {
   /// Where the SDK's own warnings go. Two of them are contractual — the in-memory cursor store and
   /// an unregistered push token — and both are things an integrator must be able to see.
   final ImLogger logger;
+
+  /// Where the SDK's own runtime log lives between runs. **Optional, and the default is honest.**
+  ///
+  /// Unlike [cursorStore] this may be null, and the asymmetry is deliberate: losing cursors loses a
+  /// user's messages, while losing logs loses a diagnostic. Supplying one is what makes "pull a log
+  /// from that handset" answer questions about anything before the current run — a crash, a night
+  /// the app was closed, the reconnect storm at 3am. Null keeps a bounded ring in memory, and the
+  /// console shows a support engineer which of the two they are reading.
+  ///
+  /// The SDK does not pick a location for you — see `ADR-003`. That choice is about where your
+  /// users' runtime detail may be written, and its consequences land on you.
+  /// SDK 不替你选写入位置：不提供也是一个完整的选择，而控制台会把这个区别显示出来。
+  final ImLogStore? logStore;
+
+  /// How a log bundle reaches object storage. Null uses `dart:io`, which a browser does not have —
+  /// a web deployment that wants this feature supplies one over `package:http` or `window.fetch`.
+  /// null 时用 dart:io；web 上要用这个功能就自己给一个。
+  final ImDeviceLogUploader? deviceLogUploader;
 
   /// Called when a token has expired: on a `conn.reauth` opportunity mid-session, and when the
   /// server closes with `im-kick:TokenExpired`. Return a fresh token, or null to stop.

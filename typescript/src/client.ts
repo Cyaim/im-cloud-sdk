@@ -1,6 +1,7 @@
 import {
   ConnApi,
   ConvApi,
+  DiagApi,
   FriendApi,
   GroupApi,
   MediaApi,
@@ -16,6 +17,8 @@ import {
   type ImRequestOptions,
 } from './connection.js';
 import { ImCursorScope, ImCursors, type ImCursorSnapshot, type ImCursorStore } from './cursors.js';
+import { ImDeviceLogs } from './devicelogs.js';
+import { ImLog, inMemoryLogStore, type ImLogStore } from './logs.js';
 import type {
   ConversationView,
   ImMessage,
@@ -68,6 +71,26 @@ export interface ImClientOptions extends ConnectionOptions {
 
   /** Conversations per `conn.sync` page. The server clamps to 1…500; anything else becomes 200. */
   syncPageLimit?: number;
+
+  /**
+   * Where the SDK's own runtime log lives between runs. **Optional, and the default is honest.**
+   *
+   * Supplying one is what makes "pull a log from that handset" answer questions about anything
+   * before the current process — a crash, a night the app was closed, the reconnect storm at 3am.
+   * Supplying none keeps a bounded ring in memory, which answers "what is happening now" completely
+   * and "what happened when it crashed" not at all; the console shows which of the two a support
+   * engineer is looking at, because a three-minute log and a seven-day log are otherwise identical.
+   *
+   * The SDK does not pick a location for you — see `ADR-003`, and {@link ImCursorStore} for the
+   * same rule applied to cursors. On Android that would be app-private storage, on iOS `Documents`
+   * or `Library/Caches` (whose backup behaviour differs, and "do chat logs reach iCloud" is a
+   * question you answer to a regulator), on the web IndexedDB you may be obliged to clear on logout
+   * and cannot clear if you do not know it exists.
+   *
+   * SDK 不替你选写入位置：那个选择的后果由你承担。不提供也是一个完整的选择——
+   * 内存环形缓冲只覆盖本次进程，而控制台会把这个区别显示出来。
+   */
+  logStore?: ImLogStore;
 }
 
 export type MessageListener = (message: ImMessage) => void;
@@ -139,6 +162,8 @@ export class ImClient {
   private pushWarned = false;
   private suspendHooked = false;
 
+  private readonly deviceLogs: ImDeviceLogs;
+
   readonly conn: ConnApi;
   readonly msg: MsgApi;
   readonly conv: ConvApi;
@@ -148,6 +173,17 @@ export class ImClient {
   readonly media: MediaApi;
   readonly push: PushApi;
   readonly moderation: ModerationApi;
+  readonly diag: DiagApi;
+
+  /**
+   * The SDK's own runtime log. Written by the SDK, read when the server asks for it.
+   *
+   * Exposed so an application can add its own lines — the ones that explain what the *user* was
+   * doing when it went wrong, which the SDK cannot see and which are usually the half that makes a
+   * log worth reading.
+   * 公开出来是为了让应用写自己的行：SDK 看不见用户当时在做什么，而那往往是让日志值得读的那一半。
+   */
+  readonly log: ImLog;
 
   constructor(private readonly options: ImClientOptions) {
     this.connection = new ImConnection(options);
@@ -174,9 +210,44 @@ export class ImClient {
     this.media = new MediaApi(io);
     this.push = new PushApi(io, () => this.connection.currentState === 'open');
     this.moderation = new ModerationApi(io);
+    this.diag = new DiagApi(io);
+
+    // Defaulted rather than required, unlike the cursor store, and the asymmetry is deliberate:
+    // losing cursors loses a user's messages, while losing logs loses a diagnostic. Requiring a
+    // store here would make every integration answer a question about a feature most of them will
+    // never use, and the honest default says out loud what it costs (ADR-003).
+    // 与游标存储不同，这里有默认值，而这个不对称是刻意的：丢游标丢的是用户的消息，
+    // 丢日志丢的是一次排障。在这里设成必填，等于让每一次接入回答一个多数人永远用不上的问题。
+    this.log = new ImLog(options.logStore ?? inMemoryLogStore());
+    this.deviceLogs = new ImDeviceLogs(
+      {
+        requests: () => this.diag.requests(),
+        answer: (answer) => this.diag.uploaded(answer),
+      },
+      this.log,
+    );
 
     this.connection.on(PushTarget.Message, (frame) => this.handleMessage(frame));
+
+    // A log request arrives inside evt.system rather than on a target of its own, so a client built
+    // before this feature existed receives an action it does not recognise and ignores it. A new
+    // target would instead be silently dropped by every existing build, and there would be no way
+    // to tell that apart from a device that was offline (ADR-003).
+    // 日志请求走 evt.system 里的一个 action 而不是新事件名：
+    // 本功能出现之前构建的客户端会收到一个不认识的 action 并忽略它，那是正确行为。
+    this.connection.on(PushTarget.System, (frame) => {
+      void this.deviceLogs.onSystemEvent(frame.body?.data, options.deviceId);
+    });
+
     this.connection.onState((state) => {
+      // Every transition, into the log. "Was it even connected at the time" is the first question
+      // asked about every report that starts with "the message never arrived", and it is the one
+      // question a server-side log cannot answer: a socket this client never opened leaves no
+      // trace on the other side.
+      // 每一次状态迁移都记：以「消息没到」开头的每一份反馈，第一个问题都是「它当时连上了吗」——
+      // 而这恰恰是服务端日志答不了的：一条这个客户端从未打开的连接，在那一侧不留痕迹。
+      this.log.info(`connection ${state}`);
+
       if (state === 'open') {
         void this.onConnected();
       }
@@ -425,7 +496,14 @@ export class ImClient {
     // than it looks (CONTRACT §6.2). But it must not run *before* the resume — a slow or
     // unanswered `push.register` would then delay gap repair by a whole request timeout, which
     // trades a notification problem for a missing-messages problem.
-    await Promise.all([this.registerPushOnConnect(), this.resume()]);
+    this.log.info(`connected as ${this.options.userId} on ${this.options.deviceId}`);
+
+    // Three, concurrently, and none gates the others. The log check is last in the list and least
+    // urgent of the three: it must never delay gap repair, and its failure is logged rather than
+    // raised — a device that cannot answer a log request is still a device that can chat.
+    // 三件并发，互不阻塞：日志检查最不紧急，绝不能拖慢补洞，失败只记录不抛出——
+    // 一台答不出日志请求的设备，仍然是一台能聊天的设备。
+    await Promise.all([this.registerPushOnConnect(), this.resume(), this.deviceLogs.check()]);
   }
 
   private async registerPushOnConnect(): Promise<void> {
@@ -433,6 +511,7 @@ export class ImClient {
     if (this.pushWarned) return;
 
     this.pushWarned = true;
+    this.log.warn('push token held but never registered; offline push will not reach this device');
     console.warn(
       '[im] a push token is held but has never registered successfully. Offline push will not ' +
         'reach this device, and a silently unregistered device looks exactly like a broken push ' +
@@ -739,6 +818,13 @@ export class ImClient {
   }
 
   private raise(error: ImError): void {
+    // Logged whether or not anybody is listening. An application with no error listener is exactly
+    // the one whose problems get reported as "it just does not work", and this is the only record
+    // that will exist when somebody finally asks.
+    // 无论有没有人监听都记下来：没有装错误监听器的应用，正是那种把问题报成「它就是不好使」的应用，
+    // 而当终于有人来问的时候，这是唯一存在的记录。
+    this.log.error(`${error.target ?? 'sdk'}: ${error.message}`);
+
     if (this.errorListeners.size === 0) {
       console.warn(`[im] ${error.target ?? 'sdk'}: ${error.message}`);
       return;

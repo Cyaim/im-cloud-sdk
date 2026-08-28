@@ -7,6 +7,7 @@ import { describe, it } from 'node:test';
 import {
   ConnApi,
   ConvApi,
+  DiagApi,
   FriendApi,
   GroupApi,
   MediaApi,
@@ -77,6 +78,7 @@ function typedTargets(): Set<string> {
     new MediaApi(io),
     new PushApi(io, () => true),
     new ModerationApi(io),
+    new DiagApi(io),
   ];
 
   for (const namespace of namespaces) {

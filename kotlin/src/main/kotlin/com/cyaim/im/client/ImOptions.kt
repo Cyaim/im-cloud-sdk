@@ -105,6 +105,25 @@ public data class ImOptions(
      */
     public val logger: ImLogger = ImLogger.stderr(),
     /**
+     * Where the SDK's own runtime log lives between runs. **Optional, and the default is honest.**
+     *
+     * Supplying one is what makes "pull a log from that handset" answer questions about anything
+     * before the current process — a crash, a night the app was closed, the reconnect storm at 3am.
+     * Supplying none keeps a bounded ring in memory, which answers "what is happening now"
+     * completely and "what happened when it crashed" not at all; the console shows which of the two
+     * a support engineer is looking at, because a three-minute log and a seven-day log are
+     * otherwise identical.
+     *
+     * The SDK does not pick a location for you — see `ADR-003`, and [ImCursorStore] for the same
+     * rule applied to cursors. On Android that would be app-private storage whose backup behaviour
+     * you configure, and "do chat logs end up in Google's backup" is a question you answer to a
+     * regulator. [ImLogStore.file] is provided for when you have made that decision.
+     *
+     * SDK 不替你选写入位置：不提供也是一个完整的选择——内存环形缓冲只覆盖本次进程，
+     * 而控制台会把这个区别显示出来。
+     */
+    public val logStore: ImLogStore = ImLogStore.inMemory(),
+    /**
      * Called when the server closes with `im-kick:TokenExpired`, and when a business call comes
      * back `1101 TokenExpired`. Return a fresh token, or null to stop and go
      * [ConnectionState.Closed].

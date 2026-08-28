@@ -541,3 +541,38 @@ public struct ImModerationNamespace: Sendable {
         try await connection.request("moderation.report", body: request)
     }
 }
+
+// MARK: - diag
+
+/// `diag.*` — this device's half of troubleshooting.
+///
+/// **Ordinary applications never call these.** ``ImClient`` drives both: it asks once after every
+/// connect and answers whatever is waiting. They are typed because this SDK's rule is that every
+/// endpoint has a typed method — a capability reachable only through a raw invoke is one a support
+/// engineer cannot find.
+///
+/// See `ADR-003` for why the log store belongs to the integrating application, and
+/// ``ImLogStore`` for what an integrator who supplies none still gets.
+public struct ImDiagNamespace: Sendable {
+    let connection: ImConnection
+
+    /// Open log requests for this device, each with a freshly signed upload target.
+    ///
+    /// **Once per connect, never on a timer.** Requests are raised by a person looking at a support
+    /// ticket, so the rate is at most one every few days; polling would turn a human-paced feature
+    /// into background traffic on every handset a tenant has.
+    /// 每次连接一次，不要轮询：这是一件由人按工单节奏发起的事。
+    public func logRequests() async throws -> [PendingDeviceLog] {
+        try await connection.request("diag.logRequests", as: [PendingDeviceLog].self)
+    }
+
+    /// Reports what happened to one request — a bundle, or why there is none.
+    ///
+    /// **A refusal is an answer and must be sent.** Silence is indistinguishable from a device that
+    /// never received the request, and the two send a support engineer in opposite directions: wait
+    /// for the customer to open the app, or look at why this build cannot comply.
+    /// 拒绝也是一种答复，必须发出去：沉默与「根本没收到」分不出区别，而两者要查的方向相反。
+    public func logUploaded(_ answer: DeviceLogAnswer) async throws {
+        try await connection.execute("diag.logUploaded", body: answer)
+    }
+}

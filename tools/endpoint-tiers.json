@@ -57,6 +57,9 @@
 
     "push.register": { "tier": "T1", "note": "See sdk/CONTRACT.md §6. Registration is a client responsibility on every connect, not a one-time setup step." },
     "push.unregister": { "tier": "T1", "note": "Logout must call this BEFORE disconnecting; after the socket closes only the tenant backend can remove the token." },
+    "diag.logRequests": { "tier": "T2", "note": "ADR-003. Call once after every connect, never on a timer: requests are raised by a person looking at a support ticket. Each row carries a freshly signed upload target — the one issued when the request was raised may already have expired. 每次连接后调一次，不要轮询。" },
+    "diag.logUploaded": { "tier": "T2", "note": "ADR-003. Answer every request, including a refusal: silence is indistinguishable from a device that never received the frame, and the two send a support engineer in opposite directions. Report `volatile` from the store's identity, never from a flag the store declares. 拒绝也要答复；volatile 由 SDK 判断而不是由存储自称。" },
+
     "push.clicked": { "tier": "T2", "note": "SPEC-05 §6.2 / SPEC-02 §2.6.3: report a notification tap with { pushId?, messageId? } (messageId is the payload's msgId). Best-effort statistics; identity comes from the socket, never retry on failure." },
 
     "msg.edit": { "tier": "T2", "feature": null, "note": "Window is App.Settings.EditWindowMinutes; expect 1405 outside it." },

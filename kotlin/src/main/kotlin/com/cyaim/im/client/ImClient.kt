@@ -98,6 +98,16 @@ public class ImClient(
 
     private val logger: ImLogger = options.logger
 
+    /**
+     * The SDK's own runtime log: written here, read when the server asks this device for it.
+     *
+     * Tees into both [ImOptions.logger] and [ImOptions.logStore] — they answer different questions.
+     * The sink is for the developer watching Logcat right now; the store is for the support
+     * engineer reading a bundle from a customer's handset a week later.
+     * 两边都写：sink 给此刻盯着 Logcat 的开发者，store 给一周后读那份包的支持工程师。
+     */
+    private val log: ImLog = ImLog(options.logStore, options.logger)
+
     private val supervisor = SupervisorJob(parentContext[Job])
     private val scope = CoroutineScope(
         Dispatchers.Default + parentContext + supervisor + CoroutineName("im-client"),
@@ -162,6 +172,11 @@ public class ImClient(
 
     /** `moderation.*` — reporting a user or a message. The other half of `friend.block`. */
     public val moderation: ModerationApi = ModerationApi(connection)
+
+    /** `diag.*` — this device's half of troubleshooting. Driven by the client; see [DiagApi]. */
+    public val diag: DiagApi = DiagApi(connection)
+
+    private val deviceLogs: ImDeviceLogs = ImDeviceLogs(diag, log, options.deviceId)
 
     // ------------------------------------------------------------------------- events
 
@@ -254,6 +269,17 @@ public class ImClient(
         // dispatched launch would subscribe a moment later, and a push that landed in that moment
         // would be dropped by the hot flow — an intermittent lost message is not a bug anyone
         // enjoys chasing.
+        // A log request arrives inside evt.system rather than on a target of its own, so a client
+        // built before this feature existed receives an action it does not recognise and ignores
+        // it. A new target would instead be silently dropped by every existing build, and there
+        // would be no way to tell that apart from a device that was offline (ADR-003).
+        // 走 evt.system 里的一个 action 而不是新事件名：旧版本收到不认识的 action 会忽略它，那是对的。
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            connection.frames
+                .filter { it.target == PushTarget.System }
+                .collect { frame -> deviceLogs.onSystemEvent(frame.body?.data) }
+        }
+
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             connection.frames
                 .filter { it.target == PushTarget.Message }
@@ -275,6 +301,12 @@ public class ImClient(
                         // it is not allowed to delay gap repair by a request timeout, and gap
                         // repair is not allowed to delay it either.
                         launch { push.registerOnConnect(options.autoRegisterPushToken) }
+
+                        // Least urgent of the three and last in the list: it must never delay gap
+                        // repair, and its failure is logged rather than raised — a device that
+                        // cannot answer a log request is still a device that can chat.
+                        // 三件里最不紧急：绝不能拖慢补洞，失败只记录不抛出。
+                        launch { deviceLogs.check() }
                         resume()
                     }
                 } catch (cancellation: CancellationException) {

@@ -57,6 +57,16 @@ public actor ImClient {
 
     private let options: ImClientOptions
 
+    /// The SDK's own runtime log: written here, read when the server asks this device for it.
+    ///
+    /// Exposed so an application can add its own lines — the ones that explain what the *user* was
+    /// doing when it went wrong, which the SDK cannot see and which are usually the half that makes
+    /// a log worth reading.
+    /// 公开出来是为了让应用写自己的行：SDK 看不见用户当时在做什么，而那往往是让日志值得读的那一半。
+    public let log: ImLogRecorder
+
+    private let deviceLogs: ImDeviceLogs
+
     /// The application's warning sink, for the namespaces that need to report a swallowed failure.
     ///
     /// `options` is private and stays private — it carries credentials. This exposes the one member
@@ -163,6 +173,10 @@ public actor ImClient {
         let lane = ImClient.makeWorkLane()
         self.work = lane.stream
         self.workContinuation = lane.continuation
+
+        let recorder = ImLogRecorder(store: options.logStore, warningHandler: options.warningHandler)
+        self.log = recorder
+        self.deviceLogs = ImDeviceLogs(connection: connection, log: recorder, deviceId: options.deviceId)
     }
 
     /// Builds a client around an already-configured connection. Useful in tests and in apps that
@@ -175,6 +189,10 @@ public actor ImClient {
         let lane = ImClient.makeWorkLane()
         self.work = lane.stream
         self.workContinuation = lane.continuation
+
+        let recorder = ImLogRecorder(store: connection.options.logStore, warningHandler: connection.options.warningHandler)
+        self.log = recorder
+        self.deviceLogs = ImDeviceLogs(connection: connection, log: recorder, deviceId: connection.options.deviceId)
     }
 
     /// The stream is unbounded because dropping work is never the right answer here: a discarded
@@ -216,6 +234,15 @@ public actor ImClient {
 
     /// `moderation.*` — reporting a user or a message. The other half of ``friend``'s blocklist.
     public nonisolated var moderation: ImModerationNamespace { ImModerationNamespace(connection: connection) }
+
+    /// `diag.*` — this device's half of troubleshooting.
+    ///
+    /// **Ordinary applications never call these.** The client drives both: it asks once after every
+    /// connect and answers whatever is waiting. They are typed because this SDK's rule is that every
+    /// endpoint has a typed method — a capability reachable only through ``invoke(_:body:as:)`` is
+    /// one a support engineer cannot find. See `ADR-003` for why the log store belongs to you.
+    /// 一般应用不会调用它们：客户端自己驱动。类型化是因为「每个端点都有类型化方法」是本 SDK 的规矩。
+    public nonisolated var diag: ImDiagNamespace { ImDiagNamespace(connection: connection) }
 
     // MARK: - Streams
 
@@ -882,6 +909,19 @@ public actor ImClient {
         let incoming = connection.events(for: .message)
         let states = connection.states()
 
+        // A log request arrives inside evt.system rather than on a target of its own, so a client
+        // built before this feature existed receives an action it does not recognise and ignores
+        // it. A new target would instead be silently dropped by every existing build, and there
+        // would be no way to tell that apart from a device that was offline (ADR-003).
+        // 走 evt.system 里的一个 action 而不是新事件名：旧版本收到不认识的 action 会忽略它，那是对的。
+        let system = connection.events(for: .system)
+
+        pumps.append(Task { [deviceLogs] in
+            for await frame in system {
+                await deviceLogs.onSystemEvent(frame.body?.data)
+            }
+        })
+
         pumps.append(Task { [workContinuation] in
             await ImClient.pumpMessages(incoming, into: workContinuation)
         })
@@ -942,6 +982,15 @@ public actor ImClient {
     }
 
     private func socketDidOpen() {
+        // Least urgent of the post-connect work and deliberately unconditional: unlike push
+        // registration there is no token to guard on, and a device with nothing waiting gets one
+        // cheap round trip that returns an empty list.
+        // 连接后最不紧急的一件，且无条件执行：没有 token 之类的前提，
+        // 没有待办的设备只是多一次返回空列表的往返。
+        Task { [deviceLogs] in
+            await deviceLogs.check()
+        }
+
         guard pushToken != nil else { return }
 
         Task { [weak self] in
