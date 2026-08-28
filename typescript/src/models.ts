@@ -629,3 +629,21 @@ export interface RegisterPushTokenRequest {
   /** BCP-47. Defaults to the socket's `lang`. */
   language?: string;
 }
+
+/**
+ * Body of `push.clicked` — the tap on a notification, reported back for the delivery funnel.
+ *
+ * **Both fields are optional and the identity is never in the body.** The row is located from the
+ * connection: a `pushId` is only believed when it points at this user's own device, and without one
+ * the server takes this device's newest delivery. That is what stops a client from marking another
+ * user's notification clicked, or probing which `pushId` values exist.
+ *
+ * `messageId` is a **string** for the reason every message id in this SDK is one: the ids exceed
+ * JavaScript's exact-integer range, and a number round-trips to a different id.
+ */
+export interface PushClickedRequest {
+  /** The delivery's `pu_…` id, when the notification payload carried one. */
+  pushId?: string;
+  /** The payload's `msgId`, when the tap gave you one. */
+  messageId?: string;
+}

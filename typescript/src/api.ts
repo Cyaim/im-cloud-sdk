@@ -43,12 +43,13 @@ import type {
   ListConversationsRequest,
   MediaUploadTicket,
   PresenceState,
+  PushClickedRequest,
   PushProvider,
   ReactRequest,
   ReadRequest,
   ReauthRequest,
-  ReceiptRequest,
   RecallMessageRequest,
+  ReceiptRequest,
   RegisterPushTokenRequest,
   ResumeRequest,
   ResumeResult,
@@ -450,6 +451,30 @@ export class PushApi {
   async unregister(options?: ImRequestOptions): Promise<void> {
     await this.io.request<void>('push.unregister', undefined, options);
     this.registered = false;
+  }
+
+  /**
+   * Reports that the user tapped one of this device's notifications.
+   *
+   * **Best-effort statistics, and the call site is the tap handler — not the message render.** What
+   * it feeds is the delivery funnel on the tenant's push screen: sent → delivered → clicked. APNs
+   * and FCM do not report delivery at all, so on most deployments a click is the only evidence a
+   * notification ever arrived, and the server credits delivery from it.
+   *
+   * **Both arguments are optional and neither carries identity.** Pass what the payload gave you:
+   * `messageId` from the notification's `msgId` is the usual one. With nothing at all the server
+   * attributes the newest delivery to this device, which is the right answer for a tap that opened
+   * the app without naming a message.
+   *
+   * Answers `2401 PushDeliveryNotFound` when nothing matches — the row expired (seven days) or the
+   * notification did not come from this platform. Neither is the caller's fault and neither is
+   * worth surfacing to a user; log it and move on.
+   *
+   * 上报一次通知点击。**调用点是点击处理器，不是消息渲染处。**
+   * APNs 与 FCM 根本不回报送达，所以在多数部署上，点击是「这条通知确实到过」的唯一证据。
+   */
+  async clicked(request?: PushClickedRequest, options?: ImRequestOptions): Promise<void> {
+    await this.io.request<void>('push.clicked', request ?? {}, options);
   }
 
   /**
