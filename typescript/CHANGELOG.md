@@ -57,7 +57,14 @@ Implements [`sdk/CONTRACT.md`](../CONTRACT.md) contract version `1.0`.
 - **`conn.reauth`** — a token expiring mid-session is now one round trip on the open socket rather
   than a full reconnect. Driven automatically when a request answers `1101`.
 - **Namespaced typed surface** for tiers T0, T1 and T2: `im.conn`, `im.msg`, `im.conv`, `im.user`,
-  `im.friend`, `im.group`, `im.media`, `im.push` — 49 endpoints, up from 11.
+  `im.friend`, `im.group`, `im.media`, `im.push`, `im.moderation` — 51 endpoints, up from 11.
+- **`im.moderation.report`** — the other half of `im.friend.block`. App-store review requires both a
+  way to block an abusive user and a way to report objectionable content, so an app shipping one
+  without the other fails the same submission. The reporter is the socket and never an argument.
+- **`im.push.clicked`** — a notification tap, reported back for the delivery funnel. APNs and FCM do
+  not report delivery at all, so on most deployments a click is the only evidence a notification
+  arrived. It is best-effort: the promise never rejects and nothing is retried, because an
+  unhandled rejection escaping a tap handler is a worse bug than a missing funnel row.
 - `AbortSignal` cancellation on every typed call: `im.msg.send(req, { signal })`.
 - `ImError.isRetryable` and `ImError.requiresReauth`, computed from the code alone.
 - `ImSdk.contractVersion` / `ImSdk.version`, and `cv` on the handshake now defaults to this SDK's

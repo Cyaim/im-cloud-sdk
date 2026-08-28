@@ -162,7 +162,7 @@ peer will never send.
 
 ## The typed surface
 
-49 endpoints — contract tiers T0, T1 and T2 — grouped into namespaces named for the target prefix,
+51 endpoints — contract tiers T0, T1 and T2 — grouped into namespaces named for the target prefix,
 so a reader who knows the endpoint name knows the call without a lookup table. `msg.recall` is
 `im.msg.recall`; there are no synonyms.
 
@@ -175,7 +175,8 @@ so a reader who knows the endpoint name knows the call without a lookup table. `
 | `im.friend` | `list` `add` `handleRequest` `requestList` `delete` `block` `unblock` `blockList` |
 | `im.group` | `create` `info` `update` `dismiss` `memberList` `joined` `invite` `kick` `quit` `join` |
 | `im.media` | `uploadTicket` `downloadUrl` |
-| `im.push` | `register` `unregister` |
+| `im.push` | `register` `unregister` `clicked` |
+| `im.moderation` | `report` |
 
 Every method takes exactly one request object, named for the server DTO. That is not a style
 preference: with positional parameters, the server adding one optional field is a source-breaking
@@ -253,7 +254,7 @@ the tenant turns it back on.
 
 The server has had `push.register` since before this SDK called it, which meant offline
 notifications — the feature every mobile deal turns on — were unreachable from any official client.
-They are reachable now, and the wiring is four lines in *your* app.
+They are reachable now, and the wiring is a few lines in *your* app.
 
 **The host app owns token acquisition. The SDK owns token delivery.** Firebase hands the FCM token
 to a `FirebaseMessagingService`, not to a library, so this artifact does not pretend it can ask for
@@ -285,6 +286,24 @@ From there the SDK handles the rules:
   registered with no authenticated channel left to remove it, and the user would keep getting
   notifications for an account that has logged out. `close()` on its own never unregisters — a dead
   socket is precisely the state offline push exists to serve.
+
+**Report the tap, from the tap handler.** Neither FCM nor any OEM channel reports delivery back to
+us, so on most deployments a tap is the only evidence a notification ever arrived, and the server
+credits delivery from it. The tenant's push screen shows a sent → delivered → clicked funnel with no
+other source:
+
+```kotlin
+override fun onNewIntent(intent: Intent) {
+    val messageId = intent.getStringExtra("msgId") ?: return
+    lifecycleScope.launch { im.push.clicked(PushClickedRequest(messageId = messageId)) }
+}
+```
+
+Call it where the tap is handled, not where the message is rendered — the two are different moments
+and only the first one is a click. It does not throw and must not be retried: a failure is
+`2401 PushDeliveryNotFound` (the record aged out after seven days), which is nobody's fault, and a
+tap counted twice is worse than one counted never. Cancellation still propagates, so a cancelled
+scope stays cancelled.
 
 If a client dies without unregistering — force quit, crash, uninstall — only your backend can clean
 up: `DELETE /v1/users/{userId}/push-tokens/{deviceId}`. Ship that call, or ship the bug.

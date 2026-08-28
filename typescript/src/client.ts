@@ -1,4 +1,14 @@
-import { ConnApi, ConvApi, FriendApi, GroupApi, MediaApi, MsgApi, PushApi, UserApi } from './api.js';
+import {
+  ConnApi,
+  ConvApi,
+  FriendApi,
+  GroupApi,
+  MediaApi,
+  ModerationApi,
+  MsgApi,
+  PushApi,
+  UserApi,
+} from './api.js';
 import {
   ImConnection,
   type ConnectionOptions,
@@ -137,6 +147,7 @@ export class ImClient {
   readonly group: GroupApi;
   readonly media: MediaApi;
   readonly push: PushApi;
+  readonly moderation: ModerationApi;
 
   constructor(private readonly options: ImClientOptions) {
     this.connection = new ImConnection(options);
@@ -162,6 +173,7 @@ export class ImClient {
     this.group = new GroupApi(io);
     this.media = new MediaApi(io);
     this.push = new PushApi(io, () => this.connection.currentState === 'open');
+    this.moderation = new ModerationApi(io);
 
     this.connection.on(PushTarget.Message, (frame) => this.handleMessage(frame));
     this.connection.onState((state) => {

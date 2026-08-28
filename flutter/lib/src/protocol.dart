@@ -237,6 +237,11 @@ abstract final class ImErrorCode {
   static const int fileTooLarge = 1702;
   static const int storageQuotaExceeded = 1703;
 
+  /// No delivery record matches. The row is kept seven days, or the notification did not come from this platform at all. `clicked` swallows it: a click count one short is not an application's problem, and there is nothing a user could do about it.
+  ///
+  /// 没有匹配的投递记录：记录只保留七天，或者这条通知根本不是本平台发的。
+  static const int pushDeliveryNotFound = 2401;
+
   /// Whether trying the same call again could plausibly produce a different answer.
   ///
   /// Exactly four codes, and the same four in all five SDKs (`sdk/CONTRACT.md` §7.3). Everything

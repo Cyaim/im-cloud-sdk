@@ -225,6 +225,39 @@ namespace Cyaim.Im.Tests
             }
         }
 
+        /// <summary>
+        /// A click report that the server cannot attribute is dropped, not raised.
+        /// </summary>
+        /// <remarks>
+        /// <c>2401</c> means the delivery row aged out after seven days, or the notification came
+        /// from something other than this platform — neither is the caller's fault and neither is
+        /// actionable by them. The call site is a tap handler where nobody awaits the returned task,
+        /// so a throw here would surface as an unobserved exception in a player build instead of as
+        /// a bug anyone can act on. It is also not retried: the funnel is statistics, and a second
+        /// attempt would be attributed to the same missing row.
+        /// </remarks>
+        [Test]
+        public void A_click_the_server_cannot_attribute_is_dropped_rather_than_raised()
+        {
+            using (var harness = new ImTestHarness())
+            {
+                harness.Connect();
+
+                var clicked = harness.Client.Push.ClickedAsync(
+                    new ImPushClickedRequest { MessageId = "7318349286351294977" });
+                harness.Pump();
+
+                harness.Socket.Reply("push.clicked", JsonValue.Null, ImErrorCode.PushDeliveryNotFound);
+                harness.Pump();
+
+                Assert.That(clicked.IsCompleted, Is.True);
+                Assert.That(clicked.IsFaulted, Is.False,
+                    "nothing the player can see depends on this call, and the tap handler does not await it");
+                Assert.That(harness.Socket.CountOf("push.clicked"), Is.EqualTo(1),
+                    "statistics are never retried; the second attempt would miss the same row");
+            }
+        }
+
         private static void AnswerRegister(ImTestHarness harness)
         {
             harness.Socket.Reply("push.register", JsonValue.Null);

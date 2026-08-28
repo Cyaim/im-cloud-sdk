@@ -160,6 +160,86 @@ void main() {
       await client.dispose();
     });
 
+    test('push.clicked reports a tap and names nobody', () async {
+      // APNs and FCM do not report delivery at all, so on most deployments the click is the only
+      // evidence a notification arrived — and with neither field the server attributes this
+      // device's newest delivery, which is what a tap that opened the app without naming a message
+      // can only mean.
+      final FakeGateway gateway = FakeGateway();
+      final ImClient client = await connectedClient(gateway);
+
+      await client.push.clicked();
+
+      final FakeRequest request = gateway.requestsTo('push.clicked').single;
+      expect(request.body, isEmpty);
+      expect(request.body.containsKey('userId'), isFalse);
+      expect(request.body.containsKey('deviceId'), isFalse);
+
+      await client.dispose();
+    });
+
+    test('push.clicked carries the payload msgId as a string', () async {
+      // The notification payload's `msgId` is a snowflake past 2^53. It goes back the way it came,
+      // quoted: parsed into a Dart `int` it would be a different id on the web, and the row it
+      // narrowed to would be somebody else's or nobody's.
+      final FakeGateway gateway = FakeGateway();
+      final ImClient client = await connectedClient(gateway);
+
+      await client.push.clicked(const ImPushClickedRequest(messageId: '350598345233801216'));
+
+      final String frame = gateway.socket.sent.firstWhere(
+        (String payload) => payload.contains('push.clicked'),
+      );
+      expect(frame, contains('"messageId":"350598345233801216"'));
+
+      await client.dispose();
+    });
+
+    test('a failed push.clicked is logged, never thrown and never retried', () async {
+      // Best-effort statistics: nothing in the app depends on the answer, and the natural way to
+      // call it is to fire and not await — which in Dart turns a rejection into an unhandled
+      // asynchronous error for a notification that was tapped perfectly successfully.
+      final List<String> warnings = <String>[];
+      final FakeGateway gateway = FakeGateway();
+
+      // 2401 PushDeliveryNotFound: the row expired after seven days, or the notification did not
+      // come from this platform. Neither is the caller's fault.
+      gateway.on(
+        'push.clicked',
+        (FakeRequest _) => const FakeFail(ImErrorCode.pushDeliveryNotFound, message: 'no delivery record matches this device'),
+      );
+
+      final ImClient client = await connectedClient(gateway, logger: warnings.add);
+
+      await client.push.clicked(const ImPushClickedRequest(pushId: 'pu_expired'));
+
+      expect(warnings.single, contains('push.clicked'));
+      expect(gateway.callsTo('push.clicked'), 1,
+          reason: 'a click reported twice is worse than one '
+              'reported never');
+
+      await client.dispose();
+    });
+
+    test('a cancelled push.clicked throws, because cancellation is not a server outcome', () async {
+      // The one failure this call does not absorb, and the one most likely to be lost by accident:
+      // the rethrow is a single `on ImCancelledException { rethrow; }` sitting inside a catch whose
+      // whole purpose is to swallow, so the next person tidying that block removes it and no other
+      // test goes red. CONTRACT §7.5 rule 3 — the caller cancelled, and a future that completes
+      // normally tells them it finished instead.
+      final FakeGateway gateway = FakeGateway();
+      final ImClient client = await connectedClient(gateway);
+
+      final ImCancelToken token = ImCancelToken()..cancel();
+
+      await expectLater(
+        client.push.clicked(const ImPushClickedRequest(pushId: 'pu_1'), token),
+        throwsA(isA<ImCancelledException>()),
+      );
+
+      await client.dispose();
+    });
+
     test('every OEM channel the server routes has a named constant', () {
       // Empty falls back to the platform default, which is only reliable on iOS: Android fragments
       // across five OEM channels and the server cannot guess which one a token came from.

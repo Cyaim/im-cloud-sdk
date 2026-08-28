@@ -57,6 +57,16 @@ public actor ImClient {
 
     private let options: ImClientOptions
 
+    /// The application's warning sink, for the namespaces that need to report a swallowed failure.
+    ///
+    /// `options` is private and stays private — it carries credentials. This exposes the one member
+    /// a namespace has any business reaching, so `im.push.clicked` can tell the app that a tap went
+    /// uncounted through the same channel as every other warning instead of writing to stderr,
+    /// which on iOS is a place nobody reads.
+    /// options 保持私有（里面有凭据），这里只放开命名空间真正需要的那一个成员：
+    /// 让「有一次点击没记上」经由与其余告警相同的通道抵达应用，而不是写进 iOS 上没人看的 stderr。
+    var warningSink: (@Sendable (String) -> Void)? { options.warningHandler }
+
     // MARK: Cursors
 
     /// Highest `seq` handed to the application in **this process**, per conversation.
@@ -198,6 +208,9 @@ public actor ImClient {
 
     /// `group.*` — group lifecycle and membership.
     public nonisolated var group: ImGroupNamespace { ImGroupNamespace(connection: connection) }
+
+    /// `moderation.*` — reporting a user or a message. The other half of ``friend``'s blocklist.
+    public nonisolated var moderation: ImModerationNamespace { ImModerationNamespace(connection: connection) }
 
     // MARK: - Streams
 

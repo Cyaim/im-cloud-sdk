@@ -145,9 +145,47 @@ uninstall — leaves its token live. Only the tenant backend can clean that up, 
 `DELETE /v1/users/{userId}/push-tokens/{deviceId}`. An integrator who does not know this ships the
 bug.
 
+**Report the tap.** APNs and FCM report no delivery at all, so on most deployments the tap is the
+only evidence a notification ever arrived, and it is what the tenant's funnel — sent, delivered,
+clicked — is built from. Call it from the tap handler with whatever the payload carried:
+
+```csharp
+im.Push.ClickedAsync(new ImPushClickedRequest { MessageId = payload["msgId"] });
+```
+
+It never throws and is never retried, so there is nothing to await and nothing to handle. With no
+arguments at all the server credits this device's newest notification, which is the right answer for
+a tap that opened the game without naming a message.
+
+## Reporting a player
+
+App-store review treats blocking and reporting as two separate mandatory items for anything carrying
+user-generated content, so a game that ships `im.Friend.BlockAsync` alone fails the same submission
+twice.
+
+```csharp
+var receipt = await im.Moderation.ReportAsync(new ImSubmitReportRequest
+{
+    TargetUserId   = "bob",
+    ConversationId = conversationId,
+    MessageId      = message.MessageId.ToString(),
+    Category       = ImReportCategory.Harassment,
+    Note           = noteField.text,
+});
+```
+
+There is no field for who is reporting, and there must not be: the reporter is the socket, which is
+what makes a report unforgeable. Everything except the target is optional — with no `MessageId` the
+report is about the account rather than one message — and the receipt's `ReportId` is what to show in
+the confirmation, so a player writing to support has something to quote.
+
+Report the message even when it is gone locally. The target and the category are checked, the message is not: a report
+about a message that has already been recalled or deleted is the one a moderator most wants, and
+refusing it would turn the platform's own retention into a way to escape moderation.
+
 ## The typed surface
 
-107 flat methods on one object is not an API, it is a scroll bar. The surface is grouped into
+112 flat methods on one object is not an API, it is a scroll bar. The surface is grouped into
 namespaces named exactly for the endpoint prefix, and every method is named for the method half of
 its target — so if you know the endpoint you know the call, in this SDK and in the other four.
 
@@ -160,11 +198,12 @@ its target — so if you know the endpoint you know the call, in this SDK and in
 | `im.Friend` | `ListAsync` `AddAsync` `HandleRequestAsync` `RequestListAsync` `DeleteAsync` `BlockListAsync` `BlockAsync` `UnblockAsync` |
 | `im.Group` | `CreateAsync` `InfoAsync` `UpdateAsync` `DismissAsync` `MemberListAsync` `JoinedAsync` `InviteAsync` `KickAsync` `QuitAsync` `JoinAsync` |
 | `im.Media` | `UploadTicketAsync` `DownloadUrlAsync` |
-| `im.Push` | `SetToken` `RegisterAsync` `UnregisterAsync` |
+| `im.Push` | `SetToken` `RegisterAsync` `UnregisterAsync` `ClickedAsync` |
+| `im.Moderation` | `ReportAsync` |
 
-That is tiers **T0**, **T1** and **T2** of `sdk/CONTRACT.md` — 49 of the server's 107 endpoints: the
-session floor, everything a two-person chat app needs to launch, and the contacts, blocking, groups
-and presence that turn it into a messenger.
+That is tiers **T0**, **T1** and **T2** of `sdk/CONTRACT.md` — 51 of the server's 112 endpoints: the
+session floor, everything a two-person chat app needs to launch, and the contacts, blocking, groups,
+presence and reporting that turn it into a messenger a store will accept.
 
 Every method takes exactly one request object, because with positional parameters the server adding
 one optional field is a source-breaking change in five languages at once. Convenience overloads

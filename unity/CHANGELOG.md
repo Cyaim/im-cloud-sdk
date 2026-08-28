@@ -6,6 +6,25 @@ and is negotiated with `v=1` in the handshake. The version number is in lockstep
 Cyaim client SDKs, so "we're on 0.9.0" answers "which endpoints do you have" without anyone having
 to ask which platform.
 
+## [Unreleased]
+
+### Added
+
+- **`im.Moderation.ReportAsync`** — `moderation.report`, the half of app-store review that
+  `im.Friend.BlockAsync` does not cover. Reviewers treat blocking an abusive user and reporting
+  objectionable content as two separate mandatory items, so a game that shipped only the first
+  failed the same submission twice. There is no member for the reporter and there must not be: the
+  reporter is the socket, which is what makes a report unforgeable. The answer is a receipt rather
+  than the stored row — who handled it and what they decided belong to the tenant's console.
+- **`im.Push.ClickedAsync`** — `push.clicked`, the tap that closes the delivery funnel. APNs and
+  FCM report no delivery at all, so on most deployments the tap is the only evidence a notification
+  ever arrived. It is best-effort statistics: a failure is logged rather than raised and is never
+  retried, because the call site is a tap handler where nothing awaits the returned task, and
+  throwing there would turn a missing metric into an unobserved exception in a player build.
+- **`ImErrorCode.PushDeliveryNotFound`** (`2401`) — the delivery row aged out after seven days, or
+  the notification did not come from this platform. Named so it can be recognised in a log rather
+  than looked up.
+
 ## [0.9.0] — 2026-08-22
 
 The first release intended for publication. It is `0.9.0` and not `1.0.0` on purpose: `1.0.0` is

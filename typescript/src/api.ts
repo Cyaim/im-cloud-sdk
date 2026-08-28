@@ -51,10 +51,12 @@ import type {
   RecallMessageRequest,
   ReceiptRequest,
   RegisterPushTokenRequest,
+  ReportReceipt,
   ResumeRequest,
   ResumeResult,
   SendMessageRequest,
   SendMessageResult,
+  SubmitReportRequest,
   SubscribePresenceRequest,
   SyncMessagesRequest,
   SyncMessagesResult,
@@ -466,15 +468,33 @@ export class PushApi {
    * attributes the newest delivery to this device, which is the right answer for a tap that opened
    * the app without naming a message.
    *
-   * Answers `2401 PushDeliveryNotFound` when nothing matches — the row expired (seven days) or the
-   * notification did not come from this platform. Neither is the caller's fault and neither is
-   * worth surfacing to a user; log it and move on.
+   * **The returned promise never rejects.** The server answers `2401 PushDeliveryNotFound` when
+   * nothing matches — the row expired (seven days) or the notification did not come from this
+   * platform — and neither is the caller's fault nor worth a line of error handling in a tap
+   * handler, so the SDK logs it and resolves. Nothing is retried.
    *
    * 上报一次通知点击。**调用点是点击处理器，不是消息渲染处。**
    * APNs 与 FCM 根本不回报送达，所以在多数部署上，点击是「这条通知确实到过」的唯一证据。
    */
   async clicked(request?: PushClickedRequest, options?: ImRequestOptions): Promise<void> {
-    await this.io.request<void>('push.clicked', request ?? {}, options);
+    try {
+      await this.io.request<void>('push.clicked', request ?? {}, options);
+    } catch (error) {
+      // Cancellation is the caller's own doing and stays visible (CONTRACT §7.5). Everything else
+      // does not.
+      if (error instanceof Error && error.name === 'AbortError') throw error;
+
+      // **This call never rejects, and that is the endpoint rather than a shortcut.** It is a
+      // statistic reported from a tap handler: there is nothing the application can do about a
+      // failure, nothing the user should be told, and an unhandled rejection escaping a tap
+      // handler is a worse bug than the missing funnel row. It is not retried either — a click
+      // that missed is one row on a dashboard, and the SDK never re-sends a business call anyway
+      // (CONTRACT §7.3). A debug line, because the row expiring after seven days is routine and a
+      // warning that fires routinely is a warning that gets filtered out.
+      // 这一条永不 reject：它是从点击处理器上报的统计，失败时应用无事可做、用户无需知情，
+      // 而从点击处理器里逃出去的未捕获 rejection 比少一行漏斗数据糟得多。也不重试。
+      console.debug('[im] push.clicked was not recorded:', error);
+    }
   }
 
   /**
@@ -544,5 +564,36 @@ export class PushApi {
       this.registered = false;
       return false;
     }
+  }
+}
+
+/**
+ * `moderation.*` — what an end user can do about content they should not have seen.
+ *
+ * The other half of what `friend.block` is here for: app-store review requires both a way to block
+ * an abusive user and a way to report objectionable content, so an app that ships with one and not
+ * the other fails the same submission.
+ *
+ * 与 friend.block 是同一件事的两半：应用商店审核要求既能拉黑也能举报，缺一条就过不了同一次提审。
+ */
+export class ModerationApi {
+  constructor(private readonly io: ImInvoker) {}
+
+  /**
+   * Reports another user, optionally naming a message.
+   *
+   * **The reporter is the connection.** There is no argument for it, on purpose — see
+   * {@link SubmitReportRequest}. Pass `messageId` to report one message and omit it to report the
+   * account.
+   *
+   * The target and the category are checked; the message is not. A report about a message that
+   * has already been deleted is exactly the report a moderator most wants, and refusing it would
+   * turn the platform's own retention into a way to escape moderation. So a reporting UI can file
+   * from a message that is no longer on screen.
+   *
+   * 除了「不能举报自己」和分类合法之外不做校验：关于已被删除的消息的举报恰恰是审核员最想要的那条。
+   */
+  report(request: SubmitReportRequest, options?: ImRequestOptions): Promise<ReportReceipt> {
+    return this.io.request<ReportReceipt>('moderation.report', request, options);
   }
 }

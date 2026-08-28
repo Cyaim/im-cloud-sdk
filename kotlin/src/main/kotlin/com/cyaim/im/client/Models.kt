@@ -388,6 +388,26 @@ public data class MediaUploadTicket(
     public val expiresAt: Long = 0,
 )
 
+// --------------------------------------------------------------------------- moderation
+
+/**
+ * What `moderation.report` gives back. Deliberately two fields.
+ *
+ * Not the report row: a reporter has no business reading back the moderation state of their own
+ * report, and the row carries fields (`handledBy`, `resolution`) that belong to the moderator. Show
+ * the user that it was filed, keep [reportId] for a support ticket, and do not build a screen that
+ * promises to tell them what happened next.
+ *
+ * 回执而不是那一行：举报人没有理由读回自己举报的审核状态，那一行上还带着内部字段。
+ */
+@Serializable
+public data class ReportReceipt(
+    /** `rp_…`. The id a support ticket quotes. */
+    public val reportId: String = "",
+    /** Unix ms, server clock. */
+    public val createdAt: Long = 0,
+)
+
 // ------------------------------------------------------------------------------- sending
 
 /**

@@ -30,10 +30,10 @@
     "controllers": 13,
     "implemented": {
       "typescript": 51,
-      "kotlin": 50,
-      "swift": 50,
-      "flutter": 50,
-      "unity": 50
+      "kotlin": 51,
+      "swift": 51,
+      "flutter": 51,
+      "unity": 51
     }
   },
   "tiers": {
@@ -94,11 +94,11 @@
       "rule": "What turns a 1:1 chat into a messenger: contacts, blocking, group create/join/manage, presence, and the message operations users expect once more than two people can see a message.",
       "endpoints": 30,
       "implemented": {
-        "typescript": 29,
-        "kotlin": 28,
-        "swift": 28,
-        "flutter": 28,
-        "unity": 28
+        "typescript": 30,
+        "kotlin": 30,
+        "swift": 30,
+        "flutter": 30,
+        "unity": 30
       },
       "targets": [
         "msg.receipt",
@@ -139,11 +139,11 @@
       "rule": "Not needed to ship, needed to win. These are the rows a buyer ticks off against 融云 / 环信 / 网易云信 feature matrices. A tenant can live without each one individually; a buyer comparing tables cannot.",
       "endpoints": 20,
       "implemented": {
-        "typescript": 1,
-        "kotlin": 1,
-        "swift": 1,
-        "flutter": 1,
-        "unity": 1
+        "typescript": 0,
+        "kotlin": 0,
+        "swift": 0,
+        "flutter": 0,
+        "unity": 0
       },
       "targets": [
         "msg.burn",
@@ -650,7 +650,7 @@
       "implementedIn": {
         "typescript": false,
         "kotlin": false,
-        "swift": true,
+        "swift": false,
         "flutter": false,
         "unity": false
       }
@@ -700,10 +700,10 @@
       "note": "SPEC-05 §6.2 / SPEC-02 §2.6.3: report a notification tap with { pushId?, messageId? } (messageId is the payload's msgId). Best-effort statistics; identity comes from the socket, never retry on failure.",
       "implementedIn": {
         "typescript": true,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1132,17 +1132,17 @@
       "target": "moderation.report",
       "controller": "ModerationController",
       "method": "Report",
-      "source": "src/IM.Server/WsControllers/ModerationController.cs:57",
+      "source": "src/IM.Server/WsControllers/ModerationController.cs:70",
       "requestType": "SubmitReportRequest",
       "responseType": "ReportReceipt",
       "tier": "T2",
       "note": "The other half of what friend.block is here for: app-store review requires both a way to block an abusive user and a way to report objectionable content. An SDK that has completed T2 without this still cannot pass review, which is the same argument that put blocking in T2.",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1787,8 +1787,8 @@
       "responseType": null,
       "tier": "T3",
       "implementedIn": {
-        "typescript": true,
-        "kotlin": true,
+        "typescript": false,
+        "kotlin": false,
         "swift": false,
         "flutter": false,
         "unity": false
@@ -1934,8 +1934,8 @@
         "typescript": false,
         "kotlin": false,
         "swift": false,
-        "flutter": true,
-        "unity": true
+        "flutter": false,
+        "unity": false
       }
     },
     {

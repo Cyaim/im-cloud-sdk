@@ -767,6 +767,39 @@ namespace Cyaim.Im
         }
     }
 
+    /// <summary>Body of <c>push.clicked</c>. Both members optional; identity comes from the socket.</summary>
+    /// <remarks>
+    /// <para>
+    /// Send whatever the notification payload handed you and nothing more. The server finds the
+    /// delivery row from this connection: a <see cref="PushId"/> is believed only when the row it
+    /// names belongs to this user on this device, and with neither member the newest delivery to
+    /// this device is the one a tap can only have meant. That is what stops a client marking
+    /// somebody else's notification clicked, or probing which <c>pu_…</c> ids exist.
+    /// </para>
+    /// <para>
+    /// <see cref="MessageId"/> is a string for the reason every message id in this SDK is one: the
+    /// ids are snowflakes far past 2^53, and a number loses its low digits somewhere along a route
+    /// that includes browsers.
+    /// messageId 是字符串：雪花 id 早已越过 2^53，走数字会在半路丢掉低位。
+    /// </para>
+    /// </remarks>
+    public sealed class ImPushClickedRequest : IImRequest
+    {
+        /// <summary>The delivery's <c>pu_…</c> id, when the payload carried one.</summary>
+        public string PushId { get; set; }
+
+        /// <summary>The payload's <c>msgId</c>, when the tap gave you one.</summary>
+        public string MessageId { get; set; }
+
+        /// <inheritdoc/>
+        public JsonValue ToJson()
+        {
+            return JsonValue.NewObject()
+                .Set("pushId", PushId)
+                .Set("messageId", MessageId);
+        }
+    }
+
     // ---------------------------------------------------------------------- friend
 
     /// <summary>Body of <c>friend.list</c>, <c>friend.blockList</c> and <c>group.joined</c>.</summary>
@@ -1180,6 +1213,91 @@ namespace Cyaim.Im
             return JsonValue.NewObject()
                 .Set("groupId", GroupId)
                 .Set("reason", Reason);
+        }
+    }
+
+    // ------------------------------------------------------------------ moderation
+
+    /// <summary>
+    /// The categories <c>moderation.report</c> accepts.
+    /// </summary>
+    /// <remarks>
+    /// An unrecognised value is refused rather than quietly filed under <see cref="Other"/>: a
+    /// category the moderation queue cannot group by is a report nobody reads. Leaving the member
+    /// null is the way to say "I do not know" — the server files that as <see cref="Other"/>
+    /// itself.
+    /// </remarks>
+    public static class ImReportCategory
+    {
+        /// <summary>Unsolicited advertising, bulk sends, link spam.</summary>
+        public const string Spam = "spam";
+
+        /// <summary>Targeted abuse of a person.</summary>
+        public const string Harassment = "harassment";
+
+        /// <summary>Scams, impersonation, phishing.</summary>
+        public const string Fraud = "fraud";
+
+        /// <summary>Sexual content.</summary>
+        public const string Pornography = "pornography";
+
+        /// <summary>Violence, gore, threats of harm.</summary>
+        public const string Violence = "violence";
+
+        /// <summary>Everything else, and the default when none is named.</summary>
+        public const string Other = "other";
+    }
+
+    /// <summary>Body of <c>moderation.report</c>.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>There is no reporter member and there must not be.</b> The reporter is the connection —
+    /// the socket is the only surface on which the user id is a fact rather than a parameter. A
+    /// member for it would let one account file in another's name, which is both a way to get a
+    /// stranger banned and a way to poison the count a moderator decides on.
+    /// 举报人来自连接，请求体里没有这个字段：有了它，一个账号就能以别人的名义举报，
+    /// 既能让陌生人被封，也能污染审核员据以决定的那个计数。
+    /// </para>
+    /// <para>
+    /// <see cref="MessageId"/> is optional, and naming none reports the account rather than one
+    /// message. The message itself is not checked — a report about one that has
+    /// already been deleted is exactly the report a moderator most wants, so do not withhold one
+    /// because the message is gone from the local store.
+    /// </para>
+    /// </remarks>
+    public sealed class ImSubmitReportRequest : IImRequest
+    {
+        /// <summary>Who is being reported. Required, and reporting yourself is refused.</summary>
+        public string TargetUserId { get; set; }
+
+        /// <summary>Where it happened, when the report came from a conversation.</summary>
+        public string ConversationId { get; set; }
+
+        /// <summary>Which message, or null to report the account rather than one message.</summary>
+        public string MessageId { get; set; }
+
+        /// <summary>One of <see cref="ImReportCategory"/>. Null files it as <c>other</c>.</summary>
+        public string Category { get; set; }
+
+        /// <summary>What the player typed. Usually the most useful thing in the row.</summary>
+        public string Note { get; set; }
+
+        /// <inheritdoc/>
+        public JsonValue ToJson()
+        {
+            return JsonValue.NewObject()
+                .Set("targetUserId", TargetUserId)
+                .Set("conversationId", ConversationId)
+
+                // Blank means absent, not "". The server reads this member as a number written as a
+                // string, so an empty one fails to parse there and answers 1000 InternalError on a
+                // field nobody filled in — and an empty box is how a report screen spells "no
+                // particular message".
+                // 空串按缺省处理：服务端把它当「写成字符串的数字」解析，"" 在那边解析失败，
+                // 会让一个本就没填的可选字段回一个 1000。
+                .Set("messageId", string.IsNullOrEmpty(MessageId) ? null : MessageId)
+                .Set("category", Category)
+                .Set("note", Note);
         }
     }
 

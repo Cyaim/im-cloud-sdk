@@ -12,6 +12,7 @@ export 'src/api.dart'
         ImFriendApi,
         ImGroupApi,
         ImMediaApi,
+        ImModerationApi,
         ImMsgApi,
         ImPushApi,
         ImRequester,

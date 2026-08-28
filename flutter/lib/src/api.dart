@@ -449,6 +449,47 @@ final class ImPushApi extends _Namespace {
     _registered = false;
   }
 
+  /// `push.clicked`. Reports that the user tapped one of this device's notifications.
+  ///
+  /// **The call site is the tap handler, not the message render.** What it feeds is the delivery
+  /// funnel on the tenant's push screen — sent → delivered → clicked. APNs and FCM do not report
+  /// delivery at all, so on most deployments a click is the only evidence a notification ever
+  /// arrived, and the server credits delivery from it.
+  ///
+  /// **This is the one call in the package that swallows its own failure**, and the only one that
+  /// should: it is best-effort statistics, nothing in the app depends on the answer, and the
+  /// natural way to call it is to fire and not await — which in Dart turns any rejection into an
+  /// unhandled asynchronous error, i.e. a red screen in debug for a notification that was tapped
+  /// successfully. Failures are logged through the client's logger instead. Do not retry it either;
+  /// a click reported twice is worse than one reported never.
+  ///
+  /// The usual failure is `2401 PushDeliveryNotFound` — the delivery row expired after seven days,
+  /// or the notification did not come from this platform. Neither is the caller's fault and neither
+  /// is worth a word to the user.
+  ///
+  /// **Cancellation is the exception.** An [ImCancelledException] is rethrown rather than
+  /// logged: it means the caller decided to stop, and the one thing a fire-and-forget call
+  /// must not do is report success to somebody who asked it to quit.
+  ///
+  /// 调用点是点击处理器，不是消息渲染处：APNs 与 FCM 根本不回报送达，
+  /// 多数部署上"点击"是这条通知确实到过的唯一证据。失败只记日志——
+  /// 这个调用天然不会被 await，而 Dart 里未被 await 的失败 Future 是一次未捕获异步异常。
+  Future<void> clicked([ImPushClickedRequest? request, ImCancelToken? cancel]) async {
+    try {
+      await sendUnit('push.clicked', (request ?? const ImPushClickedRequest()).toJson(), cancel);
+    } on ImCancelledException {
+      // Cancellation is not a server outcome (CONTRACT §7.5 rule 3) and it is not this call's to
+      // absorb. "The caller cancelled it, so there is nobody left to tell" reads true and is not:
+      // the caller is precisely who is still listening — a cancelled token means somebody upstream
+      // decided to stop, and a future that completes normally tells them it finished instead.
+      // 取消不是服务端结果，也不该由这个调用吞掉：「调用方取消了，已经没人听了」听着成立，实则相反——
+      // 还在听的正是调用方。取消意味着上游决定停下，而一个正常完成的 Future 会告诉他「做完了」。
+      rethrow;
+    } catch (error) {
+      _logger('push.clicked was not recorded: $error. The delivery funnel undercounts by one.');
+    }
+  }
+
   /// Caches the vendor token and applies §6.2.
   ///
   /// Registers immediately if the socket is open, otherwise on the next successful connect. Safe
@@ -515,4 +556,29 @@ final class ImPushApi extends _Namespace {
   /// @nodoc
   @Deprecated('Renamed to registerOnConnect, matching the other four SDKs. Removed in 2.0.')
   Future<void> registerCachedToken() => registerOnConnect();
+}
+
+// ---------------------------------------------------------------------------- moderation
+
+/// `moderation.*` — what an end user can do about content, as opposed to what a moderator does
+/// about it.
+///
+/// The other half of what [ImFriendApi.block] is here for: app-store review requires both a way to
+/// block an abusive user and a way to report objectionable content, and an app that ships only the
+/// first still does not pass. Put the two behind the same long-press menu.
+///
+/// 与拉黑成对：应用商店审核要求「屏蔽」和「举报」两者都有，只做前者一样过不了。
+final class ImModerationApi extends _Namespace {
+  const ImModerationApi(super.requester);
+
+  /// `moderation.report`. Reports another user, optionally naming a message.
+  ///
+  /// **The reporter is the connection**, so there is nothing to pass but who and what is being
+  /// reported — see [ImSubmitReportRequest]. Reporting yourself is refused with
+  /// [ImErrorCode.invalidArgument], and so is a category the server does not file.
+  ///
+  /// The receipt is not the stored report: [ImReportReceipt] is an id and a timestamp, because the
+  /// reporter has no business reading back what a moderator decided.
+  Future<ImReportReceipt> report(ImSubmitReportRequest request, [ImCancelToken? cancel]) =>
+      decodeOne('moderation.report', request.toJson(), cancel, ImReportReceipt.fromJson);
 }

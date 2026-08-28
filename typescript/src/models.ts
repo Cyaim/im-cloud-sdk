@@ -12,12 +12,21 @@
  * is a stricter and more useful test than the C# nullability the inventory records: a C# `bool` or
  * `long` is non-nullable and still perfectly absent on the wire.
  *
- * **`long` is `number`, and for `messageId` that is currently WRONG — see below.** Never
- * `bigint`: `JSON.parse` cannot produce one, so a `bigint` field would be a lie the first time a
- * frame was decoded. `number` is exact to 2^53, and every seq and unix-ms timestamp this
- * platform issues does stay well inside it.
+ * **`long` is `number`, except for message ids, which are `string` — and that exception is the
+ * whole of what follows.** Never `bigint`: `JSON.parse` cannot produce one, so a `bigint` field
+ * would be a lie the first time a frame was decoded. `number` is exact to 2^53, and every seq and
+ * unix-ms timestamp this platform issues does stay well inside it.
  *
- * **`messageId` does not.** Measured against a live server on 2026-08-25: the server issued
+ * **✅ Fixed on 2026-08-28; the account below is kept because the reasoning is still load-bearing.**
+ * Every message-id field in this file is `string`, the server writes them as strings on both
+ * surfaces, and a guardrail (`MessageIdWireFormatTests`) fails the server build if any of them ever
+ * serialises as a number again. Nothing here needs working around any more. What follows is *why*
+ * the type is `string` — read it before you decide it looks over-cautious and change it back.
+ * 2026-08-28 已修复，下文保留是因为它的推理仍然有用：本文件里每一个消息 id 字段都是 string，
+ * 服务端两个面都按字符串下发，并且有一条护栏在它们哪天又变回数字时让服务端构建变红。
+ * 已经没有需要绕开的东西了；下面讲的是**为什么**是 string——在你觉得它多余、想改回去之前先读它。
+ *
+ * **`messageId` does not fit in a double.** Measured against a live server on 2026-08-25: the server issued
  * `350598345233801216`, about 2^58 — thirty-eight times past the safe limit. Calling
  * `msg.recall` with the value a JS client sends back returns 1400 `message not found`; the
  * same call with the exact id succeeds.
@@ -49,15 +58,16 @@
  * 不是"将来会溢出"：epoch 是 2024-01-01、时间戳左移 22 位，安全窗口只有 24.86 天，
  * **2024-01-25 之后铸出的每一个消息 id 都不安全**。受影响的是全部消息 id 字段
  * （含 quoteMessageId / threadRootId / messageIds），seq 一族是会话内计数器、安全。
- * Every call that hands a messageId back is affected: recall, edit, delete, read receipts,
- * quoted replies, and translation's `messageIds`. `asLong()` does not help — it returns a
- * number input unchanged, and by then the precision is already gone.
+ * Every call that hands a messageId back was affected: recall, edit, delete, read receipts,
+ * quoted replies, and translation's `messageIds`. Reading the raw text on receive was never a
+ * sufficient fix on its own — the value has to leave as a string too, which is what makes the
+ * field type, and not a parser tweak, the actual repair.
  *
  * The sentence that used to stand here said all three id kinds stayed well inside 2^53. It was
  * wrong about messageId, and it is left retracted rather than deleted because anyone who read
- * it and sized a field on it needs to find it again. `groupId` is sent as a string and is fine;
- * that inconsistency inside one protocol is the actual bug. Fixing it changes the wire format
- * for five SDKs, so it is a product decision, not a patch — tracked as B-9.
+ * it and sized a field on it needs to find it again. The inconsistency it describes — `groupId` a
+ * string, `messageId` a number, inside one protocol — was tracked as B-9 and is closed: message ids
+ * are strings everywhere now, on all five SDKs and on both server surfaces.
  * 上面那句「messageId 稳稳在 2^53 以内」是**假的**：实测约 2^58，超出 38 倍，
  * JSON.parse 会静默取整，用取整后的值撤回会得到 1400，用精确值则成功。
  * groupId 是字符串、没有问题——**同一份协议里两种做法**，这才是真正的缺陷。
@@ -646,4 +656,68 @@ export interface PushClickedRequest {
   pushId?: string;
   /** The payload's `msgId`, when the tap gave you one. */
   messageId?: string;
+}
+
+// ---------------------------------------------------------------------------- moderation
+
+/**
+ * Why a report was filed. The server's vocabulary, not a hint: an unrecognised value is **rejected**
+ * (`1001`, "that is not a report category") rather than folded into `other`, which would quietly
+ * change what the reporter said. Unlike {@link PushProvider}, the refusal does not name the legal
+ * values — take them from this union, not from the error message.
+ *
+ * Left open the way {@link PushProvider} is. A category the platform adds should be reachable the
+ * day it ships, and a closed union would turn that into a compile error on the customer's machine
+ * — which is a decision about their release schedule, not ours.
+ */
+export type ReportCategory =
+  | 'spam'
+  | 'harassment'
+  | 'fraud'
+  | 'pornography'
+  | 'violence'
+  | 'other'
+  | (string & {});
+
+/**
+ * An end user reporting another.
+ *
+ * **There is no field for the reporter and there must not be.** It comes from the socket, which is
+ * the only surface where the user id is a fact rather than a parameter; a field would let one
+ * account file in another's name, which is both a way to get somebody banned and a way to poison
+ * the count a moderator decides on.
+ *
+ * 举报人来自连接，请求体里没有这个字段：有了它，一个账号就能以另一个账号的名义举报。
+ */
+export interface SubmitReportRequest {
+  /** Who is being reported. Reporting yourself is refused `1001`. */
+  targetUserId: string;
+  /** Where it happened. Optional: a report can be about an account rather than a place. */
+  conversationId?: string;
+  /**
+   * The message being reported. **Omit it to report the account rather than one message.**
+   *
+   * A string, like every message id in this SDK and for the same reason — snowflake ids run past
+   * JavaScript's safe-integer range, so a number cannot survive the round trip. The note at the top
+   * of this file has the measurement.
+   */
+  messageId?: string;
+  /** Defaults to `other` server-side, so a reporting UI without a picker still files something. */
+  category?: ReportCategory;
+  /** What the reporter typed. Usually the most useful field on the row a moderator ends up reading. */
+  note?: string;
+}
+
+/**
+ * A receipt, not the row.
+ *
+ * The reporter has no business reading back the moderation state of their own report, and the row
+ * carries fields — who handled it, what they did — that are internal. Two fields is the whole
+ * answer: enough to say "filed at 14:03, reference rp_…" in the UI and in a support conversation.
+ */
+export interface ReportReceipt {
+  /** `rp_…`. Quote it when a customer asks what happened to a specific report. */
+  reportId: string;
+  /** Server clock, unix ms. */
+  createdAt: number;
 }

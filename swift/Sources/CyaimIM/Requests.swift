@@ -543,6 +543,30 @@ public enum ImPushProvider {
     public static let honor = "honor"
 }
 
+/// `push.clicked` — the tap on a notification.
+///
+/// Both fields are optional and neither carries identity: the delivery row is located from the
+/// socket. A `pushId` is believed only when it names a row belonging to this user on this device,
+/// and with neither field the server takes this device's newest delivery — which is the only thing
+/// a tap that opened the app without naming a message can mean. So a client cannot mark somebody
+/// else's notification clicked, nor probe which `pushId` values exist.
+public struct PushClickedRequest: Encodable, Sendable, Hashable {
+    /// The delivery's `pu_…` id, when the notification payload carried one.
+    public var pushId: String?
+
+    /// The payload's `msgId`, when the tap gave you one.
+    ///
+    /// A string, because that is how the id arrives in the payload and how every message id travels
+    /// on this wire. Do not parse it into an integer to hand it back — the round trip is what loses
+    /// digits on a snowflake.
+    public var messageId: String?
+
+    public init(pushId: String? = nil, messageId: String? = nil) {
+        self.pushId = pushId
+        self.messageId = messageId
+    }
+}
+
 // MARK: - friend
 
 /// `friend.list`, `friend.blockList`, `group.joined`.
@@ -742,5 +766,122 @@ public struct JoinGroupRequest: Encodable, Sendable, Hashable {
     public init(groupId: String, reason: String? = nil) {
         self.groupId = groupId
         self.reason = reason
+    }
+}
+
+// MARK: - moderation
+
+/// `moderation.report` — one end user reporting another.
+///
+/// **There is no reporter field and there must not be.** The reporter is the socket: one would let
+/// an account file in another's name, which is both a way to get somebody banned and a way to
+/// poison the count a moderator decides on. `ModerationController` reads the reporter off the
+/// connection, which is the one surface where the identity is a fact rather than a parameter.
+///
+/// 举报人就是这条连接，没有 reporterId 字段：有了它，一个账号就能以别人的名义举报——
+/// 既是把人举报到封禁的路子，也会污染审核员据以决策的那个计数。
+public struct SubmitReportRequest: Encodable, Sendable, Hashable {
+    /// Who is being reported. Reporting yourself is `1001`.
+    public var targetUserId: String
+
+    /// Where it happened, when the report comes from inside a conversation.
+    public var conversationId: String?
+
+    /// The message being reported. `0` — the default — reports the account rather than one message.
+    ///
+    /// A report about a message that has already been deleted is accepted on purpose: nothing here
+    /// about the message itself is validated, because that is the report a moderator most wants, and
+    /// refusing it would turn the platform's own retention into a way to escape moderation.
+    public var messageId: Int64
+
+    /// One of ``ImReportCategory``. `nil` files it under `other`; a value the server does not know
+    /// is **rejected** with `1001` rather than quietly filed under `other`.
+    public var category: String?
+
+    /// What the reporter typed. Usually the most useful field on the row a moderator opens.
+    public var note: String?
+
+    public init(
+        targetUserId: String,
+        conversationId: String? = nil,
+        messageId: Int64 = 0,
+        category: String? = nil,
+        note: String? = nil
+    ) {
+        self.targetUserId = targetUserId
+        self.conversationId = conversationId
+        self.messageId = messageId
+        self.category = category
+        self.note = note
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case targetUserId, conversationId, messageId, category, note
+    }
+
+    /// Written by hand for one field: `messageId` leaves as a **quoted** string.
+    ///
+    /// The property stays `Int64` because that is what a message id is on this platform and what
+    /// ``RecallMessageRequest`` and ``ReactRequest`` already take; what has to be a string is the
+    /// JSON. Message ids are snowflakes past 2^53 by a factor of 38, `SubmitReportRequest.MessageId`
+    /// carries `WriteAsString | AllowReadingFromString` on the server for exactly that reason, and a
+    /// quoted id is therefore the shape both ends already agree on.
+    ///
+    /// The `msg.*` requests in this file still write theirs as JSON numbers, which is a defect and
+    /// not a convention worth copying: the server's own DTOs for `msg.recall`, `msg.edit`,
+    /// `msg.delete`, `msg.forward`, `msg.react` and `msg.receipt` take `string` now, and a JSON
+    /// number cannot be read into one at all. Repairing those changes their public field types and
+    /// belongs to one pass across all five SDKs — it is not a reason to write a new endpoint the
+    /// broken way.
+    ///
+    /// The optionals keep `encodeIfPresent`, which is what the synthesised encoder would have done
+    /// and what the gateway's "nulls are omitted when writing" policy expects.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(targetUserId, forKey: .targetUserId)
+        try container.encodeIfPresent(conversationId, forKey: .conversationId)
+        try container.encode(String(messageId), forKey: .messageId)
+        try container.encodeIfPresent(category, forKey: .category)
+        try container.encodeIfPresent(note, forKey: .note)
+    }
+}
+
+/// The categories a report can be filed under.
+///
+/// Plain strings rather than an enum, for the same reason as ``ImPushProvider``: the server owns
+/// the list and rejects anything not on it, so the authoritative check is server-side and a closed
+/// client-side enum would only stop an integrator from using a category added after their SDK
+/// build. Show these six in the picker; send exactly what the user chose.
+public enum ImReportCategory {
+    public static let spam = "spam"
+    public static let harassment = "harassment"
+    public static let fraud = "fraud"
+    public static let pornography = "pornography"
+    public static let violence = "violence"
+    public static let other = "other"
+}
+
+/// Reply to `moderation.report`. Deliberately two fields.
+///
+/// A receipt, not the row: the reporter has no business reading back the moderation state of their
+/// own report, and the row carries `handledBy` and `resolution`, which are the tenant's internals.
+/// So there is nothing here to poll — show the user that it was filed and stop.
+public struct ReportReceipt: Decodable, Sendable, Hashable, Identifiable {
+    /// `rp_…`. Worth putting in a support ticket: it is what finds the row.
+    public let reportId: String
+
+    /// Server clock, unix ms.
+    public let createdAt: Int64
+
+    public var id: String { reportId }
+
+    enum CodingKeys: String, CodingKey {
+        case reportId, createdAt
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        reportId = c.imString(.reportId) ?? ""
+        createdAt = c.imInt64(.createdAt) ?? 0
     }
 }

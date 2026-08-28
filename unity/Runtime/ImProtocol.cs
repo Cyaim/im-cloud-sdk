@@ -151,6 +151,18 @@ namespace Cyaim.Im
         public const int StorageQuotaExceeded = 1703;
 
         /// <summary>
+        /// No delivery row matches this device, so a reported tap could not be attributed.
+        /// </summary>
+        /// <remarks>
+        /// The row aged out — seven days — or the notification did not come from this platform at
+        /// all, which on a handset carrying two games is the ordinary case rather than the odd one.
+        /// Neither is the caller's fault, which is why
+        /// <see cref="ImPushApi.ClickedAsync(ImPushClickedRequest,System.Threading.CancellationToken)"/>
+        /// logs it rather than raising it.
+        /// </remarks>
+        public const int PushDeliveryNotFound = 2401;
+
+        /// <summary>
         /// True for the four codes where the same call, sent again later, can succeed.
         /// </summary>
         /// <remarks>

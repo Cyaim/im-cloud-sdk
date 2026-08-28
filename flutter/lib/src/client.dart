@@ -54,6 +54,7 @@ class ImClient {
       isConnected: () => _connection.state == ImConnectionState.open,
       logger: options.logger,
     );
+    moderation = ImModerationApi(_connection);
 
     _cursors.onSaveError = (Object error) => _raise(ImException(
           ImErrorCode.serviceUnavailable,
@@ -105,8 +106,13 @@ class ImClient {
   /// `media.*` — upload tickets and download URLs.
   late final ImMediaApi media;
 
-  /// `push.*` — offline notification registration. See [ImPushApi] for the token lifecycle.
+  /// `push.*` — offline notification registration and the tap that closes the funnel. See
+  /// [ImPushApi] for the token lifecycle.
   late final ImPushApi push;
+
+  /// `moderation.*` — reporting a user or a message. The other half of [friend]'s blocklist, and
+  /// app-store review wants both.
+  late final ImModerationApi moderation;
 
   /// One in-flight worker per conversation. This is what guarantees the ordering rule: for a given
   /// conversation, messages reach the application in seq order and never concurrently, a live

@@ -60,9 +60,9 @@ tiers T0 and T1 complete on **all five** SDKs. Nothing before this was ever publ
   (`DELETE /v1/users/{userId}/push-tokens/{deviceId}`). The server side shipped some time ago and no
   SDK called it, so offline notifications were unreachable from any official client.
 
-- **Typed coverage of contract tiers T0, T1 and T2** — 49 endpoints, grouped into namespaces named
+- **Typed coverage of contract tiers T0, T1 and T2** — 51 endpoints, grouped into namespaces named
   for the target prefix: `im.conn`, `im.msg`, `im.conv`, `im.user`, `im.friend`, `im.group`,
-  `im.media`, `im.push`. Previously 11 endpoints were reachable and 9 were typed.
+  `im.media`, `im.push`, `im.moderation`. Previously 11 endpoints were reachable and 9 were typed.
 
 - **`conn.reauth`.** A token expiring mid-session is now a round trip on the existing socket rather
   than a full reconnect, and the call that hit `1101` is retried once.

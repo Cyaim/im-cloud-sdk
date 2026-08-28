@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import { ImClient } from '../src/client.js';
 import { FakeSocket, until } from './fake-socket.js';
-import { clientOptions, closeAll, opened } from './doubles.js';
+import { ImErrorCode } from '../src/protocol.js';
+import { clientOptions, closeAll, openClient, opened } from './doubles.js';
 
 /**
  * CONTRACT §6 — push registration.
@@ -192,5 +193,101 @@ describe('push registration', () => {
     } finally {
       console.warn = original;
     }
+  });
+});
+
+/**
+ * `push.clicked` — the tap, reported back.
+ *
+ * APNs and FCM do not report delivery at all, so on most deployments a click is the only evidence
+ * a notification ever arrived and the server credits delivery from it. That makes the funnel on
+ * the tenant's push screen worth something — and it makes this call a *statistic*, reported from a
+ * tap handler, where a rejection nobody caught is a worse bug than a missing row.
+ *
+ * 点击是「这条通知确实到过」的唯一证据，所以这一条值得上报；
+ * 但它终究是统计：从点击处理器里逃出去的未捕获 rejection 比少一行漏斗数据糟得多。
+ */
+describe('push click reporting', () => {
+  beforeEach(() => FakeSocket.reset());
+  afterEach(closeAll);
+
+  /** Captures the SDK's own debug line so a failing report is observable and not printed. */
+  async function withDebug(body: (lines: string[]) => Promise<void>): Promise<void> {
+    const lines: string[] = [];
+    const original = console.debug;
+    console.debug = (...args: unknown[]) => lines.push(args.map(String).join(' '));
+    try {
+      await body(lines);
+    } finally {
+      console.debug = original;
+    }
+  }
+
+  it('reports the tap with what the payload gave it, and no identity', async () => {
+    // `msgId` is in every payload the platform sends, so a client needs no id the vendor's
+    // batching would have stripped. The row is still located from the socket.
+    const { client } = await openClient();
+    const socket = FakeSocket.latest;
+
+    const pending = client.push.clicked({ messageId: '350598345233801216' });
+    await until(() => socket.requestsTo('push.clicked').length > 0);
+
+    const body = socket.requestsTo('push.clicked')[0]!.body;
+    assert.deepEqual(Object.keys(body), ['messageId']);
+
+    // A string, unrounded. The id came out of a notification payload and goes back as it arrived;
+    // a number near 2^58 is printed as a different integer and matches no delivery row.
+    assert.equal(body.messageId, '350598345233801216');
+
+    socket.replyLatest('push.clicked', null);
+    await pending;
+  });
+
+  it('resolves — and does not retry — when the delivery row is gone', async () => {
+    // 2401: the row expired after seven days, or the notification did not come from this platform.
+    // Neither is the caller's fault, and neither is something a tap handler can act on.
+    await withDebug(async (lines) => {
+      const { client } = await openClient();
+      const socket = FakeSocket.latest;
+
+      const pending = client.push.clicked({ pushId: 'pu_gone' });
+      await until(() => socket.requestsTo('push.clicked').length > 0);
+
+      const request = socket.requestsTo('push.clicked')[0]!;
+      socket.reply(request.id, 'push.clicked', null, ImErrorCode.PushDeliveryNotFound, { message: 'no delivery record' });
+
+      await pending;
+      assert.equal(socket.requestsTo('push.clicked').length, 1);
+      assert.equal(lines.length, 1);
+    });
+  });
+
+  it('resolves when the socket is down rather than rejecting into a tap handler', async () => {
+    // A notification tapped while the app is offline is the ordinary case, not an edge one: the
+    // tap is what wakes the process. Requests are never queued (CONTRACT §7.2), so this one is
+    // refused 1005 and dropped, and the funnel loses a row instead of the app losing a frame.
+    await withDebug(async (lines) => {
+      const { client } = await openClient();
+      client.disconnect();
+
+      await client.push.clicked({ messageId: '350598345233801216' });
+      assert.equal(lines.length, 1);
+    });
+  });
+
+  it('still rejects on abort, because cancellation is not a server outcome', async () => {
+    // The one path `clicked` does not swallow, and the only one that would vanish unnoticed: the
+    // rethrow is a single line inside a catch whose whole job is to swallow, so a later tidy-up of
+    // that block deletes it without failing anything. CONTRACT §7.5 rule 3 — a cancelled call
+    // raises the language's cancellation type, never a made-up ImError, and never a quiet success.
+    const { client } = await openClient();
+    const socket = FakeSocket.latest;
+    const controller = new AbortController();
+
+    const pending = client.push.clicked({ messageId: '350598345233801216' }, { signal: controller.signal });
+    await until(() => socket.requestsTo('push.clicked').length === 1);
+    controller.abort();
+
+    await assert.rejects(pending, (error: unknown) => (error as Error).name === 'AbortError');
   });
 });

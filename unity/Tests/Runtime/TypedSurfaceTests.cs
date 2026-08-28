@@ -380,6 +380,70 @@ namespace Cyaim.Im.Tests
             Assert.That(receipt["messageIds"][0].AsLong(), Is.EqualTo(5));
         }
 
+        /// <summary>The reporter is the connection, so the body has nowhere to name one.</summary>
+        /// <remarks>
+        /// A member for the reporter would let one account file in another's name, and the body is
+        /// the only place such a member could live — which is why its absence is asserted rather
+        /// than assumed. The rest is what a report screen collects.
+        /// </remarks>
+        [Test]
+        public void The_moderation_endpoint_is_reachable()
+        {
+            var report = Sent("moderation.report", _harness.Client.Moderation.ReportAsync(
+                new ImSubmitReportRequest
+                {
+                    TargetUserId = "bob",
+                    ConversationId = "c1",
+                    MessageId = "9007199254740993",
+                    Category = ImReportCategory.Harassment,
+                    Note = "kept whispering after I asked him to stop",
+                }));
+
+            Assert.That(report["targetUserId"].AsString(), Is.EqualTo("bob"));
+            Assert.That(report["category"].AsString(), Is.EqualTo("harassment"));
+            Assert.That(report["messageId"].AsString(), Is.EqualTo("9007199254740993"),
+                "a snowflake id past 2^53 travels quoted, so it must not be written as a number");
+            Assert.That(report.Has("reporterId"), Is.False,
+                "the reporter is the socket; a field for it is a way to file in somebody else's name");
+            Assert.That(report.Has("userId"), Is.False);
+        }
+
+        /// <summary>Reporting the account rather than one message is spelled "no message id".</summary>
+        /// <remarks>
+        /// A report screen with the message box left blank is the ordinary way to report an account,
+        /// and the server reads this member as a number written as a string — so an empty one would
+        /// come back <c>1000 InternalError</c> on a field nobody filled in.
+        /// </remarks>
+        [Test]
+        public void A_report_with_no_message_names_no_message()
+        {
+            var report = Sent("moderation.report", _harness.Client.Moderation.ReportAsync(
+                new ImSubmitReportRequest { TargetUserId = "bob", MessageId = string.Empty }));
+
+            Assert.That(report.Has("messageId"), Is.False);
+            Assert.That(report.Has("conversationId"), Is.False, "a member left null is not a member set to null");
+        }
+
+        /// <summary>The tap that closes the delivery funnel of §6.2.</summary>
+        [Test]
+        public void A_notification_tap_is_reported_with_what_the_payload_carried()
+        {
+            var clicked = Sent("push.clicked", _harness.Client.Push.ClickedAsync(
+                new ImPushClickedRequest { MessageId = "9007199254740993", PushId = "pu_7f3" }));
+
+            Assert.That(clicked["pushId"].AsString(), Is.EqualTo("pu_7f3"));
+            Assert.That(clicked["messageId"].AsString(), Is.EqualTo("9007199254740993"));
+            Assert.That(clicked.Has("deviceId"), Is.False, "the row is found from the socket, never from the body");
+            Assert.That(clicked.Has("userId"), Is.False);
+
+            // A tap that opened the game without naming anything is the common case on Android,
+            // where the vendor batches notifications and the extras the app gets back are whatever
+            // survived that. The server credits this device's newest delivery.
+            var bare = Sent("push.clicked", _harness.Client.Push.ClickedAsync());
+            Assert.That(bare.Has("messageId"), Is.False);
+            Assert.That(bare.Has("pushId"), Is.False);
+        }
+
         // --------------------------------------------------------------- decoding
 
         [Test]
@@ -421,6 +485,28 @@ namespace Cyaim.Im.Tests
             _harness.Pump();
 
             Assert.That(pending.Result.Total, Is.Null, "the store could not answer it cheaply; 0 would be a lie");
+        }
+
+        /// <summary>A report answers with a receipt, and a receipt is all the reporter gets.</summary>
+        /// <remarks>
+        /// The stored row carries who handled it and what they decided; those belong to the tenant's
+        /// console, not to the player who filed the report. The id is what a confirmation shows so a
+        /// player writing to support has something to quote.
+        /// </remarks>
+        [Test]
+        public void A_report_comes_back_as_a_receipt_rather_than_the_row()
+        {
+            var pending = _harness.Client.Moderation.ReportAsync(
+                new ImSubmitReportRequest { TargetUserId = "bob", Category = ImReportCategory.Spam });
+            _harness.Pump();
+
+            _harness.Socket.Reply("moderation.report", JsonValue.NewObject()
+                .Set("reportId", "rp_4d1c9f")
+                .Set("createdAt", 1767225600000L));
+            _harness.Pump();
+
+            Assert.That(pending.Result.ReportId, Is.EqualTo("rp_4d1c9f"));
+            Assert.That(pending.Result.CreatedAt, Is.EqualTo(1767225600000L));
         }
 
         [Test]

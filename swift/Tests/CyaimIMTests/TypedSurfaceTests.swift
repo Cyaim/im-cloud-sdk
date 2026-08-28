@@ -111,6 +111,13 @@ struct TypedSurfaceTests {
         ])
     }
 
+    private static func reportReceipt() -> JSONValue {
+        .object([
+            "reportId": .string("rp_2f8c1d4e"),
+            "createdAt": .int(1_700_000_000_000),
+        ])
+    }
+
     private static func sendResult(seq: Int64 = 1) -> JSONValue {
         .object([
             "messageId": .int(5_000 + seq),
@@ -177,6 +184,9 @@ struct TypedSurfaceTests {
                 channel.reply(to: request, data: page([groupMember()]))
             case "group.joined":
                 channel.reply(to: request, data: page([group()]))
+
+            case "moderation.report":
+                channel.reply(to: request, data: reportReceipt())
 
             default:
                 // Every remaining endpoint in these tiers returns ApiResult with no payload.
@@ -245,6 +255,7 @@ struct TypedSurfaceTests {
         _ = try await client.user.presence(UserIdsRequest(["bob"]))
         try await client.user.subscribePresence(SubscribePresenceRequest(userIds: ["bob"]))
         try await client.user.unsubscribePresence(UserIdsRequest(["bob"]))
+        try await client.push.clicked(PushClickedRequest(messageId: "350598345233801216"))
         _ = try await client.friend.list()
         try await client.friend.add(AddFriendRequest(userId: "carol", greeting: "hi"))
         try await client.friend.handleRequest(HandleFriendRequest(fromUserId: "carol", accept: true))
@@ -263,6 +274,10 @@ struct TypedSurfaceTests {
         try await client.group.kick(GroupMembersRequest(groupId: "g-1", userIds: ["dave"]))
         try await client.group.quit(GroupIdRequest("g-1"))
         try await client.group.join(JoinGroupRequest(groupId: "g-2"))
+        _ = try await client.moderation.report(SubmitReportRequest(
+            targetUserId: "mallory",
+            category: ImReportCategory.spam
+        ))
 
         let expected: Set<String> = [
             // T0
@@ -277,13 +292,15 @@ struct TypedSurfaceTests {
             "msg.edit", "msg.forward", "msg.react", "msg.receipt",
             "conv.setting", "conv.delete", "conv.clear",
             "user.presence", "user.subscribePresence", "user.unsubscribePresence",
+            "push.clicked",
             "friend.list", "friend.add", "friend.handleRequest", "friend.requestList",
             "friend.delete", "friend.blockList", "friend.block", "friend.unblock",
             "group.create", "group.info", "group.update", "group.dismiss", "group.memberList",
             "group.joined", "group.invite", "group.kick", "group.quit", "group.join",
+            "moderation.report",
         ]
 
-        #expect(expected.count == 49, "T0 (3) + T1 (18) + T2 (28)")
+        #expect(expected.count == 51, "T0 (3) + T1 (18) + T2 (30)")
 
         let seen = Set(channel.requests.map(\.target))
         #expect(expected.subtracting(seen).isEmpty, "untyped: \(expected.subtracting(seen).sorted())")
@@ -343,6 +360,13 @@ struct TypedSurfaceTests {
 
         let blocked = try await client.friend.blockList()
         #expect(blocked.items.first?.blockedUserId == "mallory")
+
+        // A receipt and nothing else: two fields is the whole payload, and `id` is the report id so
+        // a list of them is `Identifiable` without an app inventing a key.
+        let receipt = try await client.moderation.report(SubmitReportRequest(targetUserId: "mallory"))
+        #expect(receipt.reportId == "rp_2f8c1d4e")
+        #expect(receipt.createdAt == 1_700_000_000_000)
+        #expect(receipt.id == receipt.reportId)
 
         await client.disconnect()
     }

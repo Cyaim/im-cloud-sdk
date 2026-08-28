@@ -128,6 +128,44 @@ public class PushApi internal constructor(
     }
 
     /**
+     * Reports that the user tapped one of this device's notifications. Call it from the tap
+     * handler, not from wherever the message is rendered.
+     *
+     * What it feeds is the delivery funnel on the tenant's push screen: sent → delivered → clicked.
+     * APNs and FCM do not report delivery at all, so on most deployments a tap is the only evidence
+     * that a notification ever arrived, and the server credits delivery from it.
+     *
+     * Pass what the payload gave you — `messageId` from the notification's `msgId` is the usual
+     * one. With nothing at all the server attributes this device's newest delivery, which is the
+     * right answer for a tap that opened the app without naming a message.
+     *
+     * **It never throws and it is never retried.** These are best-effort statistics: the common
+     * failure is `2401 PushDeliveryNotFound` for a row that has aged out after seven days, which is
+     * nobody's fault, and there is no version of "the click count is one short" worth making an
+     * application handle — or worth a second frame on a socket the user is waiting on. The failure
+     * goes to [ImLogger] at debug, so it is off by default and there to be turned on when a funnel
+     * looks wrong.
+     *
+     * 尽力而为的统计：不抛异常、不重试。最常见的失败是七天后行已过期（2401），
+     * 那不是任何人的错，也没有哪个应用需要为「点击数少了一次」写一段处理逻辑。
+     */
+    public suspend fun clicked(request: PushClickedRequest = PushClickedRequest()) {
+        try {
+            connection.execute("push.clicked", request.asBody())
+        } catch (cancellation: CancellationException) {
+            // The caller's scope went away, which is a decision rather than a failure. Swallowing
+            // it here would break structured concurrency on the coroutine that is being cancelled.
+            throw cancellation
+        } catch (failure: Throwable) {
+            logger.log(
+                ImLogLevel.Debug,
+                "push.clicked was not recorded; the delivery funnel will be one tap short",
+                failure,
+            )
+        }
+    }
+
+    /**
      * Rule 1: called by [ImClient] after every successful connect.
      *
      * Failures are logged rather than thrown — nobody is waiting on this call, and a push

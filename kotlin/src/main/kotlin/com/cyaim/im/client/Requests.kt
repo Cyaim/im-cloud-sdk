@@ -1,6 +1,7 @@
 package com.cyaim.im.client
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.LongAsStringSerializer
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.encodeToJsonElement
@@ -422,6 +423,90 @@ public object PushProvider {
     public const val Oppo: String = "oppo"
     public const val Vivo: String = "vivo"
     public const val Honor: String = "honor"
+}
+
+/**
+ * `push.clicked`.
+ *
+ * Both fields are optional and neither carries identity. The delivery row is located from the
+ * socket: a [pushId] is believed only when the row it names belongs to this user and this device,
+ * and with neither field the server takes this device's newest delivery — which is the right answer
+ * for a tap that opened the app without naming a message. So there is no way to mark somebody
+ * else's notification clicked, and no way to probe which `pu_…` ids exist.
+ *
+ * 两个字段都可选，且都不承载身份：行由连接定位，pushId 只在指向本用户本设备时才采信。
+ */
+@Serializable
+public data class PushClickedRequest(
+    /** The delivery's `pu_…` id, when the notification payload carried one. */
+    public val pushId: String? = null,
+    /**
+     * The notification payload's `msgId`, verbatim.
+     *
+     * A `String` rather than a `Long` because the server's field is one: it takes the id out of the
+     * text, so an id that has already survived a vendor's payload never has to survive a numeric
+     * round trip on the way back. Pass what the payload gave you and do not parse it first.
+     */
+    public val messageId: String? = null,
+)
+
+// ------------------------------------------------------------------------ moderation.*
+
+/**
+ * `moderation.report`.
+ *
+ * **The reporter is the connection.** There is deliberately no `reporterId` here, the same way
+ * [RegisterPushTokenRequest] has no `deviceId`: filing a report in somebody else's name is not
+ * merely forbidden, there is no field in which to say it. That matters more here than elsewhere —
+ * a spoofable report is both a way to get an innocent account banned and a way to poison the count
+ * a moderator decides on.
+ *
+ * Nothing is validated but "not yourself" and the category. In particular the server does not check
+ * that the message still exists: a report about a message that was already deleted is exactly the
+ * report a moderator most wants, and refusing it would turn the platform's own retention into a way
+ * to escape moderation. Do not pre-filter those in your UI either.
+ *
+ * 举报人来自连接，这里没有、也不能有 reporterId。服务端只校验「不是自己」和分类：
+ * 关于「已被删掉的消息」的举报恰恰是审核员最想要的那条，客户端也不要替它筛掉。
+ */
+@Serializable
+public data class SubmitReportRequest(
+    public val targetUserId: String,
+    public val conversationId: String? = null,
+    /**
+     * The message being reported. Zero reports the account rather than one message.
+     *
+     * **Quoted on the wire.** Message ids are snowflakes around 2^58 — 38 times past the largest
+     * integer a JavaScript client holds exactly — so the platform writes every one of them as a
+     * string and reads both forms back (CONTRACT.md §4.5). A JVM `Long` holds the value exactly,
+     * which is why the type here is still a number; what has to be a string is the JSON, not the
+     * field.
+     * 线路上加引号：消息 id 是雪花值，约 2^58，超出 JS 能精确表示的整数 38 倍，
+     * 平台一律以字符串写出、两种形态都能读回。JVM 的 Long 本身放得下，
+     * 所以这里的类型仍是数字——必须是字符串的是 JSON，不是字段。
+     */
+    @Serializable(with = LongAsStringSerializer::class)
+    public val messageId: Long = 0,
+    /** One of [ReportCategory]'s values. An unknown one is refused, not filed under `other`. */
+    public val category: String = ReportCategory.Other,
+    /** What the reporter typed. Usually the most useful field on the row a moderator reads. */
+    public val note: String? = null,
+)
+
+/**
+ * The categories `moderation.report` accepts.
+ *
+ * Constants rather than an enum for the same reason [PushProvider] is: the list is the server's and
+ * it may grow before this artifact is rebuilt. An unknown value is refused with `1001` and the legal
+ * list, which is a better failure than a report filed under a category no moderator screen shows.
+ */
+public object ReportCategory {
+    public const val Spam: String = "spam"
+    public const val Harassment: String = "harassment"
+    public const val Fraud: String = "fraud"
+    public const val Pornography: String = "pornography"
+    public const val Violence: String = "violence"
+    public const val Other: String = "other"
 }
 
 /**

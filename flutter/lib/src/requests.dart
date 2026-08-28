@@ -827,7 +827,7 @@ class ImDownloadUrlRequest implements ImRequestBody {
       };
 }
 
-// ---------------------------------------------------------------------------- push (T1)
+// ---------------------------------------------------------------------------- push (T1/T2)
 
 /// `push.register`.
 ///
@@ -881,6 +881,118 @@ abstract final class ImPushProvider {
 
   /// Every channel the server routes, for a settings screen that has to offer a choice.
   static const List<String> values = <String>[apns, fcm, huawei, xiaomi, oppo, vivo, honor];
+}
+
+/// `push.clicked`. The tap on a notification, reported back for the delivery funnel.
+///
+/// **Both fields are optional and neither carries identity.** The row is located from the
+/// connection: a [pushId] is believed only when it names a delivery to this user on this device,
+/// and without one the server takes this device's newest delivery — narrowed to [messageId] when
+/// you supply it. That is what stops a client marking somebody else's notification clicked, or
+/// probing which `pu_…` ids exist.
+///
+/// Send whatever the notification payload gave you and nothing else. With neither field the server
+/// still attributes the newest delivery to this device, which is the right answer for a tap that
+/// opened the app without naming a message.
+class ImPushClickedRequest implements ImRequestBody {
+  const ImPushClickedRequest({this.pushId, this.messageId});
+
+  /// The delivery's `pu_…` id, when the payload carried one.
+  final String? pushId;
+
+  /// The payload's `msgId`, when the tap gave you one. A string for the same reason every message
+  /// id in this package is one: the ids are snowflakes, and on the web a Dart `int` is a JavaScript
+  /// number that cannot hold one exactly.
+  final String? messageId;
+
+  @override
+  Map<String, Object?> toJson() => imBody(<String, Object?>{
+        'pushId': pushId,
+        'messageId': messageId,
+      });
+}
+
+// ---------------------------------------------------------------------------- moderation (T2)
+
+/// `moderation.report`. One end user reporting another, optionally naming a message.
+///
+/// **There is no field for the reporter and there must not be.** It comes from the socket, which is
+/// the only surface on which the user id is a fact rather than a parameter. A field would let an
+/// account file in somebody else's name — both a way to get a stranger banned and a way to poison
+/// the count a moderator decides on.
+/// 举报人来自连接而不是请求体：只有这一面上的 userId 是事实而不是参数。
+class ImSubmitReportRequest implements ImRequestBody {
+  const ImSubmitReportRequest({
+    required this.targetUserId,
+    this.conversationId,
+    this.messageId,
+    this.category = ImReportCategory.other,
+    this.note,
+  });
+
+  /// The account being reported. Reporting yourself is refused with
+  /// [ImErrorCode.invalidArgument].
+  final String targetUserId;
+
+  /// Where it happened, when the reporter was looking at a conversation.
+  final String? conversationId;
+
+  /// The message being reported. Null reports the account rather than one message.
+  ///
+  /// The server does **not** check that the message still exists, and that is deliberate: a report
+  /// about a message that was already deleted is exactly the report a moderator most wants, and
+  /// refusing it would turn the platform's own retention into a way to escape moderation. So do not
+  /// withhold a report because the message went away under the reporter.
+  /// 服务端刻意不校验消息是否还在——关于「已被删掉的消息」的举报恰恰是审核员最想要的那条。
+  final String? messageId;
+
+  /// One of [ImReportCategory]. An unknown value is refused with [ImErrorCode.invalidArgument]
+  /// rather than filed under a name no moderation queue can group on.
+  final String category;
+
+  /// What the reporter typed. Usually the most useful field in the row, so give them somewhere to
+  /// type it.
+  final String? note;
+
+  @override
+  Map<String, Object?> toJson() => imBody(<String, Object?>{
+        'targetUserId': targetUserId,
+        'conversationId': conversationId,
+        // An empty id is omitted rather than sent. On the wire this field is a quoted snowflake,
+        // but on the server it is a 64-bit number, and `""` fails to bind there — while an absent
+        // field is the documented way to say "this is about the account, not one message". A UI
+        // that reports from a screen with no message selected produces exactly that empty string.
+        // 空串按缺省处理：服务端那边它是数字，`""` 绑定不上；而缺省本来就表示「举报账号」。
+        'messageId': messageId == '' ? null : messageId,
+        'category': category,
+        'note': note,
+      });
+}
+
+/// The categories `moderation.report` accepts.
+///
+/// Strings, not an enum, for the same reason [ImPushProvider] is: the server owns the list. Unlike
+/// the push channels an unknown value here is refused outright rather than folded, so offer
+/// [values] in the picker and send back what the user chose.
+abstract final class ImReportCategory {
+  static const String spam = 'spam';
+  static const String harassment = 'harassment';
+  static const String fraud = 'fraud';
+  static const String pornography = 'pornography';
+  static const String violence = 'violence';
+
+  /// The server's default: an empty [ImSubmitReportRequest.category] is filed as this.
+  static const String other = 'other';
+
+  /// Every category the server files, for the picker a report screen has to show.
+  static const List<String> values = <String>[
+    spam,
+    harassment,
+    fraud,
+    pornography,
+    violence,
+    other,
+  ];
 }
 
 // ---------------------------------------------------------------------------- helpers

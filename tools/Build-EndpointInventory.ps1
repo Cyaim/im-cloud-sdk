@@ -279,6 +279,35 @@ $sdkSources = [ordered]@{
     unity      = @('SDK/unity/Runtime')
 }
 
+function Remove-Comments {
+    <#
+        .SYNOPSIS
+        Strips comments so a documented example cannot be counted as an implementation.
+
+        .DESCRIPTION
+        Coverage is measured by looking for the quoted target name in an SDK's sources, and a doc
+        comment quotes target names constantly — to show what an untyped endpoint looks like through
+        the escape hatch, to point at a neighbour, to explain what a method wraps. Counting those
+        does not merely add noise, it inverts the file's meaning: `group.setRole` was reported as
+        implemented in TypeScript on the strength of a JSDoc line reading
+        "// group.setRole is T3 and not typed yet", so the one document that exists to say what is
+        left to do claimed the work was done, in the exact place the author had written that it
+        was not.
+
+        The five languages share `//`, `/* */` and a doc form built on them (`///`, `/** */`), so
+        one pass covers all of them. String contents are left alone, which is the point — a target
+        name inside a string literal is what an implementation looks like.
+
+        用注释判定覆盖率会把「文档里的反例」算成「已实现」：
+        `group.setRole` 曾因为一行写着「它还没有类型化」的 JSDoc 而被报成 TypeScript 已实现——
+        唯一一份说明「还剩什么没做」的文档，在作者亲手写下「没做」的那一行上声称做完了。
+    #>
+    param([string] $Source)
+
+    $withoutBlocks = [regex]::Replace($Source, '/\*.*?\*/', '', 'Singleline')
+    return [regex]::Replace($withoutBlocks, '(?m)^\s*//.*$', '')
+}
+
 $sdkText = [ordered]@{}
 foreach ($sdk in $sdkSources.Keys) {
     $builder = [System.Text.StringBuilder]::new()
@@ -288,7 +317,7 @@ foreach ($sdk in $sdkSources.Keys) {
             throw "SDK source directory not found: $relative. Coverage would silently read 0."
         }
         foreach ($sdkFile in (Get-ChildItem -LiteralPath $absolute -File -Recurse | Sort-Object FullName)) {
-            [void]$builder.AppendLine([System.IO.File]::ReadAllText($sdkFile.FullName))
+            [void]$builder.AppendLine((Remove-Comments ([System.IO.File]::ReadAllText($sdkFile.FullName))))
         }
     }
     $sdkText[$sdk] = $builder.ToString()

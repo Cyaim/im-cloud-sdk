@@ -852,3 +852,28 @@ class ImGroupMember {
   final String? joinSource;
   final Map<String, dynamic> extensions;
 }
+
+// ---------------------------------------------------------------------------- moderation (T2)
+
+/// `moderation.report`. What the reporting client gets back — deliberately two fields.
+///
+/// Not the stored row: a reporter has no business reading back the moderation state of their own
+/// report, and the row carries fields (`handledBy`, `resolution`) that belong to the tenant's
+/// moderators. Keep [reportId] anyway: it is the only handle either side has on this report
+/// afterwards, and a user asking "what happened to my report" is asking about that string.
+///
+/// 回执而不是那一行：举报人没有理由读回自己举报的审核状态，而那一行上还带着内部字段。
+class ImReportReceipt {
+  const ImReportReceipt({required this.reportId, this.createdAt = 0});
+
+  factory ImReportReceipt.fromJson(Map<String, dynamic> json) => ImReportReceipt(
+        reportId: imStringOr(json['reportId']),
+        createdAt: imIntOr(json['createdAt']),
+      );
+
+  /// The server's `rp_…` handle for this report.
+  final String reportId;
+
+  /// When the report was filed, unix ms on the server's clock.
+  final int createdAt;
+}

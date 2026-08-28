@@ -127,6 +127,11 @@ public struct ImErrorCode: RawRepresentable, Hashable, Sendable, Codable, Custom
     public static let fileTypeNotAllowed = ImErrorCode(1701)
     public static let fileTooLarge = ImErrorCode(1702)
     public static let storageQuotaExceeded = ImErrorCode(1703)
+
+    /// No delivery record matches. The row is kept seven days, or the notification did not come from this platform at all. `clicked` swallows it: a click count one short is not an application's problem, and there is nothing a user could do about it.
+    ///
+    /// 没有匹配的投递记录：记录只保留七天，或者这条通知根本不是本平台发的。
+    public static let pushDeliveryNotFound = ImErrorCode(2401)
 }
 
 /// Every failure the SDK reports, carrying the code and the server's trace id.

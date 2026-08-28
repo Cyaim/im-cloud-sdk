@@ -166,6 +166,12 @@ FirebaseMessaging.instance.onTokenRefresh.listen(
 - If a client dies without unregistering — force-quit, crash, uninstall — its token stays
   registered and the user gets notifications on a device that is gone. Only your backend can clean
   that up: `DELETE /v1/users/{userId}/push-tokens/{deviceId}`. Ship that call, or ship the bug.
+- **Call `im.push.clicked()` from the tap handler.** APNs and FCM do not report delivery at all, so
+  on most deployments the click is the only evidence a notification ever arrived, and the tenant's
+  sent → delivered → clicked funnel is blank without it. Pass the payload's `msgId` when the tap
+  gave you one; with nothing at all the server attributes this device's newest delivery. It is the
+  one call in the package that swallows its own failure — best-effort statistics that nothing in
+  your app waits on, and firing it without `await` must not become an unhandled asynchronous error.
 
 ## What this SDK does that a hand-rolled client usually does not
 
@@ -222,7 +228,8 @@ endpoint greps straight to the call.
 | `im.friend` | `list` `add` `handleRequest` `requestList` `delete` `blockList` `block` `unblock` |
 | `im.group` | `create` `info` `update` `dismiss` `memberList` `joined` `invite` `kick` `quit` `join` |
 | `im.media` | `uploadTicket` `downloadUrl` |
-| `im.push` | `register` `unregister` · plus `setToken` / `clearToken` for the lifecycle above |
+| `im.push` | `register` `unregister` `clicked` · plus `setToken` / `clearToken` for the lifecycle above |
+| `im.moderation` | `report` |
 
 That is contract tiers **T0, T1 and T2 complete** — session floor, 1:1 chat MVP, social graph and
 groups. Every method takes exactly one request object named for the server DTO, so the server
@@ -247,7 +254,7 @@ a screen that stops listening stops costing anything.
 
 ### `invoke` — the escape hatch
 
-107 endpoints and five release trains mean the typed surface will always trail the server. `invoke`
+112 endpoints and five release trains mean the typed surface will always trail the server. `invoke`
 is the difference between "wait for the next SDK release" and "ship on Friday". It shares one code
 path with every typed method — same timeouts, same cancellation, same error mapping — and it never
 touches a cursor.

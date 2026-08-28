@@ -3,6 +3,7 @@
 package com.cyaim.im.client
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -25,7 +26,7 @@ class PushTest {
         onRequest = { request ->
             when (request.target) {
                 "conn.sync" -> resumePage(request)
-                "push.register", "push.unregister" -> replyTo(request, JsonNull)
+                "push.register", "push.unregister", "push.clicked" -> replyTo(request, JsonNull)
                 else -> null
             }
         }
@@ -191,5 +192,58 @@ class PushTest {
         assertEquals(ConnectionState.Open, client.state.value)
         assertTrue(!client.push.isRegistered)
         assertTrue(logger.atLeast(ImLogLevel.Warn).any { it.contains("push.register failed") })
+    }
+
+    /**
+     * The tap report carries what the payload gave it and nothing else — the identity is the
+     * socket's, so there is no field here to claim another user's notification with.
+     */
+    @Test
+    fun `a notification tap reports the message id the payload carried`() = runTest {
+        val gateway = gateway()
+        val client = newClient(gateway)
+        openClient(client, gateway)
+
+        val call = backgroundScope.async {
+            client.push.clicked(PushClickedRequest(messageId = "350598345233801216"))
+        }
+        runCurrent()
+        call.await()
+
+        val clicked = gateway.latest.requestsTo("push.clicked").single()
+        assertEquals("350598345233801216", clicked.bodyString("messageId"))
+        assertEquals(null, clicked.bodyStringOrNull("userId"))
+        assertEquals(null, clicked.bodyStringOrNull("deviceId"))
+    }
+
+    /**
+     * Best-effort statistics. `2401 PushDeliveryNotFound` is what a tap on a notification older
+     * than the seven-day retention answers — nobody's fault, and no application should have to
+     * write a `catch` for a click count that is one short. It is also not retried: a second frame
+     * would cost the socket a round trip the user is waiting behind, to fix a number.
+     */
+    @Test
+    fun `a click the server cannot match is not raised to the application`() = runTest {
+        val gateway = FakeGateway()
+        gateway.onRequest = { request ->
+            when (request.target) {
+                "conn.sync" -> resumePage(request)
+                "push.clicked" -> replyTo(request, JsonNull, code = ImErrorCode.PushDeliveryNotFound)
+                else -> null
+            }
+        }
+        val logger = RecordingLogger()
+        val client = newClient(gateway, options = testOptions(logger = logger))
+        openClient(client, gateway)
+
+        val call = backgroundScope.async { runCatching { client.push.clicked() } }
+        runCurrent()
+
+        assertEquals(null, call.await().exceptionOrNull(), "an expired delivery row is not the caller's problem")
+        assertEquals(1, gateway.latest.requestsTo("push.clicked").size, "never retried")
+        assertTrue(
+            logger.lines.any { it.first == ImLogLevel.Debug && it.second.contains("push.clicked") },
+            "invisible by default, but there for whoever is looking at a funnel: ${logger.lines}",
+        )
     }
 }

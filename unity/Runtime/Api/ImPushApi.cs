@@ -160,6 +160,58 @@ namespace Cyaim.Im
         }
 
         /// <summary>
+        /// Reports that the player tapped a notification. Best-effort statistics: nothing is
+        /// returned and a failure is not raised.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <b>Call it from the tap handler, not from wherever the message is finally rendered.</b>
+        /// What it closes is the funnel a tenant reads on the push screen — sent, delivered,
+        /// clicked — and APNs and FCM report no delivery at all, so on most deployments the tap is
+        /// the only evidence a notification ever arrived. Pass what the payload gave you:
+        /// <c>msgId</c> is the usual one, and with nothing at all the server credits this device's
+        /// newest delivery, which is the right answer for a tap that opened the game without naming
+        /// a message.
+        /// </para>
+        /// <para>
+        /// <b>A failure is swallowed and never retried.</b> Nothing the player can see depends on
+        /// this call, and its ordinary failure — <see cref="ImErrorCode.PushDeliveryNotFound"/>,
+        /// meaning the row aged out after seven days or the notification did not come from this
+        /// platform — is neither the caller's fault nor actionable by them. The call site is a tap
+        /// callback where the returned <see cref="Task"/> is normally not awaited, so throwing
+        /// would turn a missing statistic into an unobserved exception in a player build. It goes
+        /// to the log instead.
+        /// 失败被吞掉且绝不重试：玩家看到的任何东西都不依赖这次调用，
+        /// 而它最常见的失败（2401，行过期或通知不是本平台发的）既不是调用者的错，也无从处置；
+        /// 点击回调里通常没人 await 这个 Task，抛出去只会在 player 构建里变成无人观察的异常。
+        /// </para>
+        /// </remarks>
+        public async Task ClickedAsync(
+            ImPushClickedRequest request = null,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            try
+            {
+                await ExecuteAsync(
+                        "push.clicked",
+                        request != null ? request : new ImPushClickedRequest(),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Cancellation is the caller's own doing rather than an outcome, and §7.5 asks for
+                // the language's cancellation type wherever one is raised. Only server and
+                // transport failures are the ones nobody has to handle.
+                throw;
+            }
+            catch (Exception error)
+            {
+                ImLog.Info("push.clicked was dropped: " + error.Message);
+            }
+        }
+
+        /// <summary>
         /// Applies §6.2 rule 1: on every authenticated connect, re-register whatever token we hold.
         /// </summary>
         /// <remarks>

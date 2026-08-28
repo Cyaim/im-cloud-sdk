@@ -17,6 +17,7 @@ export {
   FriendApi,
   GroupApi,
   MediaApi,
+  ModerationApi,
   MsgApi,
   PushApi,
   UserApi,

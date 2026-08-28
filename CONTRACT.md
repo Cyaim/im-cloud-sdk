@@ -168,11 +168,11 @@ choosing against the weakest one.
 |---|---|---|---|---|
 | **T0** | Session floor | 3 | **3 ✅** | Transport lifecycle. An SDK missing one is broken, not incomplete. |
 | **T1** | 1:1 chat MVP | 18 | **18 ✅** | The smallest set that ships a two-person chat app a customer would launch. |
-| **T2** | Social graph and groups | 28 | **28 ✅** | What turns a chat into a messenger: contacts, blocking, groups, presence. |
+| **T2** | Social graph and groups | 30 | **30 ✅** | What turns a chat into a messenger: contacts, blocking, groups, presence, reporting. |
 | **T3** | Competitive parity | 20 | 0 | Not needed to ship, needed to win: the rows a buyer ticks against 融云 / 环信 / 网易云信. |
 | **T4** | Specialist verticals | 38 | 0 | Calls, service desk, E2EE, live rooms, AI streaming, scheduling, folders. |
 
-**T0–T2 are complete on all five as of 2026-08-22** (verified 2026-08-23, procedure in §1). The
+**T0–T2 are complete on all five as of 2026-08-28** (51 targets each; the two newest, `moderation.report` and `push.clicked`, were typed that day). **The coverage numbers moved for a second reason on 2026-08-28** and it is worth knowing which: the generator used to search doc comments too, so `group.setRole` counted as typed in TypeScript on the strength of a JSDoc line saying it was *not* typed. Comments are now stripped before the search, and the five columns agree exactly — which is itself evidence, since the previous run had TypeScript one ahead of everybody for no reason anyone could name. The
 "typed today" column was 2 / 8 / 1 / 0 / 0 when this document was written; it is left visible in
 §1's collapsed block rather than deleted, because a tier plan whose starting point disappears reads
 as if it were always nearly done.
@@ -198,11 +198,18 @@ reviewer, never mind the customer. `conv.unreadTotal` is there because the app b
 without it. Ten of these eighteen were missing everywhere when this tier was written;
 **all eighteen are typed in all five today.**
 
-**T2 — Social graph and groups (28).** All ten core `group.*` (create, info, update, dismiss,
+**T2 — Social graph and groups (30).** All ten core `group.*` (create, info, update, dismiss,
 memberList, joined, invite, kick, quit, join), all eight `friend.*` except `setRemark`, the three
-presence calls, `conv.setting` / `conv.delete` / `conv.clear`, and `msg.edit` / `msg.forward` /
-`msg.react` / `msg.receipt`. `friend.block` is not optional: app-store review treats user blocking
-as mandatory for any app carrying user-generated content.
+presence calls, `conv.setting` / `conv.delete` / `conv.clear`, `msg.edit` / `msg.forward` /
+`msg.react` / `msg.receipt`, plus `moderation.report` and `push.clicked`.
+
+`friend.block` is not optional: app-store review treats user blocking as mandatory for any app
+carrying user-generated content — and `moderation.report`, added 2026-08-28, is the other half of
+that same requirement. Reviewers ask for both a way to block an abusive user and a way to report
+objectionable content; an SDK that completed T2 without reporting still could not pass review, which
+is the argument that put blocking here in the first place. `push.clicked` joined on the same day: it
+closes the sent → delivered → clicked funnel, and on iOS and the domestic OEM channels — which do
+not report delivery at all — a tap is the only evidence a notification ever arrived.
 
 **T3 — Competitive parity (20).** Group administration (`transfer`, `setRole`, `mute`, `muteMember`,
 `announcement`, `setNickname`, `applicationList`, `handleApplication`), pins, favourites, search,

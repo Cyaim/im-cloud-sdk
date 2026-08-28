@@ -207,6 +207,61 @@ struct PushTests {
         await client.disconnect()
     }
 
+    @Test("a notification tap reports what the payload gave it, and no identity")
+    func clickedCarriesTheTapAndNothingElse() async throws {
+        let gateway = Self.pushGateway()
+        let client = ImClient(options: makeOptions(connector: gateway))
+
+        try await client.connect()
+        let channel = try #require(gateway.lastChannel)
+
+        try await client.push.clicked(PushClickedRequest(messageId: "350598345233801216"))
+
+        let click = try #require(channel.requests(for: "push.clicked").first)
+
+        // The id is past 2^53 and stays a string the whole way out. Handed back as a number it
+        // would arrive as a *different* id, and the delivery row this tap belongs to would never
+        // be found — which is the same failure that made recall miss.
+        #expect(click["messageId"]?.stringValue == "350598345233801216")
+        #expect(click["pushId"] == nil, "an unset optional is absent, not null")
+
+        // The row is located from the socket. A body carrying a user or device id would be a field
+        // for something the server ignores, and a way to mark somebody else's notification clicked.
+        #expect(click["userId"] == nil && click["deviceId"] == nil)
+
+        await client.disconnect()
+    }
+
+    @Test("a tap that matches no delivery row is not the app's problem")
+    func clickedSwallowsItsFailure() async throws {
+        let gateway = MockGateway(responder: { request, channel in
+            if MockGateway.answerHousekeeping(request, channel) { return }
+
+            if request.target == "push.clicked" {
+                channel.reply(
+                    to: request,
+                    code: ImErrorCode.pushDeliveryNotFound,
+                    message: "no delivery record matches this device; it may have expired"
+                )
+            }
+        })
+
+        let client = ImClient(options: makeOptions(connector: gateway))
+        try await client.connect()
+        let channel = try #require(gateway.lastChannel)
+
+        // `2401 PushDeliveryNotFound` means the row aged out after seven days or the notification
+        // did not come from this platform. Neither reaches the caller — a statistic that made a
+        // notification tap fail would cost more than the statistic is worth — so the `try` here
+        // covers cancellation alone, which is the one thing this call does propagate.
+        try await client.push.clicked(PushClickedRequest(pushId: "pu_expired"))
+        await settle()
+
+        #expect(channel.requests(for: "push.clicked").count == 1, "best effort means once, not again")
+
+        await client.disconnect()
+    }
+
     @Test("the raw namespace call also teaches the client what to re-send")
     func directRegisterSeedsTheCache() async throws {
         let gateway = Self.pushGateway()
@@ -228,6 +283,46 @@ struct PushTests {
         let second = try #require(gateway.lastChannel)
         let repeated = try #require(second.requests(for: "push.register").first)
         #expect(repeated["token"]?.stringValue == "raw-token")
+
+        await client.disconnect()
+    }
+
+    /// The one failure `clicked` does not swallow.
+    ///
+    /// **The reason this test exists is that the rethrow is one line inside a `catch` whose entire
+    /// job is to swallow**, so a later tidy-up of that block deletes it and nothing else notices.
+    /// `CONTRACT.md` §7.5 rule 3: a cancelled call raises the language's cancellation type. A `Task`
+    /// cancelled mid-flight that returns normally tells the group that cancelled it the child
+    /// finished — which is the opposite of what happened.
+    /// 这条用例存在的理由是：那个 rethrow 是一个「本职就是吞异常」的 catch 里的一行，
+    /// 之后有人整理这个块时会顺手删掉它，而没有别的东西会发现。
+    @Test
+    func clickedStillRaisesCancellation() async throws {
+        let gateway = MockGateway(responder: { request, channel in
+            // Answers housekeeping and nothing else: push.clicked is left hanging on purpose, so the
+            // only way this call can finish is the cancellation under test.
+            _ = MockGateway.answerHousekeeping(request, channel)
+        })
+
+        let client = ImClient(options: makeOptions(connector: gateway))
+        try await client.connect()
+
+        let task = Task {
+            try await client.push.clicked(PushClickedRequest(messageId: "350598345233801216"))
+        }
+
+        task.cancel()
+
+        var raised = false
+        do {
+            try await task.value
+        } catch is CancellationError {
+            raised = true
+        } catch {
+            Issue.record("expected CancellationError, got \(error)")
+        }
+
+        #expect(raised, "a cancelled tap report must not complete as though it succeeded")
 
         await client.disconnect()
     }

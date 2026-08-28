@@ -178,6 +178,7 @@ namespace Cyaim.Im
             Group = new ImGroupApi(this);
             Media = new ImMediaApi(this);
             Push = new ImPushApi(this);
+            Moderation = new ImModerationApi(this);
 
             _messageSubscription = _connection.On(ImPushTarget.Message, HandleMessageFrame);
             _connection.StateChanged += HandleStateChanged;
@@ -211,8 +212,11 @@ namespace Cyaim.Im
         /// <summary><c>media.*</c> — upload tickets and signed download URLs.</summary>
         public ImMediaApi Media { get; private set; }
 
-        /// <summary><c>push.*</c> — offline notification registration.</summary>
+        /// <summary><c>push.*</c> — offline notification registration and the tap that follows.</summary>
         public ImPushApi Push { get; private set; }
+
+        /// <summary><c>moderation.*</c> — reporting a user or one of their messages.</summary>
+        public ImModerationApi Moderation { get; private set; }
 
         // ------------------------------------------------------------------ properties
 

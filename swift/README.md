@@ -205,8 +205,25 @@ func application(_ app: UIApplication,
 }
 ```
 
-That is the whole integration. The user and device id come from the socket, so there is nothing else
-to send, and there is no field in the request in which to say otherwise.
+The user and device id come from the socket, so there is nothing else to send, and there is no field
+in the request in which to say otherwise.
+
+**One more call, in the tap handler.** APNs does not report delivery — not to us, not to anyone — so
+a tap is the only evidence a notification ever arrived, and the server credits delivery from it. The
+tenant's push screen shows a sent → delivered → clicked funnel that has no other source on iOS:
+
+```swift
+func userNotificationCenter(_ center: UNUserNotificationCenter,
+                            didReceive response: UNNotificationResponse) async {
+    let payload = response.notification.request.content.userInfo
+    try? await im.push.clicked(.init(messageId: payload["msgId"] as? String))
+}
+```
+
+`try?` is deliberate and is the whole story of that signature: `clicked` swallows server failures
+(`2401 PushDeliveryNotFound` means the record aged out after seven days) but *does* throw on
+cancellation, because a `Task` cancelled mid-flight must not report success to whoever cancelled it.
+Never retry it — a tap counted twice is worse than one counted never.
 
 **On logout, call `im.logout()` rather than `im.disconnect()`.** It sends `push.unregister` and
 *then* closes; after the socket is gone there is no authenticated channel left to remove the token
@@ -270,11 +287,12 @@ and a bug report mentioning `msg.forward` can be grepped for.
 | `im.conv` | `list` `get` `read` `unreadTotal` `setting` `delete` `clear` |
 | `im.user` | `me` `profile` `batchProfile` `updateProfile` `presence` `subscribePresence` `unsubscribePresence` |
 | `im.media` | `uploadTicket` `downloadUrl` |
-| `im.push` | `register` `unregister` |
+| `im.push` | `register` `unregister` `clicked` |
 | `im.friend` | `list` `add` `handleRequest` `requestList` `delete` `blockList` `block` `unblock` |
 | `im.group` | `create` `info` `update` `dismiss` `memberList` `joined` `invite` `kick` `quit` `join` |
+| `im.moderation` | `report` |
 
-That is tiers 0, 1 and 2 of the client contract — 49 endpoints — typed end to end. Tier 3
+That is tiers 0, 1 and 2 of the client contract — 51 endpoints — typed end to end. Tier 3
 (group administration, pins, favourites, search) and tier 4 (calls, E2EE, live rooms, service desk,
 AI streaming) go through `invoke` until they are typed.
 

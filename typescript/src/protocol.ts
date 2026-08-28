@@ -141,6 +141,14 @@ export const ImErrorCode = {
   FileTypeNotAllowed: 1701,
   FileTooLarge: 1702,
   StorageQuotaExceeded: 1703,
+
+  /**
+   * No delivery record matches. The row is kept seven days, or the notification did not come from this platform at all. `clicked` swallows it: a click count one short is not an application's problem, and there is nothing a user could do about it.
+   *
+   * 没有匹配的投递记录：记录只保留七天，或者这条通知根本不是本平台发的。
+   * `clicked` 会吞掉它——点击数少一次不是应用要处理的问题，用户也无从处理。
+   */
+  PushDeliveryNotFound: 2401,
 } as const;
 
 /**

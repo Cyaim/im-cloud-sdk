@@ -62,16 +62,21 @@ was unreachable from any official client.
 ### Added — typed endpoint coverage, tiers T0 / T1 / T2
 
 Namespaced to match the endpoint prefix, so `im.group.memberList(…)` is `group.memberList`:
-`im.conn` `im.msg` `im.conv` `im.user` `im.friend` `im.group` `im.media` `im.push`. 49 endpoints
-typed, up from 11 referenced.
+`im.conn` `im.msg` `im.conv` `im.user` `im.friend` `im.group` `im.media` `im.push`
+`im.moderation`. 51 endpoints typed, up from 11 referenced.
 
 - **T0 (3/3)** — `conn.heartbeat`, `conn.reauth`, `conn.sync`. `conn.reauth` is new: an expired
   token now costs one frame on the socket that is already open rather than a full reconnect.
 - **T1 (18/18)** — the 1:1 chat MVP, including `msg.delete`, `conv.get`, all four `user.*` profile
   calls, both `media.*` and both `push.*`.
-- **T2 (28/28)** — all ten core `group.*`, eight `friend.*` including `friend.block`, the three
+- **T2 (30/30)** — all ten core `group.*`, eight `friend.*` including `friend.block`, the three
   presence calls, `conv.setting` / `delete` / `clear`, and `msg.edit` / `forward` / `react` /
-  `receipt`.
+  `receipt`. Plus the two the tier gained after it was first written: `moderation.report`, which
+  is the other half of `friend.block` — app-store review wants a way to report content as well as
+  a way to block a user, and an app shipping only one still fails the submission — and
+  `push.clicked`, the tap that closes the tenant's sent → delivered → clicked funnel. It is the
+  only call in the package that logs its own failure instead of throwing: best-effort statistics
+  that nothing waits on, fired from a tap handler without `await`.
 
 Every typed method takes one request object named for the server DTO, and every one is a thin
 wrapper over the same internal request path `invoke()` uses.

@@ -60,15 +60,21 @@ the family does not keep. Implements client contract **1.0**.
 - **Push registration.** `ImClient.setPushToken(deviceToken:)` (hex-encodes an APNs token),
   re-registered automatically on every connect, and `ImClient.logout()`, which sends
   `push.unregister` *before* closing the socket. `disconnect()` deliberately never unregisters.
+  `im.push.clicked(_:)` closes the delivery funnel from the tap handler; it is the one call in the
+  typed surface that swallows a server failure, because APNs reports no delivery and a statistic
+  that could fail a notification tap would cost more than the statistic is worth. It still throws on
+  cancellation — a `Task` cancelled mid-flight must not report success to whoever cancelled it
+  (`CONTRACT.md` §7.5) — so the ordinary call is `try? await`.
 - **`conn.reauth`.** A call that comes back `1101 TokenExpired` now renews the token on the open
   socket and retries once, instead of costing a full reconnect.
-- **Typed methods for all of tiers 0, 1 and 2 — 49 endpoints**, grouped into namespaces named for
+- **Typed methods for all of tiers 0, 1 and 2 — 51 endpoints**, grouped into namespaces named for
   the target prefix: `im.conn`, `im.msg`, `im.conv`, `im.user`, `im.media`, `im.push`, `im.friend`,
-  `im.group`. Every method takes one request object named for the server DTO.
+  `im.group`, `im.moderation`. Every method takes one request object named for the server DTO.
 - Payload types: `UserProfile`, `PresenceState`, `MediaUploadTicket`, `Group`, `GroupMember`,
-  `Friend`, `FriendRequest`, `BlockEntry`, `ConversationSetting`, `MessageOptions`, `PushConfig`,
-  and the open enums `MuteMode`, `MessageStatus`, `MessagePriority`, `MultiLoginPolicy`, `GroupType`,
-  `GroupRole`, `GroupJoinMode`, `GroupInviteMode`, `ApplicationStatus`.
+  `Friend`, `FriendRequest`, `BlockEntry`, `ReportReceipt`, `ConversationSetting`, `MessageOptions`,
+  `PushConfig`, and the open enums `MuteMode`, `MessageStatus`, `MessagePriority`,
+  `MultiLoginPolicy`, `GroupType`, `GroupRole`, `GroupJoinMode`, `GroupInviteMode`,
+  `ApplicationStatus`.
 - `ImError.requiresReauth`, the contract's name for the flag previously spelled `isAuthFailure`
   (which stays, deprecated for 2.0).
 - The full `ImErrorCode` table, including `1204 PlanExpired`, `1405 EditWindowExpired`,

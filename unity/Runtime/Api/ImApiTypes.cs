@@ -709,6 +709,36 @@ namespace Cyaim.Im
         }
     }
 
+    /// <summary>What <c>moderation.report</c> hands back. Deliberately two members.</summary>
+    /// <remarks>
+    /// A receipt rather than the row: a reporter has no business reading back the moderation state
+    /// of their own report, and the row carries members — who handled it, what they decided — that
+    /// belong to the tenant's console. Show <see cref="ReportId"/> in the confirmation so a player
+    /// writing to support has something to quote.
+    /// 回执而不是那一行：举报人没有理由读回自己举报的审核状态。
+    /// </remarks>
+    public sealed class ImReportReceipt : IImJsonPayload
+    {
+        /// <summary>The report's <c>rp_…</c> id. Worth putting in the confirmation toast.</summary>
+        public string ReportId { get; internal set; }
+
+        /// <summary>When it was filed, unix ms.</summary>
+        public long CreatedAt { get; internal set; }
+
+        /// <inheritdoc/>
+        public void ReadFrom(JsonValue json)
+        {
+            ReportId = json["reportId"].AsString(string.Empty);
+            CreatedAt = json["createdAt"].AsLong();
+        }
+
+        /// <summary>Maps a receipt out of a payload.</summary>
+        public static ImReportReceipt FromJson(JsonValue json)
+        {
+            return ImPayload.Read<ImReportReceipt>(json);
+        }
+    }
+
     /// <summary>Decoding helpers shared by the payload types and by <c>InvokeAsync&lt;T&gt;</c>.</summary>
     public static class ImPayload
     {

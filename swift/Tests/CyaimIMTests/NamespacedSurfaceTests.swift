@@ -38,6 +38,7 @@ struct NamespacedSurfaceTests {
         "ImGroupNamespace": "group",
         "ImMediaNamespace": "media",
         "ImPushNamespace": "push",
+        "ImModerationNamespace": "moderation",
     ]
 
     /// The push token cache is the only non-endpoint the contract puts on a namespace: §6.2

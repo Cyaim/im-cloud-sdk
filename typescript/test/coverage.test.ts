@@ -10,6 +10,7 @@ import {
   FriendApi,
   GroupApi,
   MediaApi,
+  ModerationApi,
   MsgApi,
   PushApi,
   UserApi,
@@ -75,6 +76,7 @@ function typedTargets(): Set<string> {
     new GroupApi(io),
     new MediaApi(io),
     new PushApi(io, () => true),
+    new ModerationApi(io),
   ];
 
   for (const namespace of namespaces) {
@@ -172,6 +174,7 @@ describe('the namespaced surface is endpoints only', () => {
     ['group', new GroupApi(io)],
     ['media', new MediaApi(io)],
     ['push', new PushApi(io, () => true)],
+    ['moderation', new ModerationApi(io)],
   ];
 
   it('names no endpoint the server does not have', () => {

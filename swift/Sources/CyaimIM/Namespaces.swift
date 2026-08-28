@@ -353,6 +353,51 @@ public struct ImPushNamespace: Sendable {
         try await connection.execute("push.unregister")
         await client?.notePushUnregistered()
     }
+
+    /// Reports that this device's user tapped a notification.
+    ///
+    /// Call it from the tap handler — `userNotificationCenter(_:didReceive:withCompletionHandler:)`
+    /// — and not from wherever the message gets rendered. What it feeds is the delivery funnel on
+    /// the tenant's push screen: sent → delivered → clicked. APNs and the OEM channels do not
+    /// report delivery at all, so on most deployments a tap is the only evidence a notification
+    /// ever arrived, and the server credits delivery from it.
+    ///
+    /// Pass whatever the payload gave you; `messageId` from its `msgId` is the usual one. With
+    /// neither field the server attributes this device's newest delivery, which is the right answer
+    /// for a tap that opened the app without naming a message.
+    ///
+    /// **It swallows server failures and is never retried.** A miss is `2401 PushDeliveryNotFound`
+    /// — the row expired after seven days, or the notification did not come from this platform —
+    /// and neither is the app's fault nor anything a user could act on. This is the one call in the
+    /// typed surface that swallows its failure, because it is a statistic: making a notification
+    /// tap fail to collect one would cost more than the statistic is worth.
+    ///
+    /// **Cancellation is the one thing it does throw**, which is why the signature is `throws` at
+    /// all. `CONTRACT.md` §7.5 rule 3 puts it plainly — cancellation is not a server outcome — and
+    /// a `Task` that was cancelled mid-flight must not finish as though it succeeded, or the group
+    /// that cancelled it never learns the child stopped. Written `async` without `throws`, as it
+    /// first was, the rule is not merely unimplemented but unsatisfiable: there is no channel left
+    /// to raise it on. Callers who genuinely want fire-and-forget write `try? await`, which is the
+    /// ordinary Swift spelling of that intent and stays honest about what is being discarded.
+    ///
+    /// 尽力而为的统计：APNs 与厂商通道根本不回报送达，多数部署上「点击」是这条通知到过的唯一证据。
+    /// 服务端失败不抛出；**唯一会抛出的是取消**——取消不是服务端结果（§7.5 规则 3），
+    /// 一个中途被取消的 Task 不能装作成功完成，否则取消它的那一方永远不知道子任务停了。
+    /// 写成不带 throws 的 async 时，这条规则不是「没实现」而是「无法实现」：没有任何通道能抛出它。
+    /// 真心要 fire-and-forget 的调用方写 `try? await`——那是这个意图在 Swift 里的标准写法，
+    /// 并且对「丢掉了什么」保持诚实。
+    public func clicked(_ request: PushClickedRequest = .init()) async throws {
+        do {
+            try await connection.execute("push.clicked", body: request)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            ImLog.warn(
+                "push.clicked was not recorded: \(error). The delivery funnel is one tap short.",
+                using: client?.warningSink
+            )
+        }
+    }
 }
 
 // MARK: - friend
@@ -466,5 +511,33 @@ public struct ImGroupNamespace: Sendable {
     /// a state to render, not a failure to report.
     public func join(_ request: JoinGroupRequest) async throws {
         try await connection.execute("group.join", body: request)
+    }
+}
+
+// MARK: - moderation
+
+/// `moderation.*` — what an end user can do about content.
+public struct ImModerationNamespace: Sendable {
+    let connection: ImConnection
+
+    /// Reports a user, optionally naming a message.
+    ///
+    /// The other half of ``ImFriendNamespace/block(_:)``. App Store review asks for both a way to
+    /// block an abusive user and a way to report objectionable content, so an app that ships one
+    /// without the other still has nowhere to point the reviewer.
+    ///
+    /// **The reporter is the connection.** ``SubmitReportRequest`` has no field for it and must not
+    /// grow one: a report filed in somebody else's name is both a way to get them banned and a way
+    /// to poison the count a moderator decides on.
+    ///
+    /// The target and the category are validated — reporting yourself is `1001`, and so is a
+    /// category the server does not know. A report naming a message that has already been deleted
+    /// is accepted on purpose: it is the report a moderator most wants, and refusing it would turn
+    /// the platform's own retention into a way to escape moderation.
+    ///
+    /// What comes back is a receipt, not the row. There is no state to poll and no way for the
+    /// reporter to read what a moderator decided, which is deliberate.
+    public func report(_ request: SubmitReportRequest) async throws -> ReportReceipt {
+        try await connection.request("moderation.report", body: request)
     }
 }

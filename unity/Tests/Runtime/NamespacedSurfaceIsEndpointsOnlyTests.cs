@@ -49,6 +49,7 @@ namespace Cyaim.Im.Tests
             { typeof(ImGroupApi), "group" },
             { typeof(ImMediaApi), "media" },
             { typeof(ImPushApi), "push" },
+            { typeof(ImModerationApi), "moderation" },
         };
 
         /// <summary>

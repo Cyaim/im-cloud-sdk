@@ -210,6 +210,18 @@ public object ImErrorCode {
     public const val FileTooLarge: Int = 1702
     public const val StorageQuotaExceeded: Int = 1703
 
+    // ---- 2400: push delivery ----
+
+    /**
+     * A click named a delivery row this tenant does not have: it aged out after seven days, or the
+     * notification was never sent by this platform.
+     *
+     * The one code of the 2400 band a device ever sees — the rest of it belongs to the console
+     * plane, where a signed-in member reads their own push records. [PushApi.clicked] does not
+     * raise it; see there for why a click count that is one short is not an application's problem.
+     */
+    public const val PushDeliveryNotFound: Int = 2401
+
     /**
      * Codes worth trying again, unchanged, later. Computed from the code alone so that all five
      * SDKs agree (CONTRACT.md §7.3) — note that nothing outside this set is retryable, including

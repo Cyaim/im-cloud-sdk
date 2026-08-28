@@ -164,9 +164,10 @@ report can be grepped rather than translated.
 | `im.friend` | `list` `add` `handleRequest` `requestList` `delete` `blockList` `block` `unblock` |
 | `im.group` | `create` `info` `update` `dismiss` `memberList` `joined` `invite` `kick` `quit` `join` |
 | `im.media` | `uploadTicket` `downloadUrl` |
-| `im.push` | `register` `unregister` `setToken` |
+| `im.push` | `register` `unregister` `clicked` `setToken` |
+| `im.moderation` | `report` |
 
-That is tiers **T0, T1 and T2** of [`sdk/CONTRACT.md`](../CONTRACT.md) — 49 of the server's 107
+That is tiers **T0, T1 and T2** of [`sdk/CONTRACT.md`](../CONTRACT.md) — 51 of the server's 112
 endpoints, verified against `sdk/endpoint-inventory.json` by the test suite rather than counted by
 hand. T3 and T4 go through `invoke()` until they are typed.
 
@@ -198,7 +199,7 @@ returns the original result rather than a second message.
 
 ### `invoke()` — the escape hatch
 
-With 107 endpoints and five release trains, the typed surface will always trail the server. `invoke`
+With 112 endpoints and five release trains, the typed surface will always trail the server. `invoke`
 is permanent, shares the typed methods' code path exactly (same timeouts, cancellation and error
 mapping), and never touches a cursor.
 
@@ -232,6 +233,14 @@ try {
   app knows whether it is still worth sending.
 - A socket that drops with requests in flight fails them `1004 Timeout`, not `1005` — 1005 would
   claim the call was never delivered, and the SDK does not know that.
+- **`im.push.clicked` is the one exception to all of the above, and the only one.** It resolves
+  whatever the server says: a `2401 PushDeliveryNotFound` (the record aged out after seven days, or
+  the notification did not come from this platform) is logged through `console.debug` and swallowed.
+  It is a statistic, nobody in the app is waiting on it, and the natural call site is a notification
+  tap — where an unhandled rejection is a red screen for a tap that worked. The cost is real and
+  worth naming: a deployment whose click funnel reads zero forever leaves no evidence above verbose
+  logging, so check the funnel on the tenant push screen rather than waiting for an error. An
+  `AbortError` still propagates — cancellation is not a server outcome (`CONTRACT.md` §7.5).
 - `status: 2` (no such endpoint on this deployment) surfaces as `1008 UnsupportedOperation`, which is
   the signal that the SDK is newer than the server it is talking to.
 

@@ -39,7 +39,7 @@ import kotlin.random.Random
 /**
  * The client applications actually use.
  *
- * Beyond wrapping the 49 typed endpoints of tiers T0–T2, this owns the one thing every correct IM
+ * Beyond wrapping the 51 typed endpoints of tiers T0–T2, this owns the one thing every correct IM
  * client must do and most hand-rolled ones do not: it keeps two cursors per conversation, notices
  * when an arriving message skips a number, and pulls the missing range before delivering.
  *
@@ -159,6 +159,9 @@ public class ImClient(
 
     /** `push.*` — offline notifications. Read [PushApi] before you ship an Android build. */
     public val push: PushApi = PushApi(connection, logger)
+
+    /** `moderation.*` — reporting a user or a message. The other half of `friend.block`. */
+    public val moderation: ModerationApi = ModerationApi(connection)
 
     // ------------------------------------------------------------------------- events
 
