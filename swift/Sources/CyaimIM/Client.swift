@@ -65,7 +65,12 @@ public actor ImClient {
     /// which on iOS is a place nobody reads.
     /// options 保持私有（里面有凭据），这里只放开命名空间真正需要的那一个成员：
     /// 让「有一次点击没记上」经由与其余告警相同的通道抵达应用，而不是写进 iOS 上没人看的 stderr。
-    var warningSink: (@Sendable (String) -> Void)? { options.warningHandler }
+    /// `nonisolated` because it reads an immutable `let` on a `Sendable` type: there is no actor
+    /// state to protect, and hopping onto the actor to fetch a closure would make a namespace await
+    /// the client's mailbox just to file a warning — behind whatever send or sync is queued ahead of
+    /// it. 读的是 Sendable 类型上的不可变 let，没有需要保护的 actor 状态；
+    /// 为了取一个闭包而跳上 actor，等于让命名空间排在队列里那些发送/同步后面，只为记一条告警。
+    nonisolated var warningSink: (@Sendable (String) -> Void)? { options.warningHandler }
 
     // MARK: Cursors
 
