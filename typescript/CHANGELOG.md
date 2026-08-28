@@ -43,6 +43,12 @@ Implements [`sdk/CONTRACT.md`](../CONTRACT.md) contract version `1.0`.
 
 ### Added
 
+- **`logStore` and the device log (ADR-003).** `im.diag`, an `ImLogStore` option with
+  `inMemoryLogStore()` as its default, and `im.log` for an application's own lines. The console can
+  ask a running device for the SDK's runtime log; the client answers once per connect and on an
+  `evt.system` frame. **The store belongs to you, and not supplying one is a complete choice** — the
+  in-memory ring covers this process only, and every answer carries `coveredFromMs` and `volatile`
+  so a support engineer knows whether they are reading three minutes or three weeks.
 - `ImCursorStore` and the two-cursor model — `deliveredSeq` in memory, `committedSeq` durable —
   with `ImCursorStore.inMemory()`, `.localStorage(keyPrefix)` and `.file(path)`, plus
   `im.commit(conversationId, seq)`, `im.deliveredSeq()`, `im.committedSeq()`, `im.cursorSnapshot()`

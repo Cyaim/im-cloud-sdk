@@ -8,8 +8,23 @@ to ask which platform.
 
 ## [Unreleased]
 
+### Fixed
+
+- **This assembly did not compile.** Two deprecated overloads on `ImClient` — `RecallAsync` and
+  `ReactAsync` — assigned a `long` to `MessageId`, which is a `string` on both request types. A
+  plain type error on a published API surface, unnoticed because Unity is the one client SDK with no
+  build in CI: there is no Unity licence on the runners and no headless compiler in the box, so a
+  whole assembly sat broken for as long as nobody opened it in an editor. Fixed, and
+  `IM.Tests.UnitySdkCompile` now compiles `Runtime/` against a hand-written UnityEngine shim as part
+  of the server solution, so it cannot happen again.
+
 ### Added
 
+- **`LogStore` and the device log (ADR-003).** `im.Diag`, an `IImLogStore` option with
+  `ImLogStore.InMemory()` as its default and `ImLogStore.File(path)` for when the studio has decided
+  where its players' runtime detail may be written. `im.Log` takes the game's own lines. Every
+  answer carries `CoveredFromMs` and `Volatile` so a support engineer knows whether they are reading
+  three minutes or three weeks.
 - **`im.Moderation.ReportAsync`** — `moderation.report`, the half of app-store review that
   `im.Friend.BlockAsync` does not cover. Reviewers treat blocking an abusive user and reporting
   objectionable content as two separate mandatory items, so a game that shipped only the first

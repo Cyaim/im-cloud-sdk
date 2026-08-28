@@ -46,6 +46,15 @@ The fix is the two-cursor model in `sdk/CONTRACT.md` §5, implemented literally:
 
 Delivery is therefore **at-least-once**. Deduplicate on `ImMessage.messageId`.
 
+### Added — the device log
+
+- **`logStore` and `im.diag` (ADR-003).** The console can ask a running device for the SDK's runtime
+  log; the client answers once per connect and on an `evt.system` frame. `ImLogStore.inMemory()` is
+  the default, `im.log` takes the application's own lines, and `deviceLogUploader` is the seam for
+  the web, where `dart:io` does not exist. **Not supplying a store is a complete choice** — the
+  in-memory ring covers this run only, and every answer carries `coveredFromMs` and `volatile` so a
+  support engineer knows whether they are reading three minutes or three weeks.
+
 ### Added — offline push registration
 
 `push.register` / `push.unregister` shipped on the server and no SDK called them, so offline push

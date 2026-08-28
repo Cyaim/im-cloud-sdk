@@ -52,6 +52,12 @@ tiers T0 and T1 complete on **all five** SDKs. Nothing before this was ever publ
 
 ### Added
 
+- **`logStore` and the device log (ADR-003).** `im.diag`, an `ImLogStore` option with
+  `ImLogStore.inMemory()` as its default and `ImLogStore.file(File)` for when you have decided where
+  your users' runtime detail may be written. The console can ask a running device for the SDK's
+  runtime log; the client answers once per connect and on an `evt.system` frame. **Not supplying a
+  store is a complete choice** — the in-memory ring covers this process only, and every answer
+  carries `coveredFromMs` and `volatile` so a support engineer knows what they are reading.
 - **Offline push (CONTRACT.md §6).** `im.push.register` / `im.push.unregister`, plus
   `im.push.setToken(provider, token)` for the host app to hand over an FCM or OEM token from its own
   `onNewToken`. The SDK re-registers on every successful connect, caches a token handed over while

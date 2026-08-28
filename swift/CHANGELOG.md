@@ -47,6 +47,11 @@ the family does not keep. Implements client contract **1.0**.
 
 ### Added
 
+- **`logStore` and the device log (ADR-003).** `im.diag`, an `ImLogStore` option with
+  `.inMemory()` as its default and `.file(at:)` for when you have decided where your users' runtime
+  detail may be written — `Documents` and `Library/Caches` differ in backup behaviour, and that is
+  your decision rather than the SDK's. `im.log` takes an application's own lines. Every answer
+  carries `coveredFromMs` and `volatile` so a support engineer knows what they are reading.
 - **`ImCursorStore`, a required constructor argument.** `ImCursorStore.applicationSupport(subdirectory:scope:)`,
   `.file(at:)` and an explicit `.inMemory()` that logs one warning. There is no default: defaulting
   to no persistence is what produced the bug above, and defaulting to *some* persistence would mean
