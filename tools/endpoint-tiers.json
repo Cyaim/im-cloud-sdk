@@ -79,6 +79,7 @@
     "friend.delete": { "tier": "T2" },
     "friend.blockList": { "tier": "T2" },
     "friend.block": { "tier": "T2", "note": "App-store review treats user blocking as mandatory for any app with user-generated content." },
+    "moderation.report": { "tier": "T2", "note": "The other half of what friend.block is here for: app-store review requires both a way to block an abusive user and a way to report objectionable content. An SDK that has completed T2 without this still cannot pass review, which is the same argument that put blocking in T2." },
     "friend.unblock": { "tier": "T2" },
 
     "group.create": { "tier": "T2" },

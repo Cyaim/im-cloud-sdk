@@ -26,8 +26,8 @@
     "jsonPolicy": "camelCase property names; nulls omitted on write; numbers may arrive as JSON strings; property matching is case-insensitive on read"
   },
   "totals": {
-    "endpoints": 111,
-    "controllers": 12,
+    "endpoints": 112,
+    "controllers": 13,
     "implemented": {
       "typescript": 51,
       "kotlin": 50,
@@ -92,7 +92,7 @@
       "title": "Social graph and groups",
       "titleZh": "关系链与群组",
       "rule": "What turns a 1:1 chat into a messenger: contacts, blocking, group create/join/manage, presence, and the message operations users expect once more than two people can see a message.",
-      "endpoints": 29,
+      "endpoints": 30,
       "implemented": {
         "typescript": 29,
         "kotlin": 28,
@@ -115,10 +115,11 @@
         "user.unsubscribePresence",
         "user.subscribePresence",
         "user.presence",
-        "friend.block",
+        "moderation.report",
         "conv.clear",
         "conv.delete",
         "conv.setting",
+        "group.join",
         "group.quit",
         "group.kick",
         "group.invite",
@@ -128,7 +129,7 @@
         "group.update",
         "group.info",
         "group.create",
-        "group.join",
+        "friend.block",
         "friend.unblock"
       ]
     },
@@ -196,7 +197,7 @@
         "room.send",
         "room.quit",
         "room.join",
-        "keys.revoke",
+        "keys.safetyNumber",
         "desk.close",
         "desk.transfer",
         "desk.accept",
@@ -211,15 +212,15 @@
         "call.hangup",
         "call.reject",
         "call.accept",
-        "keys.safetyNumber",
         "desk.queue",
+        "desk.rate",
         "desk.suggest",
+        "keys.revoke",
         "keys.remaining",
         "keys.upload",
         "keys.devices",
         "keys.claim",
         "keys.publish",
-        "desk.rate",
         "desk.canned"
       ]
     }
@@ -1112,23 +1113,6 @@
       }
     },
     {
-      "target": "friend.block",
-      "controller": "FriendController",
-      "method": "Block",
-      "source": "src/IM.Server/WsControllers/UserController.cs:211",
-      "requestType": "BlockRequest",
-      "responseType": null,
-      "tier": "T2",
-      "note": "App-store review treats user blocking as mandatory for any app with user-generated content.",
-      "implementedIn": {
-        "typescript": true,
-        "kotlin": true,
-        "swift": true,
-        "flutter": true,
-        "unity": true
-      }
-    },
-    {
       "target": "msg.send",
       "controller": "MsgController",
       "method": "Send",
@@ -1145,12 +1129,29 @@
       }
     },
     {
-      "target": "keys.revoke",
+      "target": "moderation.report",
+      "controller": "ModerationController",
+      "method": "Report",
+      "source": "src/IM.Server/WsControllers/ModerationController.cs:57",
+      "requestType": "SubmitReportRequest",
+      "responseType": "ReportReceipt",
+      "tier": "T2",
+      "note": "The other half of what friend.block is here for: app-store review requires both a way to block an abusive user and a way to report objectionable content. An SDK that has completed T2 without this still cannot pass review, which is the same argument that put blocking in T2.",
+      "implementedIn": {
+        "typescript": false,
+        "kotlin": false,
+        "swift": false,
+        "flutter": false,
+        "unity": false
+      }
+    },
+    {
+      "target": "keys.safetyNumber",
       "controller": "KeysController",
-      "method": "Revoke",
-      "source": "src/IM.Server/WsControllers/KeysController.cs:175",
-      "requestType": "RevokeDeviceRequest",
-      "responseType": null,
+      "method": "SafetyNumber",
+      "source": "src/IM.Server/WsControllers/KeysController.cs:196",
+      "requestType": "SafetyNumberRequest",
+      "responseType": "string",
       "tier": "T4",
       "implementedIn": {
         "typescript": false,
@@ -1567,12 +1568,12 @@
       }
     },
     {
-      "target": "keys.safetyNumber",
-      "controller": "KeysController",
-      "method": "SafetyNumber",
-      "source": "src/IM.Server/WsControllers/KeysController.cs:196",
-      "requestType": "SafetyNumberRequest",
-      "responseType": "string",
+      "target": "desk.queue",
+      "controller": "DeskController",
+      "method": "Queue",
+      "source": "src/IM.Server/WsControllers/DeskController.cs:128",
+      "requestType": null,
+      "responseType": "DeskQueueView",
       "tier": "T4",
       "implementedIn": {
         "typescript": false,
@@ -1583,13 +1584,14 @@
       }
     },
     {
-      "target": "desk.queue",
+      "target": "desk.rate",
       "controller": "DeskController",
-      "method": "Queue",
-      "source": "src/IM.Server/WsControllers/DeskController.cs:128",
-      "requestType": null,
-      "responseType": "DeskQueueView",
+      "method": "Rate",
+      "source": "src/IM.Server/WsControllers/DeskController.cs:136",
+      "requestType": "DeskRateRequest",
+      "responseType": null,
       "tier": "T4",
+      "note": "The customer rates a finished desk session. Tiered on 2026-08-27: it shipped untiered, which stopped the generator and froze the inventory.",
       "implementedIn": {
         "typescript": false,
         "kotlin": false,
@@ -1607,6 +1609,22 @@
       "responseType": "IReadOnlyList<string>",
       "tier": "T4",
       "note": "LLM reply suggestions for an agent; returns 1203 when no provider is configured. Tiered on 2026-08-27 with desk.rate and desk.canned.",
+      "implementedIn": {
+        "typescript": false,
+        "kotlin": false,
+        "swift": false,
+        "flutter": false,
+        "unity": false
+      }
+    },
+    {
+      "target": "keys.revoke",
+      "controller": "KeysController",
+      "method": "Revoke",
+      "source": "src/IM.Server/WsControllers/KeysController.cs:175",
+      "requestType": "RevokeDeviceRequest",
+      "responseType": null,
+      "tier": "T4",
       "implementedIn": {
         "typescript": false,
         "kotlin": false,
@@ -1793,23 +1811,6 @@
       }
     },
     {
-      "target": "desk.rate",
-      "controller": "DeskController",
-      "method": "Rate",
-      "source": "src/IM.Server/WsControllers/DeskController.cs:136",
-      "requestType": "DeskRateRequest",
-      "responseType": null,
-      "tier": "T4",
-      "note": "The customer rates a finished desk session. Tiered on 2026-08-27: it shipped untiered, which stopped the generator and froze the inventory.",
-      "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
-      }
-    },
-    {
       "target": "group.applicationList",
       "controller": "GroupController",
       "method": "ApplicationList",
@@ -1823,6 +1824,22 @@
         "swift": false,
         "flutter": false,
         "unity": false
+      }
+    },
+    {
+      "target": "group.join",
+      "controller": "GroupController",
+      "method": "Join",
+      "source": "src/IM.Server/WsControllers/GroupController.cs:137",
+      "requestType": "JoinGroupRequest",
+      "responseType": null,
+      "tier": "T2",
+      "implementedIn": {
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -2003,13 +2020,14 @@
       }
     },
     {
-      "target": "group.join",
-      "controller": "GroupController",
-      "method": "Join",
-      "source": "src/IM.Server/WsControllers/GroupController.cs:137",
-      "requestType": "JoinGroupRequest",
+      "target": "friend.block",
+      "controller": "FriendController",
+      "method": "Block",
+      "source": "src/IM.Server/WsControllers/UserController.cs:211",
+      "requestType": "BlockRequest",
       "responseType": null,
       "tier": "T2",
+      "note": "App-store review treats user blocking as mandatory for any app with user-generated content.",
       "implementedIn": {
         "typescript": true,
         "kotlin": true,
@@ -4431,6 +4449,21 @@
         }
       ]
     },
+    "ReportReceipt": {
+      "source": "IM.Server/src/IM.Server/WsControllers/ModerationController.cs",
+      "properties": [
+        {
+          "name": "reportId",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "createdAt",
+          "type": "long",
+          "nullable": false
+        }
+      ]
+    },
     "ResumeRequest": {
       "source": "IM.Server/src/IM.Server/WsControllers/ConnController.cs",
       "properties": [
@@ -5068,6 +5101,36 @@
           "name": "idleTimeoutSeconds",
           "type": "int",
           "nullable": false
+        }
+      ]
+    },
+    "SubmitReportRequest": {
+      "source": "IM.Server/src/IM.Server/WsControllers/ModerationController.cs",
+      "properties": [
+        {
+          "name": "targetUserId",
+          "type": "string?",
+          "nullable": true
+        },
+        {
+          "name": "conversationId",
+          "type": "string?",
+          "nullable": true
+        },
+        {
+          "name": "messageId",
+          "type": "long",
+          "nullable": false
+        },
+        {
+          "name": "category",
+          "type": "string?",
+          "nullable": true
+        },
+        {
+          "name": "note",
+          "type": "string?",
+          "nullable": true
         }
       ]
     },
