@@ -116,11 +116,12 @@ struct NamespacedSurfaceTests {
         let methods = try Self.declaredMethods()
         let seen = Set(methods.map { $0.type })
 
-        #expect(
-            seen == Set(Self.prefixes.keys),
-            "the scan found \(seen.sorted()); if Namespaces.swift was split or reformatted this "
-                + "check has quietly stopped covering part of the surface"
-        )
+        // `Comment` is ExpressibleByStringLiteral, so an interpolated *literal* converts and a
+        // `+` expression does not. Build the sentence first rather than splitting it at the call.
+        let missed = "the scan found \(seen.sorted()); if Namespaces.swift was split or reformatted "
+            + "this check has quietly stopped covering part of the surface"
+
+        #expect(seen == Set(Self.prefixes.keys), "\(missed)")
         #expect(methods.count >= 40, "found only \(methods.count) methods, which cannot be right")
     }
 
@@ -141,12 +142,11 @@ struct NamespacedSurfaceTests {
             }
         }
 
-        #expect(
-            strays.isEmpty,
-            "these namespaced methods name endpoints the server does not have. Either the endpoint "
-                + "exists and endpoint-inventory.json needs regenerating, or the method is an "
-                + "invention and belongs on ImClient as a flat alias (CONTRACT §4.2): \(strays)"
-        )
+        let complaint = "these namespaced methods name endpoints the server does not have. Either "
+            + "the endpoint exists and endpoint-inventory.json needs regenerating, or the method is "
+            + "an invention and belongs on ImClient as a flat alias (CONTRACT §4.2): \(strays)"
+
+        #expect(strays.isEmpty, "\(complaint)")
     }
 
     @Test("keeps sendText off the namespaced surface")
