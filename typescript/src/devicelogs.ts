@@ -221,7 +221,7 @@ export class ImDeviceLogs {
       return;
     }
 
-    await this.tell({
+    const told = await this.tell({
       requestId: request.requestId,
       uploaded: true,
       sizeBytes: byteLength(body),
@@ -232,17 +232,26 @@ export class ImDeviceLogs {
     // Cleared only after the server has been told. Clearing first and then failing to report would
     // destroy the evidence and leave the row saying nothing arrived.
     // 只有在告诉服务端之后才清空：先清再失败，会毁掉证据而记录上写着什么都没到。
-    await this.log.clear();
+    if (told) {
+      await this.log.clear();
+    }
   }
 
-  private async tell(answer: DeviceLogAnswer): Promise<void> {
+  private async tell(answer: DeviceLogAnswer): Promise<boolean> {
     try {
       await this.transport.answer(answer);
+      return true;
     } catch (error) {
-      // The upload may well have succeeded; the row will expire saying nothing arrived. Logged so
-      // the next bundle carries the explanation, which is the best this side can do.
-      // 上传很可能是成功的，而那一行会以「什么都没到」过期。记下来，让下一份日志带上解释。
+      // Un-claimed, so the next connect tries again. The bundle may well have reached storage
+      // already — but a row nobody was told about expires saying nothing arrived, and a log sitting
+      // in a bucket that the record denies exists is the same as no log at all. Re-uploading the
+      // same lines to the same object key is cheap; losing them is not.
+      // 取消认领，下次连接再试一遍：包很可能已经进了对象存储，
+      // 但一条没人被告知的记录会以「什么都没到」过期——而记录否认其存在的日志，等于没有日志。
+      // 用同一个对象键重传同样几行很便宜，丢掉它们不便宜。
+      this.answered.delete(answer.requestId);
       this.log.warn(`diag.logUploaded failed for ${answer.requestId}: ${describe(error)}`);
+      return false;
     }
   }
 }

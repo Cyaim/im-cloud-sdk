@@ -194,7 +194,7 @@ namespace Cyaim.Im
                 return;
             }
 
-            await TellAsync(
+            var told = await TellAsync(
                 new ImDeviceLogAnswer
                 {
                     RequestId = request.RequestId,
@@ -208,14 +208,18 @@ namespace Cyaim.Im
             // Cleared only after the server has been told. Clearing first and then failing to report
             // would destroy the evidence and leave the row saying nothing arrived.
             // 只有在告诉服务端之后才清空：先清再失败，会毁掉证据而记录上写着什么都没到。
-            _log.Clear();
+            if (told)
+            {
+                _log.Clear();
+            }
         }
 
-        private async Task TellAsync(ImDeviceLogAnswer answer, CancellationToken cancellationToken)
+        private async Task<bool> TellAsync(ImDeviceLogAnswer answer, CancellationToken cancellationToken)
         {
             try
             {
                 await _diag.LogUploadedAsync(answer, cancellationToken).ConfigureAwait(false);
+                return true;
             }
             catch (OperationCanceledException)
             {
@@ -223,11 +227,20 @@ namespace Cyaim.Im
             }
             catch (Exception failure)
             {
-                // The upload may well have succeeded; the row will expire saying nothing arrived.
-                // Logged so the next bundle carries the explanation, which is the best this side can
-                // do.
-                // 上传很可能成功了，而那一行会以「什么都没到」过期。记下来，让下一份日志带上解释。
+                // Un-claimed, so the next connect tries again. The bundle may well have reached
+                // storage already — but a row nobody was told about expires saying nothing arrived,
+                // and a log sitting in a bucket that the record denies exists is the same as no log
+                // at all. Re-uploading the same lines to the same object key is cheap; losing them
+                // is not.
+                // 取消认领，下次连接再试：包很可能已经进了对象存储，但一条没人被告知的记录会以
+                // 「什么都没到」过期——而记录否认其存在的日志，等于没有日志。
+                lock (_answered)
+                {
+                    _answered.Remove(answer.RequestId);
+                }
+
                 _log.Warn("diag.logUploaded failed for " + answer.RequestId + ": " + failure.Message);
+                return false;
             }
         }
 

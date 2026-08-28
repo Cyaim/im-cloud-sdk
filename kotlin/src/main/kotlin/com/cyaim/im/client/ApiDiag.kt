@@ -56,7 +56,7 @@ public class DiagApi internal constructor(private val connection: ImConnection) 
      * into background traffic on every handset a tenant has.
      * 每次连接一次，不要轮询：这是一件由人按工单节奏发起的事。
      */
-    public suspend fun requests(): List<PendingDeviceLog> =
+    public suspend fun logRequests(): List<PendingDeviceLog> =
         connection.request("diag.logRequests", null)
 
     /**
@@ -67,7 +67,7 @@ public class DiagApi internal constructor(private val connection: ImConnection) 
      * for the customer to open the app, or look at why this build cannot comply.
      * 拒绝也是一种答复，必须发出去：沉默与「根本没收到」分不出区别，而两者要查的方向相反。
      */
-    public suspend fun uploaded(answer: DeviceLogAnswer) {
+    public suspend fun logUploaded(answer: DeviceLogAnswer) {
         connection.execute("diag.logUploaded", answer.asBody())
     }
 }
@@ -152,7 +152,7 @@ internal class ImDeviceLogs(
     suspend fun check() {
         val pending =
             try {
-                diag.requests()
+                diag.logRequests()
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (failure: Throwable) {
@@ -241,7 +241,7 @@ internal class ImDeviceLogs(
             return
         }
 
-        tell(
+        val told = tell(
             DeviceLogAnswer(
                 requestId = request.requestId,
                 uploaded = true,
@@ -254,21 +254,28 @@ internal class ImDeviceLogs(
         // Cleared only after the server has been told. Clearing first and then failing to report
         // would destroy the evidence and leave the row saying nothing arrived.
         // 只有在告诉服务端之后才清空：先清再失败，会毁掉证据而记录上写着什么都没到。
-        log.clear()
+        if (told) {
+            log.clear()
+        }
     }
 
-    private suspend fun tell(answer: DeviceLogAnswer) {
+    private suspend fun tell(answer: DeviceLogAnswer): Boolean =
         try {
-            diag.uploaded(answer)
+            diag.logUploaded(answer)
+            true
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (failure: Throwable) {
-            // The upload may well have succeeded; the row will expire saying nothing arrived.
-            // Logged so the next bundle carries the explanation, which is the best this side can do.
-            // 上传很可能成功了，而那一行会以「什么都没到」过期。记下来，让下一份日志带上解释。
+            // Un-claimed, so the next connect tries again. The bundle may well have reached
+            // storage already — but a row nobody was told about expires saying nothing arrived, and
+            // a log sitting in a bucket that the record denies exists is the same as no log at all.
+            // Re-uploading the same lines to the same object key is cheap; losing them is not.
+            // 取消认领，下次连接再试：包很可能已经进了对象存储，但一条没人被告知的记录会以
+            // 「什么都没到」过期——而记录否认其存在的日志，等于没有日志。
+            answered.remove(answer.requestId)
             log.write(ImLogLevel.Warn, "diag.logUploaded failed for ${answer.requestId}", failure)
+            false
         }
-    }
 }
 
 private val kotlinx.serialization.json.JsonPrimitive.contentOrNull: String?

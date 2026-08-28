@@ -221,8 +221,8 @@ export class ImClient {
     this.log = new ImLog(options.logStore ?? inMemoryLogStore());
     this.deviceLogs = new ImDeviceLogs(
       {
-        requests: () => this.diag.requests(),
-        answer: (answer) => this.diag.uploaded(answer),
+        requests: () => this.diag.logRequests(),
+        answer: (answer) => this.diag.logUploaded(answer),
       },
       this.log,
     );

@@ -34,6 +34,7 @@ class NamespacedSurfaceTest {
         MediaApi::class.java to "media",
         PushApi::class.java to "push",
         ModerationApi::class.java to "moderation",
+        DiagApi::class.java to "diag",
     )
 
     /**
@@ -71,6 +72,38 @@ class NamespacedSurfaceTest {
             "these namespaced methods name endpoints the server does not have. Either the endpoint " +
                 "exists and endpoint-inventory.json needs regenerating, or the method is an " +
                 "invention and belongs on ImClient as a flat alias (CONTRACT.md §4.2)",
+        )
+    }
+
+    /**
+     * The table above names every namespace the client exposes.
+     *
+     * **Without this, that table is a list that quietly stops covering things.** A namespace added
+     * to [ImClient] and not added there is simply not checked: the suite stays green while a whole
+     * prefix goes unexamined, which is the opposite of what a guardrail is for. `diag` was exactly
+     * that on 2026-08-29 — it went in, and all four hand-maintained tables across the SDKs missed
+     * it. Only Swift's equivalent assertion noticed, which is why this one now exists here too.
+     *
+     * 没有这一条，上面那张表就是一份会静默失去覆盖的清单：新增到 ImClient 上却没加进表里的
+     * 命名空间根本不会被检查——套件照绿，而一整个前缀无人过问。2026-08-29 的 diag 正是如此：
+     * 五端里四张人工维护的表全都漏了它，只有 Swift 那条同类断言发现了，所以这里也补上一条。
+     */
+    @Test
+    fun `the table covers every namespace the client exposes`() {
+        val missing = ImClient::class.java.methods
+            .filter { it.name.startsWith("get") && it.parameterCount == 0 }
+            .map { it.returnType }
+            .filter { it.simpleName.endsWith("Api") && it.name.startsWith("com.cyaim.im.client.") }
+            .distinct()
+            .filterNot { it in namespaces.keys }
+            .map { it.simpleName }
+            .sorted()
+
+        assertEquals(
+            emptyList(),
+            missing,
+            "these namespaces are exposed on ImClient and absent from this test's table, so nothing " +
+                "here checks them",
         )
     }
 

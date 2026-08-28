@@ -684,7 +684,16 @@ between a misconfigured integration and a wrong conclusion.
 4. **Clear the store only after the server has been told.** Clearing first and then failing to
    report destroys the evidence and leaves the row saying nothing arrived.
 
-### 6A.5 The frame rides on `evt.system`
+### 6A.5 The method names are the endpoints' method parts, as §4.2 requires
+
+`logRequests` / `logUploaded` — not `requests` / `uploaded`. Two of the five SDKs shipped the
+shorter pair for a day, and Kotlin's namespace check caught it the moment `diag` was added to that
+test's table: a method called `requests` on the `diag` namespace implies `diag.requests`, an
+endpoint the server does not have.
+方法名就是端点名的后半段，不取更短的同义词：`diag` 上的 `requests` 意味着 `diag.requests`，
+而服务端没有那个端点。
+
+### 6A.6 The frame rides on `evt.system`
 
 Not a push target of its own. A client built before this feature existed receives an action it does
 not recognise and ignores it, which is correct and needs no code; a new target would be silently

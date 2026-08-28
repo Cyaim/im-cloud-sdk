@@ -623,7 +623,7 @@ export class DiagApi {
    * into background traffic on every handset a tenant has.
    * 每次连接一次，不要轮询：这是一件由人按工单节奏发起的事。
    */
-  requests(options?: ImRequestOptions): Promise<PendingDeviceLog[]> {
+  logRequests(options?: ImRequestOptions): Promise<PendingDeviceLog[]> {
     return this.io.request<PendingDeviceLog[]>('diag.logRequests', undefined, options);
   }
 
@@ -634,7 +634,7 @@ export class DiagApi {
    * never received the request, and the two send a support engineer in opposite directions.
    * 拒绝也是一种答复，必须发出去：沉默与「根本没收到」分不出区别。
    */
-  async uploaded(answer: DeviceLogAnswer, options?: ImRequestOptions): Promise<void> {
+  async logUploaded(answer: DeviceLogAnswer, options?: ImRequestOptions): Promise<void> {
     await this.io.request<void>('diag.logUploaded', answer, options);
   }
 }
