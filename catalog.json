@@ -15,10 +15,10 @@
         "browser (ES2020)",
         "Node.js 18+"
       ],
-      "docs": "sdk/typescript/README.md",
-      "changelog": "sdk/typescript/CHANGELOG.md",
-      "demo": "sdk/typescript/test",
-      "source": "sdk/typescript/src"
+      "docs": "SDK/typescript/README.md",
+      "changelog": "SDK/typescript/CHANGELOG.md",
+      "demo": "SDK/typescript/test",
+      "source": "SDK/typescript/src"
     },
     {
       "id": "kotlin",
@@ -32,10 +32,10 @@
         "JVM 11+",
         "Android (via the host app, see CONTRACT §6.3)"
       ],
-      "docs": "sdk/kotlin/README.md",
-      "changelog": "sdk/kotlin/CHANGELOG.md",
+      "docs": "SDK/kotlin/README.md",
+      "changelog": "SDK/kotlin/CHANGELOG.md",
       "demo": null,
-      "source": "sdk/kotlin/src/main/kotlin"
+      "source": "SDK/kotlin/src/main/kotlin"
     },
     {
       "id": "swift",
@@ -50,10 +50,10 @@
         "iOS",
         "macOS"
       ],
-      "docs": "sdk/swift/README.md",
-      "changelog": "sdk/swift/CHANGELOG.md",
+      "docs": "SDK/swift/README.md",
+      "changelog": "SDK/swift/CHANGELOG.md",
       "demo": null,
-      "source": "sdk/swift/Sources"
+      "source": "SDK/swift/Sources"
     },
     {
       "id": "flutter",
@@ -70,10 +70,10 @@
         "Web",
         "desktop"
       ],
-      "docs": "sdk/flutter/README.md",
-      "changelog": "sdk/flutter/CHANGELOG.md",
-      "demo": "sdk/flutter/example/main.dart",
-      "source": "sdk/flutter/lib"
+      "docs": "SDK/flutter/README.md",
+      "changelog": "SDK/flutter/CHANGELOG.md",
+      "demo": "SDK/flutter/example/main.dart",
+      "source": "SDK/flutter/lib"
     },
     {
       "id": "unity",
@@ -88,10 +88,10 @@
         "IL2CPP",
         "WebGL"
       ],
-      "docs": "sdk/unity/README.md",
-      "changelog": "sdk/unity/CHANGELOG.md",
-      "demo": "sdk/unity/Samples~/ChatQuickstart",
-      "source": "sdk/unity/Runtime"
+      "docs": "SDK/unity/README.md",
+      "changelog": "SDK/unity/CHANGELOG.md",
+      "demo": "SDK/unity/Samples~/ChatQuickstart",
+      "source": "SDK/unity/Runtime"
     },
     {
       "id": "dotnet",
@@ -106,10 +106,10 @@
         "net9.0",
         "net10.0"
       ],
-      "docs": "sdk/dotnet/README.md",
+      "docs": "SDK/dotnet/README.md",
       "changelog": null,
       "demo": null,
-      "source": "sdk/dotnet/Cyaim.Im.ServerSdk"
+      "source": "SDK/dotnet/Cyaim.Im.ServerSdk"
     }
   ]
 }

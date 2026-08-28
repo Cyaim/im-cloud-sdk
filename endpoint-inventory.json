@@ -2037,7 +2037,7 @@
   ],
   "payloadTypes": {
     "AddFriendRequest": {
-      "source": "src/IM.Server/WsControllers/UserController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/UserController.cs",
       "properties": [
         {
           "name": "userId",
@@ -2057,7 +2057,7 @@
       ]
     },
     "AnnouncementRequest": {
-      "source": "src/IM.Server/WsControllers/GroupController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/GroupController.cs",
       "properties": [
         {
           "name": "groupId",
@@ -2072,7 +2072,7 @@
       ]
     },
     "BeginStreamRequest": {
-      "source": "src/IM.Abstractions/Contracts/IStreamingMessageService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IStreamingMessageService.cs",
       "properties": [
         {
           "name": "conversationId",
@@ -2117,7 +2117,7 @@
       ]
     },
     "BlockEntry": {
-      "source": "src/IM.Abstractions/Domain/Relationship.cs",
+      "source": "IM.Server/src/IM.Abstractions/Domain/Relationship.cs",
       "properties": [
         {
           "name": "appId",
@@ -2147,7 +2147,7 @@
       ]
     },
     "BlockRequest": {
-      "source": "src/IM.Server/WsControllers/UserController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/UserController.cs",
       "properties": [
         {
           "name": "userId",
@@ -2162,7 +2162,7 @@
       ]
     },
     "CallIdRequest": {
-      "source": "src/IM.Server/WsControllers/CallController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/CallController.cs",
       "properties": [
         {
           "name": "callId",
@@ -2172,7 +2172,7 @@
       ]
     },
     "CallInviteMoreRequest": {
-      "source": "src/IM.Server/WsControllers/CallController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/CallController.cs",
       "properties": [
         {
           "name": "callId",
@@ -2187,7 +2187,7 @@
       ]
     },
     "CallInviteRequest": {
-      "source": "src/IM.Abstractions/Contracts/ICallSignalingService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/ICallSignalingService.cs",
       "properties": [
         {
           "name": "calleeId",
@@ -2217,7 +2217,7 @@
       ]
     },
     "CallMediaRequest": {
-      "source": "src/IM.Server/WsControllers/CallController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/CallController.cs",
       "properties": [
         {
           "name": "callId",
@@ -2242,7 +2242,7 @@
       ]
     },
     "CallMediaState": {
-      "source": "src/IM.Abstractions/Contracts/ICallSignalingService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/ICallSignalingService.cs",
       "properties": [
         {
           "name": "audioEnabled",
@@ -2262,7 +2262,7 @@
       ]
     },
     "CallParticipant": {
-      "source": "src/IM.Abstractions/Contracts/ICallSignalingService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/ICallSignalingService.cs",
       "properties": [
         {
           "name": "userId",
@@ -2297,7 +2297,7 @@
       ]
     },
     "CallRejectRequest": {
-      "source": "src/IM.Server/WsControllers/CallController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/CallController.cs",
       "properties": [
         {
           "name": "callId",
@@ -2312,7 +2312,7 @@
       ]
     },
     "CallSession": {
-      "source": "src/IM.Abstractions/Contracts/ICallSignalingService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/ICallSignalingService.cs",
       "properties": [
         {
           "name": "callId",
@@ -2382,7 +2382,7 @@
       ]
     },
     "ChatRoom": {
-      "source": "src/IM.Abstractions/Contracts/IRoomService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IRoomService.cs",
       "properties": [
         {
           "name": "appId",
@@ -2452,7 +2452,7 @@
       ]
     },
     "ClaimBundleRequest": {
-      "source": "src/IM.Server/WsControllers/KeysController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/KeysController.cs",
       "properties": [
         {
           "name": "userId",
@@ -2467,7 +2467,7 @@
       ]
     },
     "CompleteStreamRequest": {
-      "source": "src/IM.Abstractions/Contracts/IStreamingMessageService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IStreamingMessageService.cs",
       "properties": [
         {
           "name": "streamId",
@@ -2487,7 +2487,7 @@
       ]
     },
     "ConversationFolder": {
-      "source": "src/IM.Abstractions/Contracts/IConversationExtras.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IConversationExtras.cs",
       "properties": [
         {
           "name": "folderId",
@@ -2522,7 +2522,7 @@
       ]
     },
     "ConversationIdRequest": {
-      "source": "src/IM.Server/WsControllers/ConvController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/ConvController.cs",
       "properties": [
         {
           "name": "conversationId",
@@ -2532,7 +2532,7 @@
       ]
     },
     "ConversationMessageRequest": {
-      "source": "src/IM.Server/WsControllers/MsgController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/MsgController.cs",
       "properties": [
         {
           "name": "conversationId",
@@ -2547,7 +2547,7 @@
       ]
     },
     "ConversationSetting": {
-      "source": "src/IM.Abstractions/Contracts/IConversationService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IConversationService.cs",
       "properties": [
         {
           "name": "pinned",
@@ -2577,7 +2577,7 @@
       ]
     },
     "ConversationView": {
-      "source": "src/IM.Abstractions/Contracts/IConversationService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IConversationService.cs",
       "properties": [
         {
           "name": "conversationId",
@@ -2657,7 +2657,7 @@
       ]
     },
     "CreateGroupRequest": {
-      "source": "src/IM.Abstractions/Contracts/IGroupService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IGroupService.cs",
       "properties": [
         {
           "name": "groupId",
@@ -2712,7 +2712,7 @@
       ]
     },
     "CursorRequest": {
-      "source": "src/IM.Server/WsControllers/UserController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/UserController.cs",
       "properties": [
         {
           "name": "cursor",
@@ -2727,7 +2727,7 @@
       ]
     },
     "DeleteMessagesRequest": {
-      "source": "src/IM.Abstractions/Contracts/Requests/MessageRequests.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/Requests/MessageRequests.cs",
       "properties": [
         {
           "name": "conversationId",
@@ -2747,7 +2747,7 @@
       ]
     },
     "DeskAcceptRequest": {
-      "source": "src/IM.Server/WsControllers/DeskController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/DeskController.cs",
       "properties": [
         {
           "name": "sessionId",
@@ -2757,7 +2757,7 @@
       ]
     },
     "DeskCannedReply": {
-      "source": "src/IM.Abstractions/Contracts/IBotAndDeskServices.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IBotAndDeskServices.cs",
       "properties": [
         {
           "name": "id",
@@ -2787,7 +2787,7 @@
       ]
     },
     "DeskCannedRequest": {
-      "source": "src/IM.Server/WsControllers/DeskController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/DeskController.cs",
       "properties": [
         {
           "name": "skill",
@@ -2797,7 +2797,7 @@
       ]
     },
     "DeskCloseRequest": {
-      "source": "src/IM.Server/WsControllers/DeskController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/DeskController.cs",
       "properties": [
         {
           "name": "sessionId",
@@ -2812,7 +2812,7 @@
       ]
     },
     "DeskQueueView": {
-      "source": "src/IM.Abstractions/Contracts/IBotAndDeskServices.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IBotAndDeskServices.cs",
       "properties": [
         {
           "name": "waiting",
@@ -2847,7 +2847,7 @@
       ]
     },
     "DeskRateRequest": {
-      "source": "src/IM.Server/WsControllers/DeskController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/DeskController.cs",
       "properties": [
         {
           "name": "sessionId",
@@ -2867,7 +2867,7 @@
       ]
     },
     "DeskRequest": {
-      "source": "src/IM.Abstractions/Contracts/IBotAndDeskServices.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IBotAndDeskServices.cs",
       "properties": [
         {
           "name": "skill",
@@ -2887,7 +2887,7 @@
       ]
     },
     "DeskSession": {
-      "source": "src/IM.Abstractions/Contracts/IBotAndDeskServices.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IBotAndDeskServices.cs",
       "properties": [
         {
           "name": "sessionId",
@@ -2987,7 +2987,7 @@
       ]
     },
     "DeskSessionSummary": {
-      "source": "src/IM.Abstractions/Contracts/IBotAndDeskServices.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IBotAndDeskServices.cs",
       "properties": [
         {
           "name": "issue",
@@ -3017,7 +3017,7 @@
       ]
     },
     "DeskStatusRequest": {
-      "source": "src/IM.Server/WsControllers/DeskController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/DeskController.cs",
       "properties": [
         {
           "name": "status",
@@ -3032,7 +3032,7 @@
       ]
     },
     "DeskSuggestRequest": {
-      "source": "src/IM.Server/WsControllers/DeskController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/DeskController.cs",
       "properties": [
         {
           "name": "sessionId",
@@ -3042,7 +3042,7 @@
       ]
     },
     "DeskTransferRequest": {
-      "source": "src/IM.Server/WsControllers/DeskController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/DeskController.cs",
       "properties": [
         {
           "name": "sessionId",
@@ -3062,7 +3062,7 @@
       ]
     },
     "DeviceKeyInfo": {
-      "source": "src/IM.Abstractions/Contracts/IEncryptionKeyService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IEncryptionKeyService.cs",
       "properties": [
         {
           "name": "deviceId",
@@ -3092,7 +3092,7 @@
       ]
     },
     "DeviceKeysRequest": {
-      "source": "src/IM.Server/WsControllers/KeysController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/KeysController.cs",
       "properties": [
         {
           "name": "userId",
@@ -3102,7 +3102,7 @@
       ]
     },
     "DownloadUrlRequest": {
-      "source": "src/IM.Server/WsControllers/RoomController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/RoomController.cs",
       "properties": [
         {
           "name": "objectKey",
@@ -3117,7 +3117,7 @@
       ]
     },
     "EditInfo": {
-      "source": "src/IM.Abstractions/Domain/Message.cs",
+      "source": "IM.Server/src/IM.Abstractions/Domain/Message.cs",
       "properties": [
         {
           "name": "operatorId",
@@ -3137,7 +3137,7 @@
       ]
     },
     "EditMessageRequest": {
-      "source": "src/IM.Abstractions/Contracts/Requests/MessageRequests.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/Requests/MessageRequests.cs",
       "properties": [
         {
           "name": "conversationId",
@@ -3157,7 +3157,7 @@
       ]
     },
     "FolderIdRequest": {
-      "source": "src/IM.Server/WsControllers/ConvController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/ConvController.cs",
       "properties": [
         {
           "name": "folderId",
@@ -3167,7 +3167,7 @@
       ]
     },
     "ForwardMessagesRequest": {
-      "source": "src/IM.Abstractions/Contracts/Requests/MessageRequests.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/Requests/MessageRequests.cs",
       "properties": [
         {
           "name": "sourceConversationId",
@@ -3202,7 +3202,7 @@
       ]
     },
     "Friend": {
-      "source": "src/IM.Abstractions/Domain/Relationship.cs",
+      "source": "IM.Server/src/IM.Abstractions/Domain/Relationship.cs",
       "properties": [
         {
           "name": "appId",
@@ -3247,7 +3247,7 @@
       ]
     },
     "FriendRequest": {
-      "source": "src/IM.Abstractions/Domain/Relationship.cs",
+      "source": "IM.Server/src/IM.Abstractions/Domain/Relationship.cs",
       "properties": [
         {
           "name": "appId",
@@ -3297,7 +3297,7 @@
       ]
     },
     "FriendRequestListRequest": {
-      "source": "src/IM.Server/WsControllers/UserController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/UserController.cs",
       "properties": [
         {
           "name": "incoming",
@@ -3317,7 +3317,7 @@
       ]
     },
     "Group": {
-      "source": "src/IM.Abstractions/Domain/Group.cs",
+      "source": "IM.Server/src/IM.Abstractions/Domain/Group.cs",
       "properties": [
         {
           "name": "appId",
@@ -3417,7 +3417,7 @@
       ]
     },
     "GroupApplication": {
-      "source": "src/IM.Abstractions/Domain/Group.cs",
+      "source": "IM.Server/src/IM.Abstractions/Domain/Group.cs",
       "properties": [
         {
           "name": "appId",
@@ -3472,7 +3472,7 @@
       ]
     },
     "GroupCursorRequest": {
-      "source": "src/IM.Server/WsControllers/GroupController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/GroupController.cs",
       "properties": [
         {
           "name": "groupId",
@@ -3492,7 +3492,7 @@
       ]
     },
     "GroupIdRequest": {
-      "source": "src/IM.Server/WsControllers/GroupController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/GroupController.cs",
       "properties": [
         {
           "name": "groupId",
@@ -3502,7 +3502,7 @@
       ]
     },
     "GroupMember": {
-      "source": "src/IM.Abstractions/Domain/Group.cs",
+      "source": "IM.Server/src/IM.Abstractions/Domain/Group.cs",
       "properties": [
         {
           "name": "appId",
@@ -3552,7 +3552,7 @@
       ]
     },
     "GroupMembersRequest": {
-      "source": "src/IM.Server/WsControllers/GroupController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/GroupController.cs",
       "properties": [
         {
           "name": "groupId",
@@ -3572,7 +3572,7 @@
       ]
     },
     "HandleApplicationRequest": {
-      "source": "src/IM.Server/WsControllers/GroupController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/GroupController.cs",
       "properties": [
         {
           "name": "groupId",
@@ -3597,7 +3597,7 @@
       ]
     },
     "HandleFriendRequest": {
-      "source": "src/IM.Server/WsControllers/UserController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/UserController.cs",
       "properties": [
         {
           "name": "fromUserId",
@@ -3617,7 +3617,7 @@
       ]
     },
     "HeartbeatResult": {
-      "source": "src/IM.Server/WsControllers/ConnController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/ConnController.cs",
       "properties": [
         {
           "name": "serverTime",
@@ -3647,7 +3647,7 @@
       ]
     },
     "HistoryRequest": {
-      "source": "src/IM.Server/WsControllers/MsgController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/MsgController.cs",
       "properties": [
         {
           "name": "conversationId",
@@ -3667,7 +3667,7 @@
       ]
     },
     "JoinGroupRequest": {
-      "source": "src/IM.Server/WsControllers/GroupController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/GroupController.cs",
       "properties": [
         {
           "name": "groupId",
@@ -3682,7 +3682,7 @@
       ]
     },
     "ListConversationsRequest": {
-      "source": "src/IM.Server/WsControllers/ConvController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/ConvController.cs",
       "properties": [
         {
           "name": "updatedAfter",
@@ -3702,7 +3702,7 @@
       ]
     },
     "MarkUnreadRequest": {
-      "source": "src/IM.Server/WsControllers/ConvController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/ConvController.cs",
       "properties": [
         {
           "name": "conversationId",
@@ -3717,7 +3717,7 @@
       ]
     },
     "MediaUploadTicket": {
-      "source": "src/IM.Abstractions/Contracts/IPlatformServices.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IPlatformServices.cs",
       "properties": [
         {
           "name": "objectKey",
@@ -3747,7 +3747,7 @@
       ]
     },
     "Message": {
-      "source": "src/IM.Abstractions/Domain/Message.cs",
+      "source": "IM.Server/src/IM.Abstractions/Domain/Message.cs",
       "properties": [
         {
           "name": "appId",
@@ -3882,7 +3882,7 @@
       ]
     },
     "MessageBrief": {
-      "source": "src/IM.Abstractions/Domain/Message.cs",
+      "source": "IM.Server/src/IM.Abstractions/Domain/Message.cs",
       "properties": [
         {
           "name": "messageId",
@@ -3922,7 +3922,7 @@
       ]
     },
     "MessageOptions": {
-      "source": "src/IM.Abstractions/Domain/Message.cs",
+      "source": "IM.Server/src/IM.Abstractions/Domain/Message.cs",
       "properties": [
         {
           "name": "persistent",
@@ -3982,7 +3982,7 @@
       ]
     },
     "MessageReceipt": {
-      "source": "src/IM.Abstractions/Domain/Message.cs",
+      "source": "IM.Server/src/IM.Abstractions/Domain/Message.cs",
       "properties": [
         {
           "name": "appId",
@@ -4022,7 +4022,7 @@
       ]
     },
     "MuteGroupRequest": {
-      "source": "src/IM.Server/WsControllers/GroupController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/GroupController.cs",
       "properties": [
         {
           "name": "groupId",
@@ -4042,7 +4042,7 @@
       ]
     },
     "MuteMemberRequest": {
-      "source": "src/IM.Server/WsControllers/GroupController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/GroupController.cs",
       "properties": [
         {
           "name": "groupId",
@@ -4062,7 +4062,7 @@
       ]
     },
     "OneTimePreKey": {
-      "source": "src/IM.Abstractions/Contracts/IEncryptionKeyService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IEncryptionKeyService.cs",
       "properties": [
         {
           "name": "keyId",
@@ -4077,7 +4077,7 @@
       ]
     },
     "PageRequest": {
-      "source": "src/IM.Server/WsControllers/MsgController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/MsgController.cs",
       "properties": [
         {
           "name": "cursor",
@@ -4092,7 +4092,7 @@
       ]
     },
     "PinnedMessage": {
-      "source": "src/IM.Abstractions/Contracts/IConversationExtras.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IConversationExtras.cs",
       "properties": [
         {
           "name": "messageId",
@@ -4122,7 +4122,7 @@
       ]
     },
     "PreKeyBundle": {
-      "source": "src/IM.Abstractions/Contracts/IEncryptionKeyService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IEncryptionKeyService.cs",
       "properties": [
         {
           "name": "userId",
@@ -4157,7 +4157,7 @@
       ]
     },
     "PresenceState": {
-      "source": "src/IM.Abstractions/Domain/User.cs",
+      "source": "IM.Server/src/IM.Abstractions/Domain/User.cs",
       "properties": [
         {
           "name": "userId",
@@ -4187,7 +4187,7 @@
       ]
     },
     "PublishKeysRequest": {
-      "source": "src/IM.Abstractions/Contracts/IEncryptionKeyService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IEncryptionKeyService.cs",
       "properties": [
         {
           "name": "deviceId",
@@ -4222,7 +4222,7 @@
       ]
     },
     "PushClickedRequest": {
-      "source": "src/IM.Server/WsControllers/PushController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/PushController.cs",
       "properties": [
         {
           "name": "pushId",
@@ -4237,7 +4237,7 @@
       ]
     },
     "PushConfig": {
-      "source": "src/IM.Abstractions/Domain/Message.cs",
+      "source": "IM.Server/src/IM.Abstractions/Domain/Message.cs",
       "properties": [
         {
           "name": "title",
@@ -4272,7 +4272,7 @@
       ]
     },
     "ReactRequest": {
-      "source": "src/IM.Abstractions/Contracts/Requests/MessageRequests.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/Requests/MessageRequests.cs",
       "properties": [
         {
           "name": "conversationId",
@@ -4297,7 +4297,7 @@
       ]
     },
     "ReadRequest": {
-      "source": "src/IM.Server/WsControllers/ConvController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/ConvController.cs",
       "properties": [
         {
           "name": "conversationId",
@@ -4312,7 +4312,7 @@
       ]
     },
     "ReauthRequest": {
-      "source": "src/IM.Server/WsControllers/ConnController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/ConnController.cs",
       "properties": [
         {
           "name": "token",
@@ -4322,7 +4322,7 @@
       ]
     },
     "RecallInfo": {
-      "source": "src/IM.Abstractions/Domain/Message.cs",
+      "source": "IM.Server/src/IM.Abstractions/Domain/Message.cs",
       "properties": [
         {
           "name": "operatorId",
@@ -4347,7 +4347,7 @@
       ]
     },
     "RecallMessageRequest": {
-      "source": "src/IM.Abstractions/Contracts/Requests/MessageRequests.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/Requests/MessageRequests.cs",
       "properties": [
         {
           "name": "conversationId",
@@ -4372,7 +4372,7 @@
       ]
     },
     "ReceiptDetailRequest": {
-      "source": "src/IM.Server/WsControllers/MsgController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/MsgController.cs",
       "properties": [
         {
           "name": "conversationId",
@@ -4387,7 +4387,7 @@
       ]
     },
     "ReceiptRequest": {
-      "source": "src/IM.Server/WsControllers/MsgController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/MsgController.cs",
       "properties": [
         {
           "name": "conversationId",
@@ -4402,7 +4402,7 @@
       ]
     },
     "RegisterPushTokenRequest": {
-      "source": "src/IM.Server/WsControllers/PushController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/PushController.cs",
       "properties": [
         {
           "name": "provider",
@@ -4422,7 +4422,7 @@
       ]
     },
     "RemainingKeysRequest": {
-      "source": "src/IM.Server/WsControllers/KeysController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/KeysController.cs",
       "properties": [
         {
           "name": "deviceId",
@@ -4432,7 +4432,7 @@
       ]
     },
     "ResumeRequest": {
-      "source": "src/IM.Server/WsControllers/ConnController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/ConnController.cs",
       "properties": [
         {
           "name": "convSeqs",
@@ -4457,7 +4457,7 @@
       ]
     },
     "ResumeResult": {
-      "source": "src/IM.Server/WsControllers/ConnController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/ConnController.cs",
       "properties": [
         {
           "name": "conversations",
@@ -4487,7 +4487,7 @@
       ]
     },
     "RevokeDeviceRequest": {
-      "source": "src/IM.Server/WsControllers/KeysController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/KeysController.cs",
       "properties": [
         {
           "name": "deviceId",
@@ -4497,7 +4497,7 @@
       ]
     },
     "RoomCursorRequest": {
-      "source": "src/IM.Server/WsControllers/RoomController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/RoomController.cs",
       "properties": [
         {
           "name": "roomId",
@@ -4517,7 +4517,7 @@
       ]
     },
     "RoomIdRequest": {
-      "source": "src/IM.Server/WsControllers/RoomController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/RoomController.cs",
       "properties": [
         {
           "name": "roomId",
@@ -4527,7 +4527,7 @@
       ]
     },
     "RoomJoinResult": {
-      "source": "src/IM.Abstractions/Contracts/IRoomService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IRoomService.cs",
       "properties": [
         {
           "name": "room",
@@ -4547,7 +4547,7 @@
       ]
     },
     "RoomKickRequest": {
-      "source": "src/IM.Server/WsControllers/RoomController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/RoomController.cs",
       "properties": [
         {
           "name": "roomId",
@@ -4562,7 +4562,7 @@
       ]
     },
     "RoomMuteRequest": {
-      "source": "src/IM.Server/WsControllers/RoomController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/RoomController.cs",
       "properties": [
         {
           "name": "roomId",
@@ -4582,7 +4582,7 @@
       ]
     },
     "RoomSendRequest": {
-      "source": "src/IM.Server/WsControllers/RoomController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/RoomController.cs",
       "properties": [
         {
           "name": "roomId",
@@ -4597,7 +4597,7 @@
       ]
     },
     "RtcJoinInfo": {
-      "source": "src/IM.Abstractions/Contracts/ICallSignalingService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/ICallSignalingService.cs",
       "properties": [
         {
           "name": "provider",
@@ -4627,7 +4627,7 @@
       ]
     },
     "SafetyNumberRequest": {
-      "source": "src/IM.Server/WsControllers/KeysController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/KeysController.cs",
       "properties": [
         {
           "name": "peerUserId",
@@ -4637,7 +4637,7 @@
       ]
     },
     "ScheduledMessage": {
-      "source": "src/IM.Abstractions/Contracts/IConversationExtras.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IConversationExtras.cs",
       "properties": [
         {
           "name": "scheduleId",
@@ -4682,7 +4682,7 @@
       ]
     },
     "ScheduleIdRequest": {
-      "source": "src/IM.Server/WsControllers/MsgController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/MsgController.cs",
       "properties": [
         {
           "name": "scheduleId",
@@ -4692,7 +4692,7 @@
       ]
     },
     "ScheduleRequest": {
-      "source": "src/IM.Server/WsControllers/MsgController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/MsgController.cs",
       "properties": [
         {
           "name": "sendAt",
@@ -4762,7 +4762,7 @@
       ]
     },
     "SearchMessagesRequest": {
-      "source": "src/IM.Abstractions/Contracts/Requests/MessageRequests.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/Requests/MessageRequests.cs",
       "properties": [
         {
           "name": "keyword",
@@ -4807,7 +4807,7 @@
       ]
     },
     "SendMessageRequest": {
-      "source": "src/IM.Abstractions/Contracts/Requests/MessageRequests.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/Requests/MessageRequests.cs",
       "properties": [
         {
           "name": "conversationId",
@@ -4882,7 +4882,7 @@
       ]
     },
     "SendMessageResult": {
-      "source": "src/IM.Abstractions/Contracts/Requests/MessageRequests.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/Requests/MessageRequests.cs",
       "properties": [
         {
           "name": "messageId",
@@ -4922,7 +4922,7 @@
       ]
     },
     "SetGroupNicknameRequest": {
-      "source": "src/IM.Server/WsControllers/GroupController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/GroupController.cs",
       "properties": [
         {
           "name": "groupId",
@@ -4942,7 +4942,7 @@
       ]
     },
     "SetRemarkRequest": {
-      "source": "src/IM.Server/WsControllers/UserController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/UserController.cs",
       "properties": [
         {
           "name": "userId",
@@ -4962,7 +4962,7 @@
       ]
     },
     "SetRoleRequest": {
-      "source": "src/IM.Server/WsControllers/GroupController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/GroupController.cs",
       "properties": [
         {
           "name": "groupId",
@@ -4982,7 +4982,7 @@
       ]
     },
     "SetStatusRequest": {
-      "source": "src/IM.Server/WsControllers/UserController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/UserController.cs",
       "properties": [
         {
           "name": "status",
@@ -4992,7 +4992,7 @@
       ]
     },
     "SignedPreKey": {
-      "source": "src/IM.Abstractions/Contracts/IEncryptionKeyService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IEncryptionKeyService.cs",
       "properties": [
         {
           "name": "keyId",
@@ -5017,7 +5017,7 @@
       ]
     },
     "StreamAbortRequest": {
-      "source": "src/IM.Server/WsControllers/MsgController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/MsgController.cs",
       "properties": [
         {
           "name": "streamId",
@@ -5032,7 +5032,7 @@
       ]
     },
     "StreamAppendRequest": {
-      "source": "src/IM.Server/WsControllers/MsgController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/MsgController.cs",
       "properties": [
         {
           "name": "streamId",
@@ -5047,7 +5047,7 @@
       ]
     },
     "StreamHandle": {
-      "source": "src/IM.Abstractions/Contracts/IStreamingMessageService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IStreamingMessageService.cs",
       "properties": [
         {
           "name": "streamId",
@@ -5072,7 +5072,7 @@
       ]
     },
     "SubscribePresenceRequest": {
-      "source": "src/IM.Server/WsControllers/UserController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/UserController.cs",
       "properties": [
         {
           "name": "userIds",
@@ -5087,7 +5087,7 @@
       ]
     },
     "SyncMessagesRequest": {
-      "source": "src/IM.Abstractions/Contracts/Requests/MessageRequests.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/Requests/MessageRequests.cs",
       "properties": [
         {
           "name": "conversationId",
@@ -5117,7 +5117,7 @@
       ]
     },
     "SyncMessagesResult": {
-      "source": "src/IM.Abstractions/Contracts/Requests/MessageRequests.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/Requests/MessageRequests.cs",
       "properties": [
         {
           "name": "conversationId",
@@ -5147,7 +5147,7 @@
       ]
     },
     "TransferOwnerRequest": {
-      "source": "src/IM.Server/WsControllers/GroupController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/GroupController.cs",
       "properties": [
         {
           "name": "groupId",
@@ -5162,7 +5162,7 @@
       ]
     },
     "TranslatedMessage": {
-      "source": "src/IM.Abstractions/Contracts/ITranslationService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/ITranslationService.cs",
       "properties": [
         {
           "name": "messageId",
@@ -5187,7 +5187,7 @@
       ]
     },
     "TranslateRequest": {
-      "source": "src/IM.Abstractions/Contracts/ITranslationService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/ITranslationService.cs",
       "properties": [
         {
           "name": "conversationId",
@@ -5212,7 +5212,7 @@
       ]
     },
     "TranslationResult": {
-      "source": "src/IM.Abstractions/Contracts/ITranslationService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/ITranslationService.cs",
       "properties": [
         {
           "name": "targetLanguage",
@@ -5227,7 +5227,7 @@
       ]
     },
     "TypingRequest": {
-      "source": "src/IM.Server/WsControllers/MsgController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/MsgController.cs",
       "properties": [
         {
           "name": "conversationId",
@@ -5242,7 +5242,7 @@
       ]
     },
     "UpdateConversationSettingRequest": {
-      "source": "src/IM.Server/WsControllers/ConvController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/ConvController.cs",
       "properties": [
         {
           "name": "conversationId",
@@ -5257,7 +5257,7 @@
       ]
     },
     "UpdateGroupCommand": {
-      "source": "src/IM.Server/WsControllers/GroupController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/GroupController.cs",
       "properties": [
         {
           "name": "groupId",
@@ -5272,7 +5272,7 @@
       ]
     },
     "UpdateGroupRequest": {
-      "source": "src/IM.Abstractions/Contracts/IGroupService.cs",
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IGroupService.cs",
       "properties": [
         {
           "name": "name",
@@ -5312,7 +5312,7 @@
       ]
     },
     "UpdateProfileRequest": {
-      "source": "src/IM.Server/WsControllers/UserController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/UserController.cs",
       "properties": [
         {
           "name": "patch",
@@ -5322,7 +5322,7 @@
       ]
     },
     "UploadOneTimeKeysRequest": {
-      "source": "src/IM.Server/WsControllers/KeysController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/KeysController.cs",
       "properties": [
         {
           "name": "keys",
@@ -5332,7 +5332,7 @@
       ]
     },
     "UploadTicketRequest": {
-      "source": "src/IM.Server/WsControllers/RoomController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/RoomController.cs",
       "properties": [
         {
           "name": "fileName",
@@ -5352,7 +5352,7 @@
       ]
     },
     "UpsertFolderRequest": {
-      "source": "src/IM.Server/WsControllers/ConvController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/ConvController.cs",
       "properties": [
         {
           "name": "folderId",
@@ -5387,7 +5387,7 @@
       ]
     },
     "UserIdRequest": {
-      "source": "src/IM.Server/WsControllers/UserController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/UserController.cs",
       "properties": [
         {
           "name": "userId",
@@ -5397,7 +5397,7 @@
       ]
     },
     "UserIdsRequest": {
-      "source": "src/IM.Server/WsControllers/UserController.cs",
+      "source": "IM.Server/src/IM.Server/WsControllers/UserController.cs",
       "properties": [
         {
           "name": "userIds",
@@ -5407,7 +5407,7 @@
       ]
     },
     "UserProfile": {
-      "source": "src/IM.Abstractions/Domain/User.cs",
+      "source": "IM.Server/src/IM.Abstractions/Domain/User.cs",
       "properties": [
         {
           "name": "appId",
@@ -5683,6 +5683,31 @@
     "PaymentAmountMismatch": 1904,
     "PaymentWebhookUnsupported": 1905,
     "PaymentRefundRefused": 1906,
+    "OrganizationNotFound": 2000,
+    "PermissionDenied": 2001,
+    "MemberNotFound": 2002,
+    "RoleInUse": 2003,
+    "InvitationInvalid": 2004,
+    "OwnerImmutable": 2005,
+    "AccessKeyInvalid": 2006,
+    "VerificationPending": 2007,
+    "AppReadonly": 2100,
+    "AppSuspended": 2101,
+    "AppDeleted": 2102,
+    "RegionImmutable": 2103,
+    "NotRestorable": 2104,
+    "WalletNotFound": 2200,
+    "InsufficientBalance": 2201,
+    "BillNotPayable": 2202,
+    "InvoiceTitleMismatch": 2203,
+    "TrialExhausted": 2204,
+    "IncludedInPlan": 2205,
+    "RechargeNotPending": 2206,
+    "RangeTooWide": 2300,
+    "UnknownMetric": 2301,
+    "RuleLimit": 2320,
+    "ContactUnverified": 2321,
+    "CategoryNotUnsubscribable": 2322,
     "NoPushDevice": 2400,
     "PushDeliveryNotFound": 2401,
     "PushReceiptRejected": 2402,

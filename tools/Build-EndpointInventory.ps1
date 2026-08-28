@@ -42,8 +42,20 @@ $toolsDir = $PSScriptRoot
 $sdkDir = Split-Path -Parent $toolsDir
 $repoRoot = Split-Path -Parent $sdkDir
 
-$wsControllerDir = Join-Path $repoRoot 'src/IM.Server/WsControllers'
-$abstractionsDir = Join-Path $repoRoot 'src/IM.Abstractions'
+# The backend moved under IM.Server/ when the git root came back to the workspace (2026-08-28).
+# These two paths were missed by that move, so this generator threw on its first line of work and
+# the inventory could not be rebuilt at all — silently, because CI has never run it. Anchored on the
+# solution file rather than on a fixed depth, so the next reorganisation moves it without breaking it.
+# 后端在 2026-08-28 那次目录整理里挪到了 IM.Server/ 下，而这两条路径被漏掉了：
+# 生成器因此在第一步就抛异常、清单根本重建不了——而且是静默的，因为 CI 从未跑过它。
+# 现在按 IM.slnx 定位而不是按固定层级，下一次搬目录不会再打断它。
+$serverRoot = Join-Path $repoRoot 'IM.Server'
+if (-not (Test-Path -LiteralPath (Join-Path $serverRoot 'IM.slnx'))) {
+    throw "the .NET solution is not where this script expects it (looked for $serverRoot/IM.slnx)"
+}
+
+$wsControllerDir = Join-Path $serverRoot 'src/IM.Server/WsControllers'
+$abstractionsDir = Join-Path $serverRoot 'src/IM.Abstractions'
 $errorCodeFile = Join-Path $abstractionsDir 'Errors/ImErrorCode.cs'
 $pushTargetFile = Join-Path $abstractionsDir 'Protocol/ServerPush.cs'
 $tierFile = Join-Path $toolsDir 'endpoint-tiers.json'

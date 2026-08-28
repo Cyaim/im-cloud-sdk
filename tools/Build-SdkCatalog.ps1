@@ -45,7 +45,17 @@ $sdkDir = Split-Path -Parent $toolsDir
 $repoRoot = Split-Path -Parent $sdkDir
 
 $outputFile = Join-Path $sdkDir 'catalog.json'
-$embeddedFile = Join-Path $repoRoot 'src/IM.Server/Console/sdk-catalog.json'
+# Same break as Build-EndpointInventory.ps1: the backend moved under IM.Server/ on 2026-08-28 and
+# this path did not follow it, so the generator wrote nothing and nobody found out — CI has never
+# run it. Anchored on the solution file so the next move is caught rather than silently absorbed.
+# 与端点清单生成器同一处断裂：后端挪到 IM.Server/ 下而这条路径没跟上，
+# 于是生成器什么都没写出来、也没人发现——因为 CI 从未跑过它。
+$serverRoot = Join-Path $repoRoot 'IM.Server'
+if (-not (Test-Path -LiteralPath (Join-Path $serverRoot 'IM.slnx'))) {
+    throw "the .NET solution is not where this script expects it (looked for $serverRoot/IM.slnx)"
+}
+
+$embeddedFile = Join-Path $serverRoot 'src/IM.Server/Console/sdk-catalog.json'
 $tierFile = Join-Path $toolsDir 'endpoint-tiers.json'
 
 # ---------------------------------------------------------------------------------------------
@@ -69,15 +79,15 @@ function Get-RequiredMatch {
     return $match.Groups[1].Value.Trim()
 }
 
-$typescriptVersion = Get-RequiredMatch 'sdk/typescript/package.json' '"version"\s*:\s*"([^"]+)"' 'the npm version'
-$unityVersion      = Get-RequiredMatch 'sdk/unity/package.json'      '"version"\s*:\s*"([^"]+)"' 'the UPM version'
-$kotlinVersion     = Get-RequiredMatch 'sdk/kotlin/build.gradle.kts' '(?m)^\s*version\s*=\s*"([^"]+)"' 'the Gradle version'
-$flutterVersion    = Get-RequiredMatch 'sdk/flutter/pubspec.yaml'    '(?m)^version:\s*([^\s#]+)' 'the pub version'
+$typescriptVersion = Get-RequiredMatch 'SDK/typescript/package.json' '"version"\s*:\s*"([^"]+)"' 'the npm version'
+$unityVersion      = Get-RequiredMatch 'SDK/unity/package.json'      '"version"\s*:\s*"([^"]+)"' 'the UPM version'
+$kotlinVersion     = Get-RequiredMatch 'SDK/kotlin/build.gradle.kts' '(?m)^\s*version\s*=\s*"([^"]+)"' 'the Gradle version'
+$flutterVersion    = Get-RequiredMatch 'SDK/flutter/pubspec.yaml'    '(?m)^version:\s*([^\s#]+)' 'the pub version'
 
 # Swift Package Manager carries no version in Package.swift — a Swift package IS its git tag — so
 # the CHANGELOG's newest heading is the authority there, and it is checked against the others below.
 # Swift 包的版本就是 git tag，Package.swift 里没有版本号，因此以 CHANGELOG 最新标题为准，并与其它 SDK 对齐。
-$swiftVersion = Get-RequiredMatch 'sdk/swift/CHANGELOG.md' '(?m)^##\s*\[?v?(\d+\.\d+\.\d+)' 'the newest released version'
+$swiftVersion = Get-RequiredMatch 'SDK/swift/CHANGELOG.md' '(?m)^##\s*\[?v?(\d+\.\d+\.\d+)' 'the newest released version'
 
 $clientVersions = [ordered]@{
     typescript = $typescriptVersion
@@ -103,7 +113,7 @@ $sdkVersion = $distinct[0]
 # The server SDK is versioned on its own: it is a different audience (tenant backends) and a
 # different release cadence, and it implements the REST contract rather than the socket one.
 # 服务端 SDK 单独版本：受众与节奏都不同，实现的是 REST 契约而不是 socket 契约。
-$dotnetCsproj = Join-Path $repoRoot 'sdk/dotnet/Cyaim.Im.ServerSdk/Cyaim.Im.ServerSdk.csproj'
+$dotnetCsproj = Join-Path $repoRoot 'SDK/dotnet/Cyaim.Im.ServerSdk/Cyaim.Im.ServerSdk.csproj'
 $dotnetMatch = [regex]::Match([System.IO.File]::ReadAllText($dotnetCsproj), '<Version>([^<]+)</Version>')
 $dotnetVersion = if ($dotnetMatch.Success) { $dotnetMatch.Groups[1].Value.Trim() } else { $sdkVersion }
 
@@ -121,48 +131,48 @@ $platforms = @(
         package = '@cyaim/im-client'; version = $typescriptVersion
         install = 'npm install @cyaim/im-client'
         targets = @('browser (ES2020)', 'Node.js 18+')
-        docs = 'sdk/typescript/README.md'; changelog = 'sdk/typescript/CHANGELOG.md'
-        demo = 'sdk/typescript/test'; source = 'sdk/typescript/src'
+        docs = 'SDK/typescript/README.md'; changelog = 'SDK/typescript/CHANGELOG.md'
+        demo = 'SDK/typescript/test'; source = 'SDK/typescript/src'
     }
     [ordered]@{
         id = 'kotlin'; name = 'Android / JVM'; kind = 'client'; language = 'Kotlin'
         package = 'com.cyaim.im:im-client'; version = $kotlinVersion
         install = "implementation(`"com.cyaim.im:im-client:$kotlinVersion`")"
         targets = @('JVM 11+', 'Android (via the host app, see CONTRACT §6.3)')
-        docs = 'sdk/kotlin/README.md'; changelog = 'sdk/kotlin/CHANGELOG.md'
-        demo = $null; source = 'sdk/kotlin/src/main/kotlin'
+        docs = 'SDK/kotlin/README.md'; changelog = 'SDK/kotlin/CHANGELOG.md'
+        demo = $null; source = 'SDK/kotlin/src/main/kotlin'
     }
     [ordered]@{
         id = 'swift'; name = 'iOS / macOS'; kind = 'client'; language = 'Swift'
         package = 'CyaimIM'; version = $swiftVersion
         install = ".package(url: `"https://github.com/cyaim/im-swift`", from: `"$swiftVersion`")"
         targets = @('Swift 6.0+', 'iOS', 'macOS')
-        docs = 'sdk/swift/README.md'; changelog = 'sdk/swift/CHANGELOG.md'
-        demo = $null; source = 'sdk/swift/Sources'
+        docs = 'SDK/swift/README.md'; changelog = 'SDK/swift/CHANGELOG.md'
+        demo = $null; source = 'SDK/swift/Sources'
     }
     [ordered]@{
         id = 'flutter'; name = 'Flutter'; kind = 'client'; language = 'Dart'
         package = 'cyaim_im'; version = $flutterVersion
         install = 'dart pub add cyaim_im'
         targets = @('Dart 3', 'iOS', 'Android', 'Web', 'desktop')
-        docs = 'sdk/flutter/README.md'; changelog = 'sdk/flutter/CHANGELOG.md'
-        demo = 'sdk/flutter/example/main.dart'; source = 'sdk/flutter/lib'
+        docs = 'SDK/flutter/README.md'; changelog = 'SDK/flutter/CHANGELOG.md'
+        demo = 'SDK/flutter/example/main.dart'; source = 'SDK/flutter/lib'
     }
     [ordered]@{
         id = 'unity'; name = 'Unity'; kind = 'client'; language = 'C#'
         package = 'com.cyaim.im'; version = $unityVersion
         install = 'Unity Package Manager → Add package from git URL → https://github.com/cyaim/im-unity.git'
         targets = @('Unity 2021.3+', 'IL2CPP', 'WebGL')
-        docs = 'sdk/unity/README.md'; changelog = 'sdk/unity/CHANGELOG.md'
-        demo = 'sdk/unity/Samples~/ChatQuickstart'; source = 'sdk/unity/Runtime'
+        docs = 'SDK/unity/README.md'; changelog = 'SDK/unity/CHANGELOG.md'
+        demo = 'SDK/unity/Samples~/ChatQuickstart'; source = 'SDK/unity/Runtime'
     }
     [ordered]@{
         id = 'dotnet'; name = '.NET server'; kind = 'server'; language = 'C#'
         package = 'Cyaim.Im.ServerSdk'; version = $dotnetVersion
         install = 'dotnet add package Cyaim.Im.ServerSdk'
         targets = @('net8.0', 'net9.0', 'net10.0')
-        docs = 'sdk/dotnet/README.md'; changelog = $null
-        demo = $null; source = 'sdk/dotnet/Cyaim.Im.ServerSdk'
+        docs = 'SDK/dotnet/README.md'; changelog = $null
+        demo = $null; source = 'SDK/dotnet/Cyaim.Im.ServerSdk'
     }
 )
 
