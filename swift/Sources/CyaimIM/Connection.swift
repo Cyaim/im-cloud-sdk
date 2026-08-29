@@ -1,5 +1,12 @@
 import Foundation
 
+// `URLSession` and friends live in `FoundationNetworking` on the swift-corelibs platforms (Linux,
+// Windows) and directly in `Foundation` on Apple's. The SDK targets Apple platforms, but the test
+// suite has to run somewhere a Mac is not, and this is the whole cost of that.
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 /// One multiplexed WebSocket to the gateway, with the reconnect behaviour a production client
 /// actually needs.
 ///

@@ -400,6 +400,28 @@ cancel the server-side effect: a cancelled `msg.send` may well have sent the mes
 swift test
 ```
 
+### 没有 Mac 的时候（2026-08-30 起可以了）
+
+这个包声明的平台只有 Apple 的四个，但**源码在 Linux 上也编得过、117 条测试也全过**——
+唯一的条件是那四处 `#if canImport(FoundationNetworking)`（`URLSession` 一族在 swift-corelibs 上
+属于另一个模块）。CI 仍然跑 macOS，因为那才是客户运行它的地方；下面这条只是让**任何一台有 Docker
+的机器**都能在提交之前验一遍，而不是把每一行都盲写出去等 CI 告诉你：
+
+```bash
+docker run --rm -v "$PWD/../..:/repo" -w /repo/SDK/swift swift:6.1-noble \
+  swift test --scratch-path /tmp/sb
+```
+
+**在 Windows 的工作副本上跑，会有两条断言红，而它们红得对。**
+`NamespacedSurfaceTests` 里那条「扫描确实找到了它要检查的命名空间」是一条 vacuity 断言：
+它读 `Namespaces.swift` 并按 `
+` 切行，而 **Swift 里 `
+` 是一个 Character**——
+CRLF 检出的文件因此整个是一行，扫描一个方法都找不到，于是它拒绝给绿灯。
+**那正是它存在的理由**（本仓 2026-08-29 被 CRLF 咬过一次，就是它先叫的）。
+要在 Windows 上跑完整套，先把 `SDK/swift` 复制一份并转成 LF——
+git 里存的就是 LF，macOS 与 CI 上不会遇到这件事。
+
 The suite covers the parts that are hard to get right and impossible to verify against a live
 gateway on CI: that a cold start reports what this device actually holds rather than re-baselining,
 that a multi-page `conn.sync` and a multi-page `msg.sync` both run to the end, that an interrupted
