@@ -25,7 +25,24 @@ struct OrderingTests {
             if request.target == "msg.sync" { held.set(request) }
         })
 
-        let client = ImClient(options: makeOptions(connector: gateway))
+        // The repair stays parked for as long as this test takes to check that nothing slipped past
+        // it, so its request must not be allowed to expire meanwhile. When a repair fails the SDK
+        // deliberately delivers the message that exposed the gap (see "a failed repair still delivers
+        // the message that exposed the gap") — and that outcome is indistinguishable here from the
+        // hold being broken, which is the bug this test exists to catch.
+        //
+        // The harness default is 500 ms while `settle()` alone is 40 sleeps: nominally 80 ms, but on
+        // a loaded runner comfortably past the deadline. That is not a hypothesis — this test failed
+        // 14 of its last 26 runs, always alone, always with [5, 9, 10, 11]: seq 9 delivered because
+        // its repair had timed out, and 6…8 never arriving because the reply came back to a cursor
+        // that had already moved past them.
+        //
+        // 修复会一直被扣住，直到这个测试检查完「没有东西溜过去」，所以那个请求不能在此期间超时。
+        // 修复失败时 SDK 刻意会把暴露缺口的那条消息投递出去（见旁边那条用例），
+        // 而那个结果在这里与「扣不住」看起来一模一样——后者正是这条测试要抓的缺陷。
+        // 脚手架默认 500 毫秒，而光 settle() 就是 40 次睡眠：名义 80 毫秒，在有负载的 runner 上远不止。
+        // 这不是猜测：它最近 26 次里红了 14 次，每次都只有它，每次都是 [5, 9, 10, 11]。
+        let client = ImClient(options: makeOptions(connector: gateway, requestTimeout: .seconds(30)))
         let messages = Collector(client.messages())
 
         try await client.connect()
