@@ -1,0 +1,282 @@
+# 五端 SDK 各自的套件。
+#
+# 这个仓库是 SDK 的权威副本，im-cloud 以子模块的形式把它挂在  下。分工是这样的：
+#
+#   这里跑         每个 SDK 自己的行为——退避、重连、补洞、请求管线。
+#                  这五个 job 是 main 的必需检查。
+#   im-cloud 跑    跨仓库那半边：端点清单与 SDK 目录的生成器（它要同时读服务端源码），
+#                  以及 PushTargetParityTests——它读五份 SDK 的推送目标表，与服务端的
+#                  PushTarget 穷举比对。那条检查在这里跑不了，因为这里没有服务端。
+#
+# §7 用代价换来的那条规则是「改协议就要同步改五个 SDK」：服务端加了字段而 SDK 不认，
+# 等于没加。所以两边缺一不可——这里绿了只说明每个 SDK 自己自洽。
+#
+# The five SDK suites. This repository is the SDK's source of truth; im-cloud vendors it back as a
+# submodule at . What runs here is each SDK's own behaviour, and these five jobs are required
+# checks on main. The cross-repository half — the endpoint-inventory and catalogue generators, which
+# read the server's source, and PushTargetParityTests, which compares all five SDK tables against
+# the server's PushTarget — stays in im-cloud, because the server is not here.
+#
+# Swift sits alongside the rest rather than in its own path-filtered workflow: on a public
+# repository macOS minutes are free, so the reason that split existed in im-cloud is gone.
+# Swift 与其余四个并列，不再单独按路径过滤：公开仓库的 macOS 分钟免费，
+# 当初在 im-cloud 里把它拆出去的理由在这里不成立。
+
+name: SDKs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: sdk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+
+  typescript:
+    name: TypeScript SDK
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+
+      - name: Install
+        working-directory: typescript
+        run: npm ci
+
+      # `npm test` runs `pretest` first, which compiles src *and* test to dist-test — so the tests
+      # execute against the same ES module output the package ships, not a CommonJS transpile that
+      # would hide a broken import.
+      # npm test 会先跑 pretest，把 src 与 test 一起编译到 dist-test：
+      # 测试因此跑在与发布件相同的 ESM 产物上，而不是一份会掩盖 import 错误的 CommonJS 转译。
+      - name: Test
+        working-directory: typescript
+        run: npm test
+
+      # A run whose glob matched nothing is the failure mode worth naming. `node --test` does error
+      # on an empty match, but the compile step in front of it could also produce an empty directory
+      # for a reason that reads like success, so the count is checked rather than assumed.
+      # 值得点名的失败模式是「glob 什么都没匹配上」。node --test 在空匹配时确实会报错，
+      # 但它前面那步编译也可能以一种看起来像成功的方式产出空目录——所以这里数一遍，而不是假定。
+      # `npm test` compiles with tsconfig.test.json into dist-test/. The artifact that is actually
+      # PUBLISHED is `npm run build` — tsconfig.json into dist/ — and until 2026-08-23 no job ever
+      # ran it. The two configs differ (the test one pulls the test tree in, and only it needs
+      # @types/node), so the shipped build could break while this job stayed green, and the first
+      # person to find out would be whoever ran `npm install @cyaim/im-client`.
+      # `prepublishOnly` does run it, but that fires at publish time — after the tag, on a
+      # developer's laptop, when it is too late to be CI.
+      # npm test 编译的是 dist-test/，而真正**发布**出去的产物是 npm run build 出的 dist/，
+      # 到 2026-08-23 之前没有任何作业跑过它。两份 tsconfig 并不相同，所以发布产物完全可能坏掉
+      # 而这个作业照样绿——第一个发现的人会是执行 npm install 的客户。
+      # prepublishOnly 确实会跑，但那是打完 tag 之后在某人笔记本上发生的事，已经不是 CI 了。
+      - name: Build the published artifact
+        working-directory: typescript
+        run: npm run build
+
+      - name: Assert the published build emitted something
+        working-directory: typescript
+        run: |
+          set -euo pipefail
+          entry=$(node -p "require('./package.json').main || 'dist/index.js'")
+          types=$(node -p "require('./package.json').types || 'dist/index.d.ts'")
+          for f in "$entry" "$types"; do
+            if [ ! -s "$f" ]; then
+              echo "::error::npm run build did not produce $f — the package would publish empty"
+              exit 1
+            fi
+          done
+          echo "published entry: $entry ($(wc -c <"$entry") bytes), types: $types"
+
+      - name: Assert the suite had files to run
+        working-directory: typescript
+        run: |
+          set -euo pipefail
+          count=$(find dist-test/test -name '*.test.js' | wc -l)
+          echo "compiled test files: $count"
+          if [ "$count" -lt 4 ]; then
+            echo "::error::expected at least 4 compiled test files, found $count — the suite ran against almost nothing"
+            exit 1
+          fi
+
+  kotlin:
+    name: Kotlin SDK
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # JDK 17 to run Gradle; the library itself targets JVM 11 (build.gradle.kts explains why),
+      # and that target is enforced by the compiler, not by the JDK the build happens to run on.
+      # 用 JDK 17 跑 Gradle；库本身的目标是 JVM 11（理由写在 build.gradle.kts 里），
+      # 而那个目标由编译器保证，与构建恰好跑在哪个 JDK 上无关。
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      # The wrapper is tracked without the executable bit (git records mode 100644 for it on
+      # Windows), so a Linux runner has to set it or the run dies with "Permission denied".
+      # wrapper 以 100644 入库（在 Windows 上就是这个模式），Linux runner 必须自己加执行位，
+      # 否则会以 Permission denied 结束。
+      # --rerun-tasks --no-build-cache is not belt-and-braces, it is the only thing that makes this
+      # step run anything. Measured on 2026-08-22: a bare `./gradlew test` here printed
+      # "> Task :test UP-TO-DATE / BUILD SUCCESSFUL in 984ms" having executed ZERO tests, and adding
+      # `cleanTest` was not enough either — the next run reported ":test FROM-CACHE".
+      #
+      # That also defeats the XML assertion in the step below, which is why both exist: Gradle's
+      # build cache restores the task's OUTPUTS, test-results/ included, so a cached run hands the
+      # assertion a complete JUnit report with the right counts for tests that did not run in this
+      # job. The report is evidence that a test task once succeeded, not that it succeeded here.
+      # 这两个开关不是保险，而是「这一步到底跑不跑」的前提：2026-08-22 实测，裸 gradlew test 打印
+      # ":test UP-TO-DATE / BUILD SUCCESSFUL"，一个用例都没执行；只加 cleanTest 也不够，下一次变成
+      # ":test FROM-CACHE"。而 FROM-CACHE 会把 test-results/ 一起恢复出来，于是下面那条 XML 断言
+      # 拿到一份数字齐全的报告——它证明的是「某次测试任务成功过」，不是「这一次成功了」。
+      # `test` also runs `checkVersionConstant` now. That task used to hang off `check`, which this
+      # job never invokes, so from the day it was written it had never executed once — exactly the
+      # silent-green this file already guards against twice below. The same version assertion also
+      # lives in the suite itself (VersionGuardTest), together with the cross-platform lockstep
+      # check a Gradle task cannot express without reaching outside the project.
+      # 版本守卫原本挂在 check 上，而这个 job 跑的是 test，于是它一次都没执行过。
+      - name: Test
+        working-directory: kotlin
+        run: |
+          chmod +x ./gradlew
+          ./gradlew test --rerun-tasks --no-build-cache --no-daemon
+
+      # Gradle's `test` task succeeds when it discovers no tests at all — there is no built-in
+      # "fail on empty". That is precisely the silent-green this repository has already been bitten
+      # by twice, so the JUnit XML is read back and the counts are checked.
+      # Gradle 的 test 任务在一个用例都没发现时也算成功，它没有内建的「空即失败」。
+      # 这正是本仓已经栽过两次的那种静默绿灯，所以这里把 JUnit XML 读回来数一遍。
+      - name: Assert tests ran and none were skipped
+        working-directory: kotlin
+        run: |
+          set -euo pipefail
+          dir=build/test-results/test
+          if [ ! -d "$dir" ] || [ -z "$(ls -A "$dir"/*.xml 2>/dev/null)" ]; then
+            echo "::error::Gradle produced no JUnit results in $dir — the test task ran nothing"
+            exit 1
+          fi
+          total=$(sed -n 's/.*<testsuite[^>]*tests="\([0-9]*\)".*/\1/p' "$dir"/*.xml | awk '{s+=$1} END {print s+0}')
+          skipped=$(sed -n 's/.*<testsuite[^>]*skipped="\([0-9]*\)".*/\1/p' "$dir"/*.xml | awk '{s+=$1} END {print s+0}')
+          echo "tests: $total, skipped: $skipped"
+          if [ "$total" -lt 86 ]; then
+            echo "::error::expected at least 86 Kotlin tests, saw $total — raise this floor in the commit that adds tests, never lower it to make a run pass"
+            exit 1
+          fi
+          if [ "$skipped" -ne 0 ]; then
+            echo "::error::$skipped Kotlin tests reported themselves skipped; a skip here is a case nobody is running"
+            exit 1
+          fi
+
+      - name: Upload Kotlin test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kotlin-test-results
+          path: kotlin/build/reports/tests/test
+          if-no-files-found: warn
+
+  dart:
+    name: Flutter/Dart SDK
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The Dart SDK alone, not Flutter. This package has no Flutter dependency — web_socket_channel
+      # picks dart:io or the browser WebSocket — so installing Flutter would add several minutes and
+      # a version matrix to test a package that does not use it.
+      # 只装 Dart SDK，不装 Flutter：这个包不依赖 Flutter（web_socket_channel 自己在 dart:io 与
+      # 浏览器 WebSocket 之间选择）。装 Flutter 只会为一个用不到它的包多花几分钟和一整套版本矩阵。
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install
+        working-directory: flutter
+        run: dart pub get
+
+      - name: Test
+        working-directory: flutter
+        run: dart test --reporter expanded
+
+  dotnet-package:
+    name: .NET server SDK builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: IM.Server/global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-sdk-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', 'dotnet/**/*.csproj') }}
+          restore-keys: nuget-sdk-${{ runner.os }}-
+
+      # This project is not in IM.slnx, so `dotnet build IM.Server/IM.slnx` never touches it — which means
+      # nothing in the pipeline would compile the one SDK a tenant backend takes as a NuGet package
+      # until it was published broken. It multi-targets net8.0/net9.0/net10.0 because that is the
+      # range of runtimes tenant backends actually sit on, and all three must keep compiling.
+      # 这个项目不在 IM.slnx 里，`dotnet build IM.Server/IM.slnx` 碰不到它——
+      # 也就是说，租户后端以 NuGet 包形式拿到的这个 SDK，在发布出问题之前流水线里没有任何一步会编译它。
+      # 它多目标 net8.0/net9.0/net10.0，因为那正是租户后端实际运行的运行时范围，三个都必须编得过。
+      - name: Build (net8.0, net9.0, net10.0)
+        run: dotnet build dotnet/Cyaim.Im.ServerSdk/Cyaim.Im.ServerSdk.csproj -c Release -v minimal --nologo -nodeReuse:false
+
+  swift:
+    name: Swift SDK
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Package.swift declares swift-tools-version 6.0 and the sources build under Swift 6 language
+      # mode with strict concurrency; the tests use swift-testing, which ships with the Swift 6
+      # toolchain. An older runner image would fail with a parse error on the manifest, which reads
+      # like a broken package rather than a wrong toolchain — so the version is checked first and
+      # named in the failure.
+      # Package.swift 声明 swift-tools-version 6.0，源码在 Swift 6 语言模式下以严格并发编译，
+      # 测试用的是随 Swift 6 工具链一起发布的 swift-testing。
+      # 更旧的 runner 镜像会在解析清单时报错，看起来像「包坏了」而不是「工具链不对」——
+      # 所以先检查版本，并在失败信息里点名。
+      - name: Toolchain
+        run: |
+          set -euo pipefail
+          swift --version
+          major=$(swift --version 2>&1 | sed -n 's/.*Swift version \([0-9]*\).*/\1/p' | head -1)
+          if [ -z "$major" ] || [ "$major" -lt 6 ]; then
+            echo "::error::this package needs a Swift 6 toolchain (Package.swift is swift-tools-version 6.0); this runner has $(swift --version 2>&1 | head -1)"
+            exit 1
+          fi
+
+      - name: Build
+        working-directory: swift
+        run: swift build --build-tests
+
+      - name: Test
+        working-directory: swift
+        run: swift test
