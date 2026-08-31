@@ -1,0 +1,25 @@
+# 换行规则。**它存在的理由是平台仓库里一次真实的失效**,不是补全强迫症。
+#
+# Actions 会把每个 `run:` 块原样写成临时文件交给 bash,带 CRLF 提交的工作流会在 runner 上报
+# `syntax error near unexpected token $'do'`,而它指着的那一行完全没有问题。
+# 平台仓库里那条保护写在了 `IM.Server/.gitattributes` 里——gitattributes 的模式相对于**它自己
+# 所在的目录**,所以它管的是一个不存在的目录,从写下的那天起就匹配不到任何文件,
+# 而它读起来像是生效的。这个仓库拆出来时把工作流和 gradlew 一并带走了,规则必须跟过来。
+#
+# Actions writes every `run:` block to a temp file verbatim, so a workflow committed with CRLF dies
+# on the runner with `syntax error near unexpected token $'do'` pointing at a line that is fine.
+# The equivalent rule in the platform repository sat one directory too deep and matched nothing for
+# as long as it existed; this repository took the workflows and gradlew with it, so it takes the
+# rule too.
+#
+# 刻意**不写** `* text=auto`:那会重写整棵树,代价远大于它买到的保证。
+# 只钉 CI 与构建真正会执行的那几类文件。
+# Deliberately no `* text=auto` — only the files CI and the builds actually execute.
+
+.github/workflows/*.yml text eol=lf
+
+*.sh      text eol=lf
+*.ps1     text eol=lf
+*.psm1    text eol=lf
+*.mjs     text eol=lf
+gradlew   text eol=lf
