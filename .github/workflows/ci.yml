@@ -225,15 +225,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 与平台仓库钉同一个 SDK 版本(10.0.400 / latestFeature)。这里的 global.json 是那一份的副本,
+      # 而不是指过去——SDK 拆成独立仓库之后,原来那条 `IM.Server/global.json` 在这里根本不存在,
+      # 这个 job 因此在第一次运行时就红在了 setup-dotnet 上。
+      # Pins the same SDK as the platform repository. This global.json is a copy, not a reference:
+      # after the split the old `IM.Server/global.json` path does not exist here, which is exactly
+      # what made this job fail on its first run.
       - uses: actions/setup-dotnet@v4
         with:
-          global-json-file: IM.Server/global.json
+          global-json-file: global.json
 
       - name: Cache NuGet packages
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: nuget-sdk-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', 'dotnet/**/*.csproj') }}
+          # Directory.Packages.props 留在平台仓库里(中央包管理是它的策略,不是 SDK 的),
+          # 所以这里只按工程文件做键——hashFiles 对不存在的文件不报错,那会悄悄弱化缓存键。
+          # Directory.Packages.props stays in the platform repository, so the key is the project
+          # files alone: hashFiles does not error on a missing path, it just weakens the key.
+          key: nuget-sdk-${{ runner.os }}-${{ hashFiles('dotnet/**/*.csproj') }}
           restore-keys: nuget-sdk-${{ runner.os }}-
 
       # This project is not in IM.slnx, so `dotnet build IM.Server/IM.slnx` never touches it — which means
