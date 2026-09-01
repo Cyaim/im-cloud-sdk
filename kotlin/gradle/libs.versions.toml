@@ -4,7 +4,36 @@ coroutines = "1.11.0"
 serialization = "1.11.0"
 # OkHttp 5.x, minSdk 21 / Java 8+. We only touch the WebSocket API, which is unchanged since 4.x,
 # so an app pinned to OkHttp 4 can force that version without patching anything here.
-okhttp = "5.5.0"
+#
+# 5.3.0 and not the newest, and that is a compatibility floor rather than caution. On Android the
+# `okhttp` coordinate resolves to `okhttp-android`, whose AAR carries a `minCompileSdk` that every
+# consumer inherits:
+#
+#     5.0.0 – 5.3.0   minCompileSdk = 1     (no floor)
+#     5.4.0           minCompileSdk = 36
+#     5.5.0           minCompileSdk = 37
+#
+# We were on 5.5.0, so any Android app taking this SDK had to compile against API 37 — which AGP 8.13
+# does not support (it recommends 36 as the maximum) and which has no released platform yet. The app
+# did not fail at runtime; it failed at `checkDebugAarMetadata`, before a line of our code ran. That
+# is not a caveat, it is "cannot be consumed on Android", and it contradicts the README's `minSdk 21`
+# a few lines from here. Found by building an actual Android app against this SDK for the first time
+# — the JVM-library build this project's own CI runs can never see it.
+#
+# Raising this again means raising every consumer's compileSdk. Do it deliberately, and say so in the
+# README at the same time.
+#
+# 钉 5.3.0 而不是最新，是一条兼容性下限，不是保守。
+# 在 Android 上 `okhttp` 坐标会解析成 `okhttp-android`，而它的 AAR 带着一个所有消费者都会继承的
+# minCompileSdk：5.0.0–5.3.0 无下限，5.4.0 要 36，5.5.0 要 37。
+# 我们此前钉在 5.5.0，于是任何拿这个 SDK 的 Android 应用都必须用 API 37 编译——
+# 而 AGP 8.13 不支持（建议上限 36），API 37 也还没有已发布的平台。
+# 它不是运行时失败，是在 checkDebugAarMetadata 上失败，**我们自己的代码一行都还没跑**。
+# 那不叫「注意事项」，那叫「在 Android 上用不了」，而且与几行之外 README 里的 minSdk 21 冲突。
+# 这是第一次真的拿一个 Android 应用去编译这个 SDK 才发现的——
+# 本工程 CI 跑的是 JVM 库构建，永远看不见它。
+# 以后再抬这个版本，等于抬高每一个消费者的 compileSdk：要抬就明知地抬，并同时改 README。
+okhttp = "5.3.0"
 junit = "5.14.4"
 
 [libraries]

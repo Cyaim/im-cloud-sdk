@@ -346,6 +346,17 @@ second device.
 **Other details.**
 
 - `minSdk 21`, `jvmTarget 11`. No `android.*` imports, no manifest, no `Context`.
+- **`compileSdk` is not a free choice, and it is not ours.** On Android the `okhttp` coordinate
+  resolves to `okhttp-android`, whose AAR carries a `minCompileSdk` that every consumer inherits.
+  We pin OkHttp **5.3.0** because that is the newest release with no floor at all; 5.4.0 requires
+  `compileSdk 36` and 5.5.0 requires `37`. A build that violates it fails at
+  `checkDebugAarMetadata` — before any code of ours runs — so it reads as a project misconfiguration
+  rather than as a dependency constraint. If you force a newer OkHttp, raise `compileSdk` to match.
+  **compileSdk 不是随便选的，而且那个约束不来自我们**：Android 上 `okhttp` 会解析成
+  `okhttp-android`，它的 AAR 带着一个所有消费者都会继承的 minCompileSdk。
+  我们钉 OkHttp **5.3.0**，因为它是完全没有下限的最新版；5.4.0 要 36，5.5.0 要 37。
+  违反时失败在 checkDebugAarMetadata 上——**我们的代码一行都还没跑**——
+  于是它读起来像工程配置错了，而不像一条依赖约束。要强行用更新的 OkHttp，就同步抬 compileSdk。
 - R8 rules for kotlinx.serialization ship inside the jar (`META-INF/proguard/im-client.pro`), so a
   shrunk release build decodes messages exactly like the debug build.
 - `deviceId` must survive reinstall-free restarts: store a UUID in DataStore on first run. A random
