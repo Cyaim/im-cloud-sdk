@@ -29,7 +29,7 @@
     "endpoints": 114,
     "controllers": 14,
     "implemented": {
-      "typescript": 53,
+      "typescript": 62,
       "kotlin": 53,
       "swift": 53,
       "flutter": 53,
@@ -176,7 +176,7 @@
       "rule": "Load-bearing for a minority of tenants and dead weight for the rest: calls, service desk, end-to-end encryption, live chat rooms, AI streaming, scheduling, folders. Correctly typed when a customer asks; never a reason to delay T0–T3.",
       "endpoints": 41,
       "implemented": {
-        "typescript": 0,
+        "typescript": 9,
         "kotlin": 0,
         "swift": 0,
         "flutter": 0,
@@ -1183,12 +1183,12 @@
       "target": "desk.status",
       "controller": "DeskController",
       "method": "Status",
-      "source": "src/IM.Server/WsControllers/DeskController.cs:107",
+      "source": "src/IM.Server/WsControllers/DeskController.cs:117",
       "requestType": "DeskStatusRequest",
       "responseType": null,
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
+        "typescript": true,
         "kotlin": false,
         "swift": false,
         "flutter": false,
@@ -1199,12 +1199,12 @@
       "target": "desk.close",
       "controller": "DeskController",
       "method": "Close",
-      "source": "src/IM.Server/WsControllers/DeskController.cs:85",
+      "source": "src/IM.Server/WsControllers/DeskController.cs:95",
       "requestType": "DeskCloseRequest",
       "responseType": null,
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
+        "typescript": true,
         "kotlin": false,
         "swift": false,
         "flutter": false,
@@ -1215,12 +1215,12 @@
       "target": "desk.transfer",
       "controller": "DeskController",
       "method": "Transfer",
-      "source": "src/IM.Server/WsControllers/DeskController.cs:64",
+      "source": "src/IM.Server/WsControllers/DeskController.cs:67",
       "requestType": "DeskTransferRequest",
       "responseType": null,
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
+        "typescript": true,
         "kotlin": false,
         "swift": false,
         "flutter": false,
@@ -1236,7 +1236,7 @@
       "responseType": "DeskSession",
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
+        "typescript": true,
         "kotlin": false,
         "swift": false,
         "flutter": false,
@@ -1253,7 +1253,7 @@
       "tier": "T4",
       "note": "Agent-console surface. The customer side of a desk session arrives as ordinary messages.",
       "implementedIn": {
-        "typescript": false,
+        "typescript": true,
         "kotlin": false,
         "swift": false,
         "flutter": false,
@@ -1589,12 +1589,12 @@
       "target": "desk.queue",
       "controller": "DeskController",
       "method": "Queue",
-      "source": "src/IM.Server/WsControllers/DeskController.cs:128",
+      "source": "src/IM.Server/WsControllers/DeskController.cs:138",
       "requestType": null,
       "responseType": "DeskQueueView",
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
+        "typescript": true,
         "kotlin": false,
         "swift": false,
         "flutter": false,
@@ -1622,13 +1622,13 @@
       "target": "desk.rate",
       "controller": "DeskController",
       "method": "Rate",
-      "source": "src/IM.Server/WsControllers/DeskController.cs:136",
+      "source": "src/IM.Server/WsControllers/DeskController.cs:146",
       "requestType": "DeskRateRequest",
       "responseType": null,
       "tier": "T4",
       "note": "The customer rates a finished desk session. Tiered on 2026-08-27: it shipped untiered, which stopped the generator and froze the inventory.",
       "implementedIn": {
-        "typescript": false,
+        "typescript": true,
         "kotlin": false,
         "swift": false,
         "flutter": false,
@@ -1639,13 +1639,13 @@
       "target": "desk.canned",
       "controller": "DeskController",
       "method": "Canned",
-      "source": "src/IM.Server/WsControllers/DeskController.cs:168",
+      "source": "src/IM.Server/WsControllers/DeskController.cs:178",
       "requestType": "DeskCannedRequest",
       "responseType": "IReadOnlyList<DeskCannedReply>",
       "tier": "T4",
       "note": "The agent's canned-reply list. Its request body is optional, which is what the generator's parameter regex could not read until 2026-08-27.",
       "implementedIn": {
-        "typescript": false,
+        "typescript": true,
         "kotlin": false,
         "swift": false,
         "flutter": false,
@@ -2059,13 +2059,13 @@
       "target": "desk.suggest",
       "controller": "DeskController",
       "method": "Suggest",
-      "source": "src/IM.Server/WsControllers/DeskController.cs:157",
+      "source": "src/IM.Server/WsControllers/DeskController.cs:167",
       "requestType": "DeskSuggestRequest",
       "responseType": "IReadOnlyList<string>",
       "tier": "T4",
       "note": "LLM reply suggestions for an agent; returns 1203 when no provider is configured. Tiered on 2026-08-27 with desk.rate and desk.canned.",
       "implementedIn": {
-        "typescript": false,
+        "typescript": true,
         "kotlin": false,
         "swift": false,
         "flutter": false,
@@ -2834,6 +2834,21 @@
           "nullable": true
         },
         {
+          "name": "scope",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "folder",
+          "type": "string?",
+          "nullable": true
+        },
+        {
+          "name": "ownerMemberId",
+          "type": "string?",
+          "nullable": true
+        },
+        {
           "name": "updatedAt",
           "type": "long",
           "nullable": false
@@ -2845,6 +2860,16 @@
       "properties": [
         {
           "name": "skill",
+          "type": "string?",
+          "nullable": true
+        },
+        {
+          "name": "scope",
+          "type": "string?",
+          "nullable": true
+        },
+        {
+          "name": "ownerMemberId",
           "type": "string?",
           "nullable": true
         }
@@ -2862,6 +2887,26 @@
           "name": "resolution",
           "type": "string?",
           "nullable": true
+        },
+        {
+          "name": "tags",
+          "type": "List<string>?",
+          "nullable": true
+        },
+        {
+          "name": "disposition",
+          "type": "string?",
+          "nullable": true
+        },
+        {
+          "name": "summary",
+          "type": "string?",
+          "nullable": true
+        },
+        {
+          "name": "inviteRating",
+          "type": "bool",
+          "nullable": false
         }
       ]
     },
@@ -2914,6 +2959,16 @@
           "nullable": false
         },
         {
+          "name": "resolved",
+          "type": "bool?",
+          "nullable": true
+        },
+        {
+          "name": "starTags",
+          "type": "List<string>?",
+          "nullable": true
+        },
+        {
           "name": "comment",
           "type": "string?",
           "nullable": true
@@ -2936,6 +2991,26 @@
         {
           "name": "context",
           "type": "Dictionary<string, object?>?",
+          "nullable": true
+        }
+      ]
+    },
+    "DeskResponseSample": {
+      "source": "IM.Server/src/IM.Abstractions/Contracts/IBotAndDeskServices.cs",
+      "properties": [
+        {
+          "name": "customerAt",
+          "type": "long",
+          "nullable": false
+        },
+        {
+          "name": "agentAt",
+          "type": "long",
+          "nullable": false
+        },
+        {
+          "name": "agentId",
+          "type": "string?",
           "nullable": true
         }
       ]
@@ -3024,6 +3099,11 @@
           "nullable": true
         },
         {
+          "name": "ratingInvitedAt",
+          "type": "long?",
+          "nullable": true
+        },
+        {
           "name": "ratingComment",
           "type": "string?",
           "nullable": true
@@ -3037,6 +3117,71 @@
           "name": "summary",
           "type": "DeskSessionSummary?",
           "nullable": true
+        },
+        {
+          "name": "tags",
+          "type": "List<string>",
+          "nullable": false
+        },
+        {
+          "name": "channel",
+          "type": "string?",
+          "nullable": true
+        },
+        {
+          "name": "visitorId",
+          "type": "string?",
+          "nullable": true
+        },
+        {
+          "name": "deskId",
+          "type": "string?",
+          "nullable": true
+        },
+        {
+          "name": "groupId",
+          "type": "string?",
+          "nullable": true
+        },
+        {
+          "name": "disposition",
+          "type": "string?",
+          "nullable": true
+        },
+        {
+          "name": "endReason",
+          "type": "DeskEndReason?",
+          "nullable": true
+        },
+        {
+          "name": "ratingReason",
+          "type": "string?",
+          "nullable": true
+        },
+        {
+          "name": "ratingResolved",
+          "type": "bool?",
+          "nullable": true
+        },
+        {
+          "name": "ratingTags",
+          "type": "List<string>",
+          "nullable": false
+        },
+        {
+          "name": "star",
+          "type": "bool",
+          "nullable": false
+        },
+        {
+          "name": "snoozedUntil",
+          "type": "long?",
+          "nullable": true
+        },
+        {
+          "name": "responseSamples",
+          "type": "List<DeskResponseSample>",
+          "nullable": false
         }
       ]
     },
@@ -3105,7 +3250,17 @@
         },
         {
           "name": "toAgentId",
-          "type": "string",
+          "type": "string?",
+          "nullable": true
+        },
+        {
+          "name": "toSkill",
+          "type": "string?",
+          "nullable": true
+        },
+        {
+          "name": "toQueue",
+          "type": "bool",
           "nullable": false
         },
         {
@@ -5662,6 +5817,11 @@
           "name": "isTest",
           "type": "bool",
           "nullable": false
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "nullable": false
         }
       ]
     }
@@ -5699,11 +5859,19 @@
       "System": 4,
       "Assistant": 5
     },
+    "DeskEndReason": {
+      "BotResolved": 1,
+      "BotHandoff": 2,
+      "Human": 3,
+      "Abandoned": 4,
+      "Timeout": 5
+    },
     "DeskSessionState": {
       "Queued": 0,
       "Assigned": 1,
       "Closed": 2,
-      "Abandoned": 3
+      "Abandoned": 3,
+      "Bot": 4
     },
     "GroupInviteMode": {
       "AllMembers": 0,
@@ -5889,7 +6057,19 @@
     "PushReceiptRejected": 2402,
     "TicketNotFound": 2403,
     "TicketClosed": 2404,
-    "TicketNotRatable": 2405
+    "TicketNotRatable": 2405,
+    "DeskNotFound": 2500,
+    "DeskLimitReached": 2501,
+    "SeatExhausted": 2502,
+    "NotSessionHolder": 2503,
+    "DeskGroupNotFound": 2504,
+    "DeskReadonly": 2505,
+    "BindingConflict": 2506,
+    "VisitorTokenInvalid": 2507,
+    "WidgetOriginDenied": 2508,
+    "AgentNotEnabled": 2509,
+    "ChannelWindowExhausted": 2510,
+    "TransferDeclined": 2511
   },
   "pushTargets": {
     "Message": "evt.message",
@@ -5905,5 +6085,20 @@
     "Call": "evt.call",
     "Desk": "evt.desk",
     "Kick": "conn.kick"
+  },
+  "deskChanges": {
+    "Assigned": "assigned",
+    "Released": "released",
+    "Closed": "closed",
+    "Summary": "summary",
+    "Message": "message",
+    "Note": "note",
+    "Tag": "tag",
+    "Snooze": "snooze",
+    "Whisper": "whisper",
+    "Typing": "typing",
+    "Inactive": "inactive",
+    "Overdue": "overdue",
+    "Takeover": "takeover"
   }
 }

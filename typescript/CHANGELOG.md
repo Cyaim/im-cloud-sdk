@@ -43,6 +43,34 @@ Implements [`sdk/CONTRACT.md`](../CONTRACT.md) contract version `1.0`.
 
 ### Added
 
+- **The customer-service desk, typed (`im.desk`, tier T4).** All nine verbs — `request` `accept`
+  `transfer` `close` `status` `queue` `rate` `canned` `suggest` — with `DeskSession` carrying every
+  field the server returns today, `DeskSessionState` including `Bot`, the string-valued
+  `DeskEndReason`, and the payload types for the end-of-session drawer, the rating survey, canned
+  replies and knowledge-base articles. T4's rule is "correctly typed when a customer asks"; the
+  customer asked, and it is typed whole rather than in halves.
+  - `transfer` takes a **union**: exactly one of `toAgentId`, `toSkill` or `toQueue`, so naming two
+    is a compile error rather than a `1001` in front of a customer halfway through a handover.
+  - `readDeskNotification(message)` reads the 1801–1807 notices, which arrive as ordinary messages
+    on the customer's transcript and therefore land in `onMessage` alongside chat. It checks the
+    content type and the band together — the same seven numbers are account error codes elsewhere
+    on this platform, and a reader keyed on the number alone eventually draws "your account is
+    locked" onto a support transcript.
+  - `im.onDeskEvent(fn)` decodes `evt.desk` into a union split on `event`: `session` is null on a
+    forced release and absent altogether on the agent-level `takeover` frame. The thirteen `change`
+    values are a **closed** union — the one closed union in the package — so a workbench can write a
+    switch the compiler proves it has finished; `knownDeskChange()` is the narrowing seam, and the
+    frame's own field stays open so a value a newer server adds still arrives. The closed list is
+    held to `endpoint-inventory.json`'s new `deskChanges` block, which the generator fills from the
+    server, so a fourteenth value cannot leave the union silently one short.
+  - **`desk.canned`'s `ownerMemberId` is a filter, not a guard.** The server does not narrow it to
+    the caller on this surface: absent returns every member's `personal` replies and another
+    member's id returns theirs. Pass your own member id for the usual "shared, plus mine". Documented
+    rather than worked around, because the SDK inventing a default here would hide a server-side
+    question that is still open.
+  - Desk error codes `2500`–`2511` are named on `ImErrorCode`. None of them can come back from a
+    `desk.*` socket call — they belong to the console, widget and admin surfaces around it — but a
+    number with no name is a number nobody can grep.
 - **`logStore` and the device log (ADR-003).** `im.diag`, an `ImLogStore` option with
   `inMemoryLogStore()` as its default, and `im.log` for an application's own lines. The console can
   ask a running device for the SDK's runtime log; the client answers once per connect and on an

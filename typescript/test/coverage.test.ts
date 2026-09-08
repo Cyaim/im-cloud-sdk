@@ -1,12 +1,10 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
 import {
   ConnApi,
   ConvApi,
+  DeskApi,
   DiagApi,
   FriendApi,
   GroupApi,
@@ -19,6 +17,7 @@ import {
 } from '../src/api.js';
 import { ImClient } from '../src/client.js';
 import { CONTRACT_VERSION } from '../src/version.js';
+import { loadInventory } from './inventory.js';
 
 /**
  * Tier coverage, measured rather than claimed.
@@ -35,26 +34,6 @@ import { CONTRACT_VERSION } from '../src/version.js';
  * 覆盖率是测出来的，不是声称的：用记录型 invoker 调一遍所有类型化方法，
  * 把落到线上的 target 与 inventory 里该层级的清单对齐。
  */
-
-interface Inventory {
-  contractVersion: string;
-  tiers: Record<string, { targets: string[] }>;
-  endpoints: Array<{ target: string }>;
-}
-
-function loadInventory(): Inventory {
-  // The compiled tests run from `dist-test/test`, the sources from `test`. Walk up until the
-  // generated inventory turns up rather than hard-coding a depth that differs between the two.
-  let directory = dirname(fileURLToPath(import.meta.url));
-
-  for (let depth = 0; depth < 6; depth++) {
-    const candidate = join(directory, 'endpoint-inventory.json');
-    if (existsSync(candidate)) return JSON.parse(readFileSync(candidate, 'utf8')) as Inventory;
-    directory = resolve(directory, '..');
-  }
-
-  throw new Error('sdk/endpoint-inventory.json not found above the test directory');
-}
 
 /** Calls every method on every namespace and collects the targets they put on the wire. */
 function typedTargets(): Set<string> {
@@ -78,6 +57,7 @@ function typedTargets(): Set<string> {
     new MediaApi(io),
     new PushApi(io, () => true),
     new ModerationApi(io),
+    new DeskApi(io),
     new DiagApi(io),
   ];
 
@@ -115,18 +95,37 @@ describe('tier coverage', () => {
     });
   }
 
+  /**
+   * The one deliberate exception to "T0–T2 and nothing else", and the reason it is an exception
+   * rather than a hole: T4's rule is "correctly typed when a customer asks", and the customer
+   * asked. `desk.*` is typed **whole** — all nine — which is what keeps the rule below meaningful.
+   * The other 32 endpoints of T4 stay behind `invoke()`.
+   * T4 的规则原话就是「有客户要的时候把它类型化」，而客户来了。desk.* 是整族做完的九条，
+   * 这才让下面那条「不许做一半」的规矩仍然有意义。
+   */
+  const deskTargets = inventory.tiers['T4']!.targets.filter((target) => target.startsWith('desk.'));
+
+  it('types every endpoint in T4 desk.*', () => {
+    assert.equal(deskTargets.length, 9, 'the server grew or lost a desk endpoint');
+
+    const missing = deskTargets.filter((target) => !covered.has(target));
+    assert.deepEqual(missing, [], `desk is not complete: ${missing.join(', ')}`);
+  });
+
   it('does not half-type a tier it has not committed to', () => {
     // A partially typed tier is worse than an untyped one: a developer cannot tell which half is
     // there, and finds out one endpoint at a time. Everything beyond T2 goes through `invoke()`,
-    // which is documented and obviously an escape hatch.
+    // which is documented and obviously an escape hatch — except `desk.*`, which is committed to
+    // whole, above.
     const shipped = new Set([
       ...inventory.tiers['T0']!.targets,
       ...inventory.tiers['T1']!.targets,
       ...inventory.tiers['T2']!.targets,
+      ...deskTargets,
     ]);
 
     const strays = [...covered].filter((target) => !shipped.has(target));
-    assert.deepEqual(strays, [], `typed but not in T0–T2: ${strays.join(', ')}`);
+    assert.deepEqual(strays, [], `typed but not in T0–T2 or desk.*: ${strays.join(', ')}`);
     assert.equal(covered.size, shipped.size);
   });
 });
@@ -177,6 +176,7 @@ describe('the namespaced surface is endpoints only', () => {
     ['media', new MediaApi(io)],
     ['push', new PushApi(io, () => true)],
     ['moderation', new ModerationApi(io)],
+    ['desk', new DeskApi(io)],
   ];
 
   it('names no endpoint the server does not have', () => {

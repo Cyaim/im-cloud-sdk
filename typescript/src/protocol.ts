@@ -156,6 +156,67 @@ export const ImErrorCode = {
    * `clicked` 会吞掉它——点击数少一次不是应用要处理的问题，用户也无从处理。
    */
   PushDeliveryNotFound: 2401,
+
+  // 2500-2599 customer-service desk (SPEC-06 §14.7)
+  //
+  // **None of these can come back from a `desk.*` socket call.** The nine socket verbs answer the
+  // generic band — 1001 for a malformed body, 1002 for a session or a queue that is not there,
+  // 1006 for a session in the wrong state, 1103 for the wrong caller, 1203 when the tenant has no
+  // LLM or no rating survey, 1205 when the agent is already at the capacity they declared. This
+  // band belongs to the surfaces around the socket: the console's `/console/v1`, the visitor
+  // widget's `/widget/v1`, operations' `/admin/v1`. They are declared here because the same
+  // package is what a widget bundles, and because a name is what makes a support ticket
+  // searchable — an integrator reading `2508` off a network tab has nothing to grep.
+  //
+  // 这一段没有一个会从 desk.* 的套接字调用回来：九个动词答的是通用码段。
+  // 它属于套接字周围的那些面（控制台 / 访客插件 / 运维），列在这里是因为插件打包的就是本包，
+  // 而且一个只有数字没有名字的码，在工单里是搜不到的。
+
+  /** No such customer-service centre in this organisation — the same answer as "it is not yours", deliberately. */
+  DeskNotFound: 2500,
+
+  /** The organisation already has as many centres as its stage allows (one, at P0). Buying capacity is the fix; retrying is not. */
+  DeskLimitReached: 2501,
+
+  /** Enabling this agent would exceed the seats the organisation has bought. Somebody has to be disabled, or seats added. */
+  SeatExhausted: 2502,
+
+  /**
+   * The caller neither holds this session nor has `desk.supervise`, and tried to reply, note or close it. Not a token problem: a fresh login answers the same.
+   *
+   * 调用方既不是这条会话的持有者、也没有 desk.supervise，却要回复 / 备注 / 关闭。
+   * 这不是令牌的问题——重新登录得到的是同一个答案。
+   */
+  NotSessionHolder: 2503,
+
+  /**
+   * No such skill group in this centre. Named `DeskGroupNotFound` rather than SPEC-06 §14.7's `GroupNotFound` because 1500 already carries that name here and two constants cannot share it; the number is what travels, and it is unchanged.
+   *
+   * SPEC-06 §14.7 里叫 GroupNotFound，这里叫 DeskGroupNotFound：1500 已经占用了那个名字。
+   * 线上传的是号码，号码没变。
+   */
+  DeskGroupNotFound: 2504,
+
+  /** The centre is in a read-only phase of its lifecycle: its data still reads, and every write is refused. */
+  DeskReadonly: 2505,
+
+  /** That application is already bound to another centre. One application, one centre. */
+  BindingConflict: 2506,
+
+  /** The visitor token's `userHash` did not verify, or it has expired. A new one has to be minted server-side; there is nothing the browser can do about it. */
+  VisitorTokenInvalid: 2507,
+
+  /** The request's `Origin` is not on the channel's allowlist. Like {@link ImErrorCode.OriginNotAllowed} a tenant setting rather than a user one, so retrying and re-authenticating both fail the same way. */
+  WidgetOriginDenied: 2508,
+
+  /** The agent's profile was disabled since they last signed in. Their workbench must send them away rather than retry. */
+  AgentNotEnabled: 2509,
+
+  /** The channel's reply window has closed (WeChat's 48 hours). A template message is the only way left to reach that customer. */
+  ChannelWindowExhausted: 2510,
+
+  /** The receiving agent declined a transfer that needed their confirmation. The session stays where it is. */
+  TransferDeclined: 2511,
 } as const;
 
 /**
@@ -322,6 +383,213 @@ export const ApplicationStatus = {
   Expired: 3,
 } as const;
 export type ApplicationStatus = (typeof ApplicationStatus)[keyof typeof ApplicationStatus] | (number & {});
+
+// ---------------------------------------------------------------------------- desk (T4)
+//
+// Three enum styles meet in one feature and the difference is on the wire, not a matter of taste:
+// `DeskSessionState` and `AgentStatus` are bare C# enums and travel as **numbers**, while
+// `DeskEndReason` carries its own `JsonStringEnumConverter` and travels as a **string**. A
+// `switch` written against the wrong one never matches and never throws — the branch is simply
+// dead — so both spellings are declared here rather than left to a reader's assumption.
+// 同一个功能里三种枚举风格并存，而区别在线路上：state / status 是数字，endReason 是字符串。
+// 对错了的 switch 不会报错，只是永远不命中——所以两种拼法都写在这里。
+
+/**
+ * Where a desk session is. **`Bot` counts as open**: a customer is either with the bot or with
+ * people, never both, so a workbench asking "does this customer already have a session" must treat
+ * `Bot` exactly like `Queued` and `Assigned`. The queue sweeps read only `Queued`.
+ *
+ * `Bot` 算「进行中」：一个客户要么在机器人手里、要么在人手里。查「这位客户是不是已经有会话」时，
+ * 它必须与 Queued / Assigned 同等对待。
+ */
+export const DeskSessionState = {
+  Queued: 0,
+  Assigned: 1,
+  Closed: 2,
+  Abandoned: 3,
+  /** The AI bot is handling the customer and no human is involved yet. */
+  Bot: 4,
+} as const;
+export type DeskSessionState = (typeof DeskSessionState)[keyof typeof DeskSessionState] | (number & {});
+
+/**
+ * An agent's declared availability, and — because `desk.status` is also the heartbeat — the proof
+ * their workbench is still there. Sending it is what keeps them in the roster; a console that stops
+ * calling is reclaimed and its sessions requeued.
+ */
+export const AgentStatus = {
+  Offline: 0,
+  Available: 1,
+  Busy: 2,
+  Away: 3,
+} as const;
+export type AgentStatus = (typeof AgentStatus)[keyof typeof AgentStatus] | (number & {});
+
+/**
+ * Why a session ended, written by the system and never chosen by an agent. **A string on the
+ * wire**, unlike its two neighbours above — the server puts a `JsonStringEnumConverter` on this one
+ * enum precisely so that a workbench and a report compare against `"bot-resolved"` rather than `1`.
+ *
+ * Null while the session is open, and null on every session closed before the field existed, so a
+ * report renders "unknown" rather than folding those into `human`.
+ * 线上是字符串而不是数字。会话开着时为 null，字段出现之前关闭的会话也是 null——报表要画「未知」，
+ * 不能把它们并进「human」。
+ */
+export const DeskEndReason = {
+  /** The bot answered and the customer left; nobody human was involved. */
+  BotResolved: 'bot-resolved',
+  /** The bot handed the customer to a human. The session that followed has its own reason. */
+  BotHandoff: 'bot-handoff',
+  /** An agent closed it. */
+  Human: 'human',
+  /** The customer left the queue before an agent took the session. */
+  Abandoned: 'abandoned',
+  /** The customer went silent after assignment and the inactivity timer closed it. */
+  Timeout: 'timeout',
+} as const;
+export type DeskEndReason = (typeof DeskEndReason)[keyof typeof DeskEndReason] | (string & {});
+
+/**
+ * The `change` on an `evt.desk` frame: the thirteen values `DeskSessionChange.All` declares
+ * server-side, in that order.
+ *
+ * **This union is deliberately closed, and it is the only closed one in the file.** Everything else
+ * here is `| (string & {})` so that a value the server adds tomorrow survives the trip; here the
+ * point is the opposite — a workbench must be able to write a `switch` the compiler proves it has
+ * finished, because a change silently dropped is a session that stops updating on one screen while
+ * every other screen moves on. The openness is not lost, it is moved one level out: the frame's own
+ * field is {@link DeskChange}, which admits an unfamiliar string, so a decoder widens once at the
+ * edge and switches exhaustively inside.
+ *
+ * 这个联合刻意是封闭的，也是本文件里唯一封闭的一个：工作台要能写一个编译器能证明写完了的 switch——
+ * 被悄悄丢掉的 change，表现为「一块屏幕上的会话不再更新，而别的屏幕都在动」。
+ * 开放性没有丢，只是挪到外面一层：帧上的字段是 DeskChange，它接受陌生字符串。
+ */
+export const DeskSessionChange = {
+  /** An agent took the session. */
+  Assigned: 'assigned',
+  /** The holder let it go, or was forced off. On a forced release the frame carries **no session**. */
+  Released: 'released',
+  Closed: 'closed',
+  /** The model rewrote the handover summary. */
+  Summary: 'summary',
+  /** The customer sent a message; the frame carries it, so a workbench renders without a history round trip. */
+  Message: 'message',
+  Note: 'note',
+  Tag: 'tag',
+  Snooze: 'snooze',
+  /** A supervisor whispered to the holding agent. The customer never sees it. */
+  Whisper: 'whisper',
+  /**
+   * Declared by the server and **never pushed by it today** — there is no push site for this value
+   * anywhere in the server tree. It is listed because a value that arrives and is not in the union
+   * is a dropped frame; it is not something to build a feature on receiving.
+   * 服务端声明了它，但今天没有任何推送点。列在这里是因为「收到了却不在联合里」等于丢帧；别指望能收到。
+   */
+  Typing: 'typing',
+  /** Both sides have been silent past the centre's timer. Pushed by the product's timer worker, never by the engine. */
+  Inactive: 'inactive',
+  /** The first reply is overdue: once per session, to the holder and to every supervisor of the centre. */
+  Overdue: 'overdue',
+  /** Another tab of the same agent took over the workbench. Carries the winning `connectionId` and no session. */
+  Takeover: 'takeover',
+} as const;
+export type DeskSessionChange = (typeof DeskSessionChange)[keyof typeof DeskSessionChange];
+
+/**
+ * The thirteen in the order `DeskSessionChange.All` declares them, so a guard can compare one list
+ * against the server's rather than thirteen members one at a time.
+ */
+export const DESK_SESSION_CHANGES: readonly DeskSessionChange[] = [
+  DeskSessionChange.Assigned,
+  DeskSessionChange.Released,
+  DeskSessionChange.Closed,
+  DeskSessionChange.Summary,
+  DeskSessionChange.Message,
+  DeskSessionChange.Note,
+  DeskSessionChange.Tag,
+  DeskSessionChange.Snooze,
+  DeskSessionChange.Whisper,
+  DeskSessionChange.Typing,
+  DeskSessionChange.Inactive,
+  DeskSessionChange.Overdue,
+  DeskSessionChange.Takeover,
+];
+
+/** What a frame's `change` may actually hold: one of the thirteen, or a value a newer server added. */
+export type DeskChange = DeskSessionChange | (string & {});
+
+/**
+ * How a closing agent classified the session (SPEC-06 §4.9). The reports group on these exact
+ * strings, and the server refuses anything else with `1001` rather than storing it.
+ */
+export const DeskDisposition = {
+  Resolved: 'resolved',
+  Unresolved: 'unresolved',
+  Invalid: 'invalid',
+  /** Not a support case at all — a sales lead, handed on. */
+  ToLead: 'to-lead',
+} as const;
+export type DeskDisposition = (typeof DeskDisposition)[keyof typeof DeskDisposition] | (string & {});
+
+/** The three tiers of a canned reply: one agent's own, one skill group's, everybody's. */
+export const DeskCannedReplyScope = {
+  Personal: 'personal',
+  Group: 'group',
+  All: 'all',
+} as const;
+export type DeskCannedReplyScope =
+  | (typeof DeskCannedReplyScope)[keyof typeof DeskCannedReplyScope]
+  | (string & {});
+
+/** Whether a knowledge-base article is live. Only a published article grounds the bot or the copilot. */
+export const KbArticleState = {
+  Draft: 'draft',
+  Published: 'published',
+} as const;
+export type KbArticleState = (typeof KbArticleState)[keyof typeof KbArticleState] | (string & {});
+
+/** What kind of internal note this is (SPEC-06 §4.5). Doubles as the `change` on the frame that announces it. */
+export const DeskNoteKind = {
+  /** An agent's own remark on the session. */
+  Note: 'note',
+  /** The handover text written at a transfer. Never enters the customer-visible 1803 line. */
+  Transfer: 'transfer',
+  /** The model-written summary. */
+  Summary: 'summary',
+  /** A supervisor's whisper to the holding agent. */
+  Whisper: 'whisper',
+} as const;
+export type DeskNoteKind = (typeof DeskNoteKind)[keyof typeof DeskNoteKind] | (string & {});
+
+/**
+ * Notification codes carried **inside a message**, not business result codes.
+ *
+ * **The same seven numbers are account error codes elsewhere on this platform** — 1801 is
+ * `AccountLocked` on the server's own `ImErrorCode`, 1804 is `PasswordTooWeak` — and the two never
+ * meet, because these live in `message.content.code` and those live in `body.code`. They are two
+ * tables and have to stay two tables: merged, a client renders "your account is locked" at the
+ * moment a customer reaches the front of a support queue.
+ *
+ * 同样的七个数字在别处是账号面的错误码。两者从不出现在同一个位置——这些在 message.content.code 里，
+ * 那些在 body.code 里。必须是两张表：合并的结果，是客户排到队首时界面告诉他「账号已锁定」。
+ */
+export const DeskNotificationCode = {
+  /** The customer is waiting for an agent. */
+  Queued: 1801,
+  /** An agent has taken the session. */
+  Assigned: 1802,
+  /** Handed to another agent. The handover note is **not** in this line; it is internal. */
+  Transferred: 1803,
+  Closed: 1804,
+  /** The agent became unreachable and the session went back to the **front** of the queue. Its own code rather than a second `Queued`, because "we are finding someone else for you" is a different sentence from "you are in the queue". */
+  Requeued: 1805,
+  /** Nobody could take the session and the desk gave up on it. */
+  Abandoned: 1806,
+  /** Closed, and the customer is being asked to rate it. At most once per session; answer it with `desk.rate`. */
+  RatingRequested: 1807,
+} as const;
+export type DeskNotificationCode = (typeof DeskNotificationCode)[keyof typeof DeskNotificationCode];
 
 /**
  * Coerces a wire number that may have arrived as a JSON string.

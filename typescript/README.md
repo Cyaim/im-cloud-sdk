@@ -166,10 +166,12 @@ report can be grepped rather than translated.
 | `im.media` | `uploadTicket` `downloadUrl` |
 | `im.push` | `register` `unregister` `clicked` `setToken` |
 | `im.moderation` | `report` |
+| `im.diag` | `logRequests` `logUploaded` — the client drives both; ordinary applications never call them |
+| `im.desk` | `request` `accept` `transfer` `close` `status` `queue` `rate` `canned` `suggest` |
 
-That is tiers **T0, T1 and T2** of [`sdk/CONTRACT.md`](../CONTRACT.md) — 51 of the server's 112
+That is tiers **T0, T1 and T2 in full, plus the whole of `desk.*` from T4** — 62 of the server's 114
 endpoints, verified against `sdk/endpoint-inventory.json` by the test suite rather than counted by
-hand. T3 and T4 go through `invoke()` until they are typed.
+hand. The rest of T3 and T4 goes through `invoke()` until it is typed.
 
 Client-level:
 
@@ -199,7 +201,7 @@ returns the original result rather than a second message.
 
 ### `invoke()` — the escape hatch
 
-With 112 endpoints and five release trains, the typed surface will always trail the server. `invoke`
+With 114 endpoints and five release trains, the typed surface will always trail the server. `invoke`
 is permanent, shares the typed methods' code path exactly (same timeouts, cancellation and error
 mapping), and never touches a cursor.
 
@@ -207,6 +209,78 @@ mapping), and never touches a cursor.
 // group.setRole is tier T3 and not typed yet:
 await im.invoke<void>('group.setRole', { groupId, userId: 'bob', role: 2 });
 ```
+
+## Customer-service desk
+
+`desk.*` is the one tier-4 namespace that is typed, because a customer asked for it. Nine verbs move
+the *assignment* around a session; **everything either side actually says is an ordinary chat** in
+the single conversation between the customer and the desk account, sent with `msg.send` and read
+with `msg.history` like any other message.
+
+The customer's half is three calls and one thing to read:
+
+```ts
+const session = await im.desk.request({ skill: 'billing', context: { orderId } });
+// session.state is Queued, Assigned, or Bot — Bot counts as open. Calling twice returns this
+// same session rather than occupying a second agent.
+
+im.onMessage((message) => {
+  const notice = readDeskNotification(message);      // null for ordinary chat
+  if (!notice) return renderChat(message);
+
+  switch (notice.code) {
+    case DeskNotificationCode.Queued:          return say('Finding someone for you…');
+    case DeskNotificationCode.Assigned:        return say(`${notice.agentId} is with you now`);
+    case DeskNotificationCode.RatingRequested: return showSurvey(notice.starTags, notice.askResolved);
+    default:                                   return renderNotice(notice);
+  }
+});
+
+await im.desk.rate({ sessionId: session.sessionId, score: 5 });   // answers the 1807 above
+```
+
+`readDeskNotification` exists because desk events **are messages** — which is what makes a
+transcript explain itself six months later, and what puts frames in your `onMessage` handler that
+must not be drawn as chat. It checks the content type *and* the 1801–1807 band together, because the
+same seven numbers are account error codes elsewhere on this platform.
+
+An agent's half subscribes instead:
+
+```ts
+setInterval(() => im.desk.status({ status: AgentStatus.Available }), 30_000);   // also the heartbeat
+
+im.onDeskEvent((event) => {
+  if (event.event === 'desk.agent') return standDown(event.connectionId);  // another tab took over
+  // event.session is null only on a forced release.
+  const change = knownDeskChange(event.change);
+  if (change) apply(change, event.session);
+});
+```
+
+Four things worth knowing before you build on it:
+
+- **`desk.status` is the heartbeat.** Availability and liveness are one call on purpose, so send it
+  on a timer and not only when the agent flips a switch — an agent whose console went quiet is
+  reclaimed and their sessions requeued.
+- **`transfer` names exactly one of `toAgentId`, `toSkill`, `toQueue`,** and the type enforces it, so
+  a workbench that names two does not compile rather than failing 1001 mid-handover.
+- **Omitted is not null on `desk.close` and `desk.rate`.** The server reads an absent field as "the
+  agent did not fill this in", and `inviteRating` omitted means **true** — the only way to close
+  without asking for a rating is to send `inviteRating: false`.
+- **`desk.canned` does not narrow `personal` replies to you — pass your own member id.**
+  `ownerMemberId` is a filter, not a guard: absent means "do not filter by owner", which returns
+  every member's private phrasebook, and naming someone else's id returns theirs. A workbench that
+  calls `im.desk.canned()` with no argument puts colleagues' private drafts on the agent's screen.
+  The caller-narrowing behaviour lives only on the console route.
+
+  ```ts
+  const mine = await im.desk.canned({ ownerMemberId: me.memberId });   // shared + mine
+  const everyones = await im.desk.canned();                            // shared + everybody's personal
+  ```
+
+`1205 ConcurrencyLimitExceeded` on `desk.accept` means this agent is at the capacity they declared;
+the fix is to finish a session, not to retry, which is why it is not in the retryable set. An empty
+queue is `1002`, not an empty success.
 
 ## Errors
 

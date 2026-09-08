@@ -58,10 +58,11 @@ $wsControllerDir = Join-Path $serverRoot 'src/IM.Server/WsControllers'
 $abstractionsDir = Join-Path $serverRoot 'src/IM.Abstractions'
 $errorCodeFile = Join-Path $abstractionsDir 'Errors/ImErrorCode.cs'
 $pushTargetFile = Join-Path $abstractionsDir 'Protocol/ServerPush.cs'
+$deskChangeFile = Join-Path $abstractionsDir 'Contracts/IBotAndDeskServices.cs'
 $tierFile = Join-Path $toolsDir 'endpoint-tiers.json'
 $outputFile = Join-Path $sdkDir 'endpoint-inventory.json'
 
-foreach ($required in @($wsControllerDir, $abstractionsDir, $errorCodeFile, $pushTargetFile, $tierFile)) {
+foreach ($required in @($wsControllerDir, $abstractionsDir, $errorCodeFile, $pushTargetFile, $deskChangeFile, $tierFile)) {
     if (-not (Test-Path -LiteralPath $required)) {
         throw "Required input not found: $required"
     }
@@ -406,8 +407,8 @@ foreach ($name in ($reachedEnums | Sort-Object)) {
 }
 
 # ---------------------------------------------------------------------------------------------
-# 6. Error codes and push targets — the other two halves of the contract.
-#    错误码与推送事件名——契约的另外两半。
+# 6. Error codes, push targets and desk change values — the other halves of the contract.
+#    错误码、推送事件名与客服 change 值——契约的另外几半。
 # ---------------------------------------------------------------------------------------------
 
 $errorCodes = [ordered]@{}
@@ -423,6 +424,68 @@ foreach ($line in [System.IO.File]::ReadAllLines($pushTargetFile)) {
     if ($pushMatch.Success) { $pushTargets[$pushMatch.Groups['name'].Value] = $pushMatch.Groups['value'].Value }
 }
 if ($pushTargets.Count -eq 0) { throw "Parsed no push targets out of $pushTargetFile." }
+
+# The `change` values an `evt.desk` frame carries. Section 5 above cannot see them: they are a
+# string-constants class, not an `enum`, and no DTO declares a property of that type — so
+# `payloadEnums` misses them and, until this block existed, the thirteen values were the one part
+# of the wire contract that no generated file named. That matters because an SDK is expected to
+# switch on them exhaustively (TypeScript's `DeskSessionChange` is a closed union), and a
+# hand-written union with nothing to compare against goes stale in silence on the day the server
+# grows a fourteenth: the frame arrives, the workbench's `knownDeskChange` returns null, and the
+# frame is dropped — the exact failure `DeskSessionChange`'s own remarks warn about, one level down.
+# evt.desk 帧上的 change 值。第 5 节看不见它们：那是字符串常量类而不是 enum，也没有任何 DTO 把属性
+# 声明成这个类型，于是 payloadEnums 收不到——在这一块出现之前，这十三个值是线上契约里唯一没有任何
+# 生成物提到的部分。而 SDK 被要求对它们做穷举 switch（TypeScript 的 DeskSessionChange 是封闭联合），
+# 一份没有比对对象的手抄联合会在服务端加第十四个值的那天悄悄过期：帧到了，knownDeskChange 返回 null，
+# 帧被丢掉——正是 DeskSessionChange 自己的注释警告的那种失效，只是低一层。
+$deskConstants = [ordered]@{}
+$deskAllOrder = $null
+$insideDeskChange = $false
+foreach ($line in [System.IO.File]::ReadAllLines($deskChangeFile)) {
+    if (-not $insideDeskChange) {
+        if ($line -match '^\s*public\s+static\s+class\s+DeskSessionChange\b') { $insideDeskChange = $true }
+        continue
+    }
+
+    # File-scoped namespace, so a `}` in the first column closes the type.
+    # 文件级命名空间，因此第一列的 } 就是这个类型的结束。
+    if ($line -match '^\}') { break }
+
+    $constMatch = [regex]::Match($line, '^\s*public\s+const\s+string\s+(?<name>[A-Za-z0-9_]+)\s*=\s*"(?<value>[^"]+)"\s*;')
+    if ($constMatch.Success) {
+        $deskConstants[$constMatch.Groups['name'].Value] = $constMatch.Groups['value'].Value
+        continue
+    }
+
+    # `All` is what the SDKs mirror, order included, so the order is read off it rather than off
+    # declaration order — the two agree today and nothing makes them agree tomorrow.
+    # SDK 镜像的是 All（含顺序），所以顺序从它读，而不是从声明顺序读——两者今天一致，但没有任何东西保证明天还一致。
+    $allMatch = [regex]::Match($line, '^\s*\[(?<names>[A-Za-z0-9_,\s]+)\]\s*;')
+    if ($allMatch.Success -and $null -eq $deskAllOrder) {
+        $deskAllOrder = @($allMatch.Groups['names'].Value -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    }
+}
+
+if ($deskConstants.Count -eq 0) { throw "Parsed no DeskSessionChange constants out of $deskChangeFile." }
+if ($null -eq $deskAllOrder) { throw "Could not read DeskSessionChange.All out of $deskChangeFile." }
+
+# A constant missing from `All`, or a name in `All` that is not a constant, is drift the server's
+# own PushTargetParityTests also refuses — repeated here so the generator does not quietly emit a
+# list that disagrees with the one the server hands its callers.
+# 常量漏进 All、或 All 里出现不是常量的名字，都是漂移；服务端的 PushTargetParityTests 也拒绝它，
+# 这里重复一遍，免得生成器悄悄输出一份与服务端实际交出去的列表不一致的清单。
+$missingFromAll = @($deskConstants.Keys | Where-Object { $_ -notin $deskAllOrder })
+if ($missingFromAll.Count -gt 0) {
+    throw "DeskSessionChange.All does not list: $($missingFromAll -join ', ')"
+}
+
+$deskChanges = [ordered]@{}
+foreach ($name in $deskAllOrder) {
+    if (-not $deskConstants.Contains($name)) {
+        throw "DeskSessionChange.All names $name, which is not a public const string on the class."
+    }
+    $deskChanges[$name] = $deskConstants[$name]
+}
 
 # ---------------------------------------------------------------------------------------------
 # 7. Emit. No timestamp and no machine name anywhere in the output: this file is committed, and a
@@ -467,6 +530,7 @@ $document = [ordered]@{
     payloadEnums  = $payloadEnums
     errorCodes    = $errorCodes
     pushTargets   = $pushTargets
+    deskChanges   = $deskChanges
 }
 
 $json = ($document | ConvertTo-Json -Depth 12).Replace("`r`n", "`n").TrimEnd() + "`n"
@@ -502,6 +566,7 @@ Write-Host "  endpoints      $($endpoints.Count)"
 Write-Host "  payload types  $($payloadTypes.Count) classes, $($payloadEnums.Count) enums"
 Write-Host "  error codes    $($errorCodes.Count)"
 Write-Host "  push targets   $($pushTargets.Count)"
+Write-Host "  desk changes   $($deskChanges.Count)"
 foreach ($sdk in $sdkSources.Keys) {
     Write-Host ("  {0,-12} {1,3}/{2} endpoints referenced" -f $sdk, $coverageTotals[$sdk], $endpoints.Count)
 }

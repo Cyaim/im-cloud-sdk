@@ -1,0 +1,17 @@
+# npm 装出来的依赖与 tsc 的两个输出目录。三者都是 `npm install && npm run build && npm test`
+# 跑完就存在的，加起来三百多个文件，而它们此前**一条忽略规则都没有**——kotlin/ 与 swift/ 各有一份
+# .gitignore，typescript/ 与仓库根一个都没有。这个仓库是公开的，交接的第一步又正好是在这里提交，
+# 于是一次 `git add -A` 就会把 node_modules 连同构建产物推上去。
+#
+# node_modules, and the two directories tsc writes. All three exist the moment anyone runs
+# `npm install && npm run build && npm test` — three hundred-odd files with no ignore rule of any
+# kind, while kotlin/ and swift/ each had one. This repository is public and the first step of a
+# handoff is a commit here, so a single `git add -A` published them.
+node_modules/
+dist/
+dist-test/
+
+# npm-debug.log 之类：只在装依赖失败时出现，也就是最容易被顺手提交的时刻。
+# Only ever written when an install fails — which is exactly when someone commits without looking.
+npm-debug.log*
+*.tsbuildinfo

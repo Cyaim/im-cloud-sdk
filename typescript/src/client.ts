@@ -1,6 +1,7 @@
 import {
   ConnApi,
   ConvApi,
+  DeskApi,
   DiagApi,
   FriendApi,
   GroupApi,
@@ -17,6 +18,7 @@ import {
   type ImRequestOptions,
 } from './connection.js';
 import { ImCursorScope, ImCursors, type ImCursorSnapshot, type ImCursorStore } from './cursors.js';
+import { readDeskEvent, type DeskEvent } from './desk.js';
 import { ImDeviceLogs } from './devicelogs.js';
 import { ImLog, inMemoryLogStore, type ImLogStore } from './logs.js';
 import type {
@@ -173,6 +175,17 @@ export class ImClient {
   readonly media: MediaApi;
   readonly push: PushApi;
   readonly moderation: ModerationApi;
+
+  /**
+   * `desk.*` — the customer-service desk (T4), typed because a customer asked for it.
+   *
+   * The only tier-4 namespace on this client. It is here rather than behind `invoke()` because the
+   * desk is a product built on this platform rather than an optional endpoint group: a visitor
+   * widget and an agent workbench are both ordinary applications of this SDK, and neither should
+   * have to hand-write nine request shapes to be one.
+   */
+  readonly desk: DeskApi;
+
   readonly diag: DiagApi;
 
   /**
@@ -210,6 +223,7 @@ export class ImClient {
     this.media = new MediaApi(io);
     this.push = new PushApi(io, () => this.connection.currentState === 'open');
     this.moderation = new ModerationApi(io);
+    this.desk = new DeskApi(io);
     this.diag = new DiagApi(io);
 
     // Defaulted rather than required, unlike the cursor store, and the asymmetry is deliberate:
@@ -271,6 +285,25 @@ export class ImClient {
   /** Subscribes to any other server event by target name. */
   onEvent<T>(target: string, listener: EventListener<T>): () => void {
     return this.connection.on(target, (frame) => listener(frame.body?.data as T));
+  }
+
+  /**
+   * Subscribes to `evt.desk`, decoded.
+   *
+   * A thin wrapper over {@link ImClient.onEvent} and not an endpoint, so it lives here rather than
+   * on `im.desk` — a method on a namespace names a target, and `desk.onEvent` is not one. What it
+   * adds is the decode: the listener gets a {@link DeskEvent} narrowed on `event`, and a frame this
+   * build cannot make sense of is dropped here instead of reaching the application as an `any` that
+   * looks fine until a field is missing.
+   *
+   * Frames arrive on this target for **agents**, not for customers. A customer's half of the desk
+   * comes through `onMessage` as the 1801-1807 notices — see `readDeskNotification`.
+   */
+  onDeskEvent(listener: (event: DeskEvent) => void): () => void {
+    return this.connection.on(PushTarget.Desk, (frame) => {
+      const event = readDeskEvent(frame.body?.data);
+      if (event) listener(event);
+    });
   }
 
   /** A conversation the SDK declined to backfill. Reload it from `msg.history`. */

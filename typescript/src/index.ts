@@ -14,6 +14,7 @@ export {
 export {
   ConnApi,
   ConvApi,
+  DeskApi,
   DiagApi,
   FriendApi,
   GroupApi,
@@ -49,6 +50,7 @@ export {
   type ImCursorSnapshot,
   type ImCursorsOptions,
 } from './cursors.js';
+export * from './desk.js';
 export * from './models.js';
 export * from './protocol.js';
 export {

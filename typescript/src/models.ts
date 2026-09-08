@@ -77,12 +77,19 @@
  */
 
 import type {
+  AgentStatus,
   ApplicationStatus,
   ConversationType,
+  DeskCannedReplyScope,
+  DeskDisposition,
+  DeskEndReason,
+  DeskNoteKind,
+  DeskSessionState,
   GroupInviteMode,
   GroupJoinMode,
   GroupRole,
   GroupType,
+  KbArticleState,
   MessageContentType,
   MessagePriority,
   MessageStatus,
@@ -720,4 +727,410 @@ export interface ReportReceipt {
   reportId: string;
   /** Server clock, unix ms. */
   createdAt: number;
+}
+// ---------------------------------------------------------------------------- desk (T4)
+
+/**
+ * A customer asking for a person. **Every field is optional and the body may be omitted entirely** —
+ * the server reads `null` as an empty request — so the plain "talk to a human" button is
+ * `im.desk.request()`.
+ *
+ * Idempotent by the server's design, not by the caller's discipline: a customer who already has a
+ * session in flight — queued, assigned, or still with the bot — gets that same session back rather
+ * than a second one. The client most likely to call this twice is the one whose first call timed
+ * out after it had already succeeded.
+ * 幂等由服务端保证：最可能重复调用的，正是「超时但其实已经成功」的那个客户端。
+ */
+export interface DeskRequest {
+  /** Routing hint the tenant queues on: product line, language, VIP tier. */
+  skill?: string;
+  /** Higher goes first. Used sparingly — a queue where everything is urgent has no order. */
+  priority?: number;
+  /**
+   * Opaque context the agent's workbench renders: order id, the page they were on, a prior ticket.
+   *
+   * The engine copies out the keys it recognises ({@link DeskContextKeys}) and leaves everything
+   * else here untouched, so a tenant's own keys travel to the workbench without a schema change.
+   */
+  context?: JsonObject;
+}
+
+/** One "customer asked, agent answered" pair inside a session, unix ms on both sides. */
+export interface DeskResponseSample {
+  customerAt: number;
+  agentAt: number;
+  /** Who answered, so a per-agent response time can be built from the same rows. */
+  agentId?: string | null;
+}
+
+/**
+ * The model-written handover summary a receiving agent reads before saying hello.
+ *
+ * All five members are always present when the summary itself is — a session with no summary has
+ * `summary` absent rather than an empty card. `model` is here because a summary is a claim and
+ * claims carry authorship.
+ */
+export interface DeskSessionSummary {
+  /** What the customer came about. */
+  issue: string;
+  /** Where the conversation stands. */
+  state: string;
+  /** What the next agent should do first. */
+  nextStep: string;
+  generatedAt: number;
+  /** Which provider and model wrote it. */
+  model: string;
+}
+
+/**
+ * One desk session, as `desk.request`, `desk.accept` and every session-level `evt.desk` frame
+ * return it.
+ *
+ * **The last thirteen fields are the customer-service product's and were added after the engine
+ * shipped** (SPEC-06 §14.1, §13.2), so a session opened before they existed has no element for any
+ * of them and reads back as the default: absent, `[]`, or `false`. A build of the server that
+ * predates them omits them altogether. They are therefore optional here even though a current
+ * server writes `tags: []`, `ratingTags: []`, `responseSamples: []` and `star: false` out — the
+ * type has to describe both servers, and `?? []` at the edge is the whole of the difference.
+ *
+ * 最后十三个字段是产品后加的：更早开出的会话根本没有这些元素，读回来就是默认值。
+ * 所以它们在这里是可选的——尽管当前服务端会把空数组和 false 写出来，类型要同时描述两种服务端。
+ */
+export interface DeskSession {
+  sessionId: string;
+  appId: string;
+  /** The IM user asking for help. A minted visitor's id is `v_…`; see {@link DeskSession.visitorId}. */
+  customerId: string;
+  /** The agent holding it. Absent while queued, and absent again after a release. */
+  agentId?: string | null;
+  /**
+   * The ordinary single chat between the customer and the desk account. Everything either side
+   * says is a normal message in it, sent with `msg.send` — these fields only move the *assignment*
+   * around that conversation.
+   */
+  conversationId: string;
+  state: DeskSessionState;
+  skill?: string | null;
+  priority: number;
+  /** Unix ms. Preserved across a requeue, which is what keeps a transferred customer's place. */
+  queuedAt: number;
+  assignedAt?: number | null;
+  closedAt?: number | null;
+  /** Free-text outcome the closing agent typed. Predates the structured {@link DeskSession.disposition}. */
+  resolution?: string | null;
+  context?: JsonObject | null;
+  /** Agents who held it before, so a transfer chain is auditable. `[]` on a session nobody has held. */
+  history?: string[];
+  /** When the first agent message reached the customer, unix ms. Absent while no agent has spoken. */
+  firstAgentMessageAt?: number | null;
+  /** 1–5, absent until (and unless) the customer rates. */
+  rating?: number | null;
+  /**
+   * When the 1807 invitation actually went out, unix ms.
+   *
+   * **This is the CSAT participation denominator** (SPEC-06 §10.1), and it is stored rather than
+   * derived because every reason an invitation was withheld expires long before a report runs.
+   * Counting closed sessions instead prices the rate against a denominator several times too
+   * large and draws a healthy desk as an ignored one.
+   * 这是参评率的分母，且是存下来的而不是推导的：拿「已关闭会话」当分母会把一个健康的客服台画成没人理。
+   */
+  ratingInvitedAt?: number | null;
+  ratingComment?: string | null;
+  ratedAt?: number | null;
+  summary?: DeskSessionSummary | null;
+
+  // ---- the customer-service product's fields ------------------------------------------------
+
+  /** Labels the closing agent chose. Two-level paths as the centre configured them. */
+  tags?: string[];
+  /** How the visitor arrived: `web`, `app`, `api`, and the WeChat kinds. */
+  channel?: string | null;
+  /** The product's visitor record behind {@link DeskSession.customerId}, when the customer is a minted visitor. */
+  visitorId?: string | null;
+  /** The centre this session belongs to. Absent for a session opened before centres existed. */
+  deskId?: string | null;
+  /** The skill group it was routed to — the product's id for what the engine routes on as `skill`. */
+  groupId?: string | null;
+  disposition?: DeskDisposition | null;
+  /** Why it ended. A **string** on the wire, unlike `state`. Absent while it is open. */
+  endReason?: DeskEndReason | null;
+  /** The 1–2 star tags joined — the "why" behind a bad score. Absent for a good or untagged one. */
+  ratingReason?: string | null;
+  /** The customer's answer to "was your problem solved". Absent until rated, and absent when the survey did not ask. */
+  ratingResolved?: boolean | null;
+  /** Every per-star tag the customer picked, whatever the score. */
+  ratingTags?: string[];
+  /** Starred by the holding agent for their own list. */
+  star?: boolean;
+  /** Unix ms until which the session is snoozed. */
+  snoozedUntil?: number | null;
+  /** One sample per customer message that got a reply, for the average response time. */
+  responseSamples?: DeskResponseSample[];
+}
+
+/**
+ * Which session to take. **Omit the id — and the whole body — to take the next one waiting**, which
+ * is the normal case: agents pull, nothing is ever pushed at them. Naming an id is a supervisor or
+ * an agent picking a specific customer out of the queue.
+ *
+ * An empty queue answers `1002 NotFound`, not an empty success.
+ */
+export interface DeskAcceptRequest {
+  sessionId?: string;
+}
+
+/** What both halves of a transfer carry, whichever of the three targets is named. */
+export interface DeskTransferBase {
+  sessionId: string;
+  /**
+   * Handover note for the receiving agent. **Internal**: it is filed as a note and never enters the
+   * customer-visible 1803 line, so it can say what an agent would not say to the customer.
+   */
+  note?: string;
+}
+
+/**
+ * Hands a session on, carrying its whole history with it (SPEC-06 §4.4).
+ *
+ * **Exactly one of the three targets, enforced by the type rather than by a round trip.** The
+ * server checks the same thing and answers `1001 "exactly one of toAgentId, toSkill or toQueue is
+ * required"`; expressing it as a union means a workbench that names two — or none — does not
+ * compile, instead of failing in front of a customer mid-handover. That is also why the two
+ * unusable members are `never` in each branch rather than merely absent: an object literal built by
+ * spreading a form's state would otherwise satisfy the branch it half-matches.
+ *
+ * The cost is real and worth naming: a `toQueue: boolean` held in a variable does not type-check,
+ * because "maybe the queue" is not a target. Branch at the call site, which is where the agent's
+ * three radio buttons already branch.
+ *
+ * 三个目标里恰好一个，由类型而不是由一次往返来保证：多写一个或一个不写都编译不过，
+ * 而不是在交接到一半时当着客户的面失败。代价是不能用一个 boolean 变量表达 toQueue——
+ * 「也许是队列」不是一个目标。
+ */
+export type DeskTransferRequest =
+  | (DeskTransferBase & {
+      /** A named agent, who must be available and under capacity. */
+      toAgentId: string;
+      toSkill?: never;
+      toQueue?: false;
+    })
+  | (DeskTransferBase & {
+      /** A skill queue; the session goes to the front of it with its original `queuedAt` stamp. */
+      toSkill: string;
+      toAgentId?: never;
+      toQueue?: false;
+    })
+  | (DeskTransferBase & {
+      /** Back to the queue it came from, same stamp, same position — the 1805 requeue, chosen by a person. */
+      toQueue: true;
+      toAgentId?: never;
+      toSkill?: never;
+    });
+
+/**
+ * The end-of-session drawer (SPEC-06 §4.9). Every field but the id is optional, and **an omitted
+ * field is not the same as a field set to null**: the server writes nulls out of its own JSON, so
+ * it reads "absent" as "the agent did not fill this in".
+ *
+ * **`inviteRating` omitted means `true`.** It is a C# property initialiser, not a nullable, so the
+ * only way to close without asking for a rating is to send `inviteRating: false` explicitly.
+ * Passing `undefined` still invites.
+ * 省略 inviteRating 等于 true：只有显式发 false 才是「不邀评」。
+ */
+export interface DeskCloseRequest {
+  sessionId: string;
+  /** Free-text outcome, kept on the record for whoever reads it later. */
+  resolution?: string;
+  /** At most 20, each at most 64 characters; over either and the whole call is `1001`. */
+  tags?: string[];
+  disposition?: DeskDisposition;
+  /** The agent-edited summary, filed as a note. Never shown to the customer. */
+  summary?: string;
+  /** Defaults to true when absent. The engine's own anti-noise rules still apply on top. */
+  inviteRating?: boolean;
+}
+
+/**
+ * Availability, and — by the same call — the heartbeat that proves this workbench is still there.
+ *
+ * The two are one message on purpose: an agent listed as available whose console stopped talking to
+ * the server is exactly the state that leaves a customer waiting on somebody who went home, so
+ * there is no way to express it.
+ */
+export interface DeskStatusRequest {
+  /** A number on the wire. Anything outside 0–3 is `1001 "unknown agent status '<n>'"`. */
+  status: AgentStatus;
+  /** Sessions this agent will hold at once. Absent keeps the deployment default; the server clamps it. */
+  maxConcurrent?: number;
+}
+
+/**
+ * The customer's answer to the rating survey (SPEC-06 §4.9), sent in reply to the 1807 notice.
+ *
+ * Absent is meaningful on all three optional members and is not the same as a falsy value:
+ * `resolved` absent means the survey did not ask, and an absent `starTags` is "no tags offered"
+ * rather than "none picked".
+ */
+export interface DeskRateRequest {
+  sessionId: string;
+  /** 1–5. Anything else is `1001`. */
+  score: number;
+  /** "Was your problem solved" — the only customer-side evidence of first-contact resolution. */
+  resolved?: boolean;
+  /** At most 12, each at most 64 characters. With a 1–2 star score these are the reason behind it. */
+  starTags?: string[];
+  /** At most 2000 characters. */
+  comment?: string;
+}
+
+/** Body of `desk.suggest`: the session this agent holds. */
+export interface DeskSuggestRequest {
+  sessionId: string;
+}
+
+/**
+ * Which canned replies to list. All three are filters; omitting all three lists the whole centre's
+ * phrasebook, **including every member's `personal` entries** — see `ownerMemberId`.
+ */
+export interface DeskCannedRequest {
+  skill?: string;
+  /** One tier only. An unrecognised value is `1001`. */
+  scope?: DeskCannedReplyScope;
+  /**
+   * Whose personal entries to include. **A filter, not a guard: the server does not narrow this to
+   * the caller.** Absent means "do not filter by owner", which returns everyone's `personal`
+   * entries, and a value belonging to somebody else returns theirs. Pass your own member id to get
+   * "shared, plus mine". Only `/console/v1/desks/{deskId}/canned-replies` rewrites the owner to
+   * the caller.
+   * 过滤参数而非权限：服务端不按调用方收窄，省略即返回所有人的 personal 条目。
+   */
+  ownerMemberId?: string;
+}
+
+/** One canned reply an agent pastes instead of retyping the same answer. At most 200 per tenant. */
+export interface DeskCannedReply {
+  /** Store-assigned; empty string on create. */
+  id: string;
+  /** At most 100 characters. */
+  title: string;
+  /** At most 4000 characters. */
+  content: string;
+  /** Absent means every agent sees it. */
+  skill?: string | null;
+  /** Never absent: an entry stored before the field existed reads back as `all`. */
+  scope: DeskCannedReplyScope;
+  /** The folder the workbench files it under. Absent is the root. */
+  folder?: string | null;
+  /** Required for a `personal` entry — without it the write is `1001`. Absent for the other two tiers. */
+  ownerMemberId?: string | null;
+  updatedAt: number;
+}
+
+/** The queue as a supervisor watches it. */
+export interface DeskQueueView {
+  waiting: number;
+  assigned: number;
+  availableAgents: number;
+  /** Seconds the head of the queue has been waiting — the number a supervisor actually watches. */
+  headWaitSeconds: number;
+  /**
+   * Average seconds from entering the queue to the first agent message, over the last 24 hours.
+   *
+   * **Absent means "nothing measurable in the window", and a dashboard must draw it that way.**
+   * Drawing a 0 says "instant answers", which is the opposite of what an empty window means.
+   * 缺席表示「窗口内没有可测样本」，要画成「暂无数据」——画 0 就成了「秒回」。
+   */
+  avgFirstResponseSeconds?: number | null;
+  waitingBySkill: Record<string, number>;
+}
+
+/**
+ * One agent as the roster sees them right now.
+ *
+ * A console that has stopped heart-beating is still listed: `lastSeenAt` is what makes it stale,
+ * and hiding the row would hide the fact that somebody's workbench died holding sessions.
+ */
+export interface DeskAgentView {
+  agentId: string;
+  status: AgentStatus;
+  /** Declared capacity: how many concurrent sessions this agent accepts. */
+  maxConcurrent: number;
+  /** Counted from the live set, never a stored counter. */
+  activeSessions: number;
+  /** Last heartbeat, unix ms. Stale with a non-offline status means they dropped without saying goodbye. */
+  lastSeenAt: number;
+}
+
+/**
+ * One waiting visitor's place in the line, from the widget surface (SPEC-06 §14.3).
+ *
+ * **`position` and `minutes` are both "not measured" when absent, never zero.** A session that is
+ * no longer queued answers with both absent and `queued: false`, which is how a plugin knows to
+ * stop asking rather than to render a 0.
+ */
+export interface DeskQueuePosition {
+  sessionId: string;
+  queued: boolean;
+  /** 1-based place in its own skill queue. */
+  position?: number | null;
+  /** A rough wait, present only when there is something real to derive it from. */
+  minutes?: number | null;
+  /** How long this visitor has already waited, seconds. Always measurable. */
+  waitedSeconds: number;
+}
+
+/** One knowledge-base article. The embedding never leaves the server. */
+export interface KbArticle {
+  /** Store-assigned; empty string on create. */
+  id: string;
+  /** At most 200 characters. */
+  title: string;
+  /** At most 20000 characters. */
+  body: string;
+  /** At most 20. `[]` rather than absent on an article this build wrote. */
+  tags?: string[];
+  /**
+   * **Read-only, and the server computes it**: `vector` when the stored embedding matches the
+   * tenant's current provider and model, `keyword` otherwise — including when no LLM is configured
+   * at all. Sending a value here does not change it; it is rendered so a tenant can see which
+   * articles need re-embedding after switching models.
+   */
+  retrieval?: string;
+  /** The help-centre category. Absent is uncategorised. */
+  category?: string | null;
+  /** A draft is kept but grounds nothing. An article stored before the field existed reads as published. */
+  state?: KbArticleState;
+  /** Other phrasings of the question this answers: at most 20, each at most 200 characters. */
+  similarQuestions?: string[];
+  /** Pinned to the top of the help centre and the widget's first screen. */
+  featured?: boolean;
+  updatedAt: number;
+}
+
+/** Who wrote a note, as the frame announcing it carries them. */
+export interface DeskNoteAuthor {
+  memberId: string;
+  name?: string | null;
+  avatar?: string | null;
+}
+
+/**
+ * One internal note on a session: an agent's remark, a handover text, the model's summary, or a
+ * supervisor's whisper. **None of it is ever shown to the customer.**
+ */
+export interface DeskNote {
+  noteId: string;
+  deskId: string;
+  appId: string;
+  sessionId: string;
+  /** The transcript it belongs to, when known — lets a timeline join without a second read. */
+  conversationId?: string | null;
+  /** The member who wrote it. Absent for a note the engine or the model authored. */
+  authorMemberId?: string | null;
+  kind: DeskNoteKind;
+  body: string;
+  /** Members addressed with `@`. Each is told, and the workbench's "@me" group counts them. */
+  mentions?: string[];
+  /** Unix ms. */
+  at: number;
 }

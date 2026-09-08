@@ -25,6 +25,17 @@ import type {
   CreateGroupRequest,
   CursorRequest,
   DeleteMessagesRequest,
+  DeskAcceptRequest,
+  DeskCannedReply,
+  DeskCannedRequest,
+  DeskCloseRequest,
+  DeskQueueView,
+  DeskRateRequest,
+  DeskRequest,
+  DeskSession,
+  DeskStatusRequest,
+  DeskSuggestRequest,
+  DeskTransferRequest,
   DownloadUrlRequest,
   EditMessageRequest,
   ForwardMessagesRequest,
@@ -596,6 +607,175 @@ export class ModerationApi {
    */
   report(request: SubmitReportRequest, options?: ImRequestOptions): Promise<ReportReceipt> {
     return this.io.request<ReportReceipt>('moderation.report', request, options);
+  }
+}
+
+/**
+ * `desk.*` — the customer-service desk, from both sides of it (T4).
+ *
+ * **Two audiences, one namespace, and which one you are is decided by the session rather than by
+ * the method you call.** `request` and `rate` are the customer's; `accept`, `transfer`, `status`,
+ * `queue`, `canned` and `suggest` are an agent's; `close` is either side's. The server checks the
+ * caller against the session's holder on every one of them, so an agent-shaped call from a customer
+ * is `1103`, not a privilege escalation.
+ *
+ * **The conversation is not here.** Everything a customer and an agent say to each other is an
+ * ordinary single chat between the customer and the desk account, sent with `msg.send` and read
+ * with `msg.history` like any other message. These nine verbs only move the *assignment* around it,
+ * which is why a desk integration is a chat integration plus this namespace rather than a second
+ * messaging stack.
+ *
+ * **Who calls these, in practice.** The visitor widget bundles this package and calls `request`,
+ * `msg.send` and `rate` (SPEC-06 §14.3); an in-app support screen in a tenant's own client calls
+ * the same three. An agent workbench built on the console uses `/console/v1` for its writes and
+ * only `status` — the heartbeat — and the `evt.desk` subscription from here (SPEC-06 §14.5 adds no
+ * write endpoints to the socket for it). `accept` / `transfer` / `close` over the socket are for a
+ * tenant's own agent client.
+ *
+ * **A deployment older than this build answers `1008 UnsupportedOperation`** — "this server does
+ * not have that endpoint" — rather than a desk-specific code, because `status: 2` maps there
+ * (CONTRACT §7.2). Neither retrying nor re-authenticating changes it.
+ *
+ * 两种角色共用一个命名空间，而「你是谁」由会话判定、不由你调用哪个方法决定。
+ * 聊天不在这里：客户与坐席之间就是一条普通单聊，这九个动词只负责「谁来接」。
+ */
+export class DeskApi {
+  constructor(private readonly io: ImInvoker) {}
+
+  /**
+   * Asks for a person, and hands back the session — a new one, or the caller's own open one.
+   *
+   * **Idempotent, so the button does not need a guard.** A customer who already has a session
+   * anywhere but closed — queued, assigned, or still with the bot — gets that session back
+   * unchanged. Pressing twice cannot occupy two agents with one person.
+   *
+   * The session's `state` says what happened: {@link DeskSessionState.Queued} means they are
+   * waiting and the 1801 notice is already in the transcript, {@link DeskSessionState.Assigned}
+   * means an idle agent took it in the same call.
+   */
+  request(request: DeskRequest = {}, options?: ImRequestOptions): Promise<DeskSession> {
+    return this.io.request<DeskSession>('desk.request', request, options);
+  }
+
+  /**
+   * Takes a session: the named one, or the next one waiting when no id is given.
+   *
+   * **Agents pull; nothing is ever queued at an agent.** The empty call is the normal one — "I am
+   * free, give me the next" — and a supplied id is a supervisor or an agent choosing a specific
+   * customer out of the queue.
+   *
+   * An empty queue is `1002 NotFound`, not an empty success, so a workbench polling for work
+   * should treat 1002 as "nothing waiting" rather than as an error worth showing. Being at the
+   * capacity this agent declared is `1205 ConcurrencyLimitExceeded`, and that one is **not
+   * retryable**: the fix is to finish a session, not to ask again.
+   * 队列为空答 1002 而不是空成功；已满答 1205，而 1205 的解法是先结掉一个，不是重试。
+   */
+  accept(request: DeskAcceptRequest = {}, options?: ImRequestOptions): Promise<DeskSession> {
+    return this.io.request<DeskSession>('desk.accept', request, options);
+  }
+
+  /**
+   * Hands a session on — to a named agent, to a skill queue, or back to its own queue — carrying
+   * its whole history with it.
+   *
+   * Exactly one target, and {@link DeskTransferRequest} is a union so the compiler says so before a
+   * customer is left mid-handover. The server checks the same thing and answers `1001`.
+   *
+   * Only an assigned session can be transferred (`1006` otherwise), and only its holder or a
+   * supervisor may (`1103`). The `note` is filed internally: the customer's transcript gets the
+   * 1803 line and nothing else.
+   */
+  async transfer(request: DeskTransferRequest, options?: ImRequestOptions): Promise<void> {
+    await this.io.request<void>('desk.transfer', request, options);
+  }
+
+  /**
+   * Ends a session. Either side may: the agent when the matter is resolved, the customer when they
+   * no longer need help.
+   *
+   * **Closing an already-closed session succeeds.** That is the server's answer, not this SDK's
+   * leniency, and it is what makes a retry after a timeout safe — the alternative would be a
+   * workbench showing "not found" for a session the agent just finished.
+   *
+   * Everything but `sessionId` is the end-of-session drawer and every field of it is optional;
+   * absent means the agent did not fill it in. Note that omitting `inviteRating` **invites** —
+   * see {@link DeskCloseRequest}.
+   */
+  async close(request: DeskCloseRequest, options?: ImRequestOptions): Promise<void> {
+    await this.io.request<void>('desk.close', request, options);
+  }
+
+  /**
+   * Sets this agent's availability — and renews their heartbeat by doing so.
+   *
+   * **Call it on a timer, not only when the agent changes status.** Availability and liveness are
+   * one message on purpose: the roster drops an agent whose console has stopped saying anything and
+   * requeues their sessions, which is the correct treatment for somebody who closed the lid and the
+   * wrong treatment for somebody who is merely quiet. The one thing that distinguishes them is this
+   * call arriving.
+   * 要按心跳周期调用，而不是只在坐席切状态时调：名册会把不再说话的坐席回收并重排它的会话。
+   */
+  async status(request: DeskStatusRequest, options?: ImRequestOptions): Promise<void> {
+    await this.io.request<void>('desk.status', request, options);
+  }
+
+  /**
+   * The queue as a supervisor watches it. Takes no arguments — it is the whole desk, not one skill.
+   *
+   * `avgFirstResponseSeconds` is absent when nothing in the window is measurable. Render that as
+   * "no data"; a 0 there reads as instant answers.
+   */
+  queue(options?: ImRequestOptions): Promise<DeskQueueView> {
+    return this.io.request<DeskQueueView>('desk.queue', undefined, options);
+  }
+
+  /**
+   * The customer rates a finished session, 1–5, in reply to the 1807 notice.
+   *
+   * Accepted once, only from the session's own customer, only inside the rating window — a second
+   * attempt is `1006 Conflict`, and so is one that arrives after the window closed. A deployment
+   * with ratings switched off answers `1203 FeatureNotEnabled` rather than accepting and discarding
+   * it, so a rating sheet can tell "we are not asking" apart from "you already answered".
+   */
+  async rate(request: DeskRateRequest, options?: ImRequestOptions): Promise<void> {
+    await this.io.request<void>('desk.rate', request, options);
+  }
+
+  /**
+   * The canned replies in this centre's phrasebook.
+   *
+   * Read-only over the socket the agent already holds; creating and editing them is a console
+   * concern and stays on REST.
+   *
+   * **`ownerMemberId` is a filter, not a permission, and this endpoint does not narrow by
+   * caller.** Omitting it lists *every* member's `personal` entries alongside the two shared
+   * tiers, and naming somebody else's member id lists theirs — the server passes the value
+   * straight through to the query, which only adds an owner condition when the value is present
+   * and compares it against the value rather than against you. A workbench that wants the usual
+   * "shared, plus mine" **must pass its own member id**; leaving it out puts a colleague's
+   * private drafts on screen. The narrowing behaviour exists only on the console route
+   * (`/console/v1/desks/{deskId}/canned-replies`), which rewrites the owner to the calling member
+   * unless they hold `desk.supervise`.
+   * ownerMemberId 是过滤参数而不是权限：服务端不按调用方收窄。省略它会返回本中心**所有成员**的
+   * personal 条目，传别人的 memberId 就返回别人的。要「共享的 + 我自己的」，必须显式传自己的 memberId。
+   */
+  canned(request: DeskCannedRequest = {}, options?: ImRequestOptions): Promise<DeskCannedReply[]> {
+    return this.io.request<DeskCannedReply[]>('desk.canned', request, options);
+  }
+
+  /**
+   * Up to three model-written drafts for the session this agent holds.
+   *
+   * **Pull-based, and nothing here reaches the customer.** The agent edits a draft and sends it as
+   * an ordinary message, or ignores all three; the difference between a copilot and an autoresponder
+   * is that this call has no send in it.
+   *
+   * `1203 FeatureNotEnabled` when the tenant has configured no LLM — a state a workbench should
+   * render as "not available on this plan" rather than as a failure — and `1005` when the model
+   * did not answer, which is worth a retry the SDK deliberately does not do for you.
+   */
+  suggest(request: DeskSuggestRequest, options?: ImRequestOptions): Promise<string[]> {
+    return this.io.request<string[]>('desk.suggest', request, options);
   }
 }
 

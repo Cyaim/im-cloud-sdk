@@ -168,18 +168,34 @@ choosing against the weakest one.
 |---|---|---|---|---|
 | **T0** | Session floor | 3 | **3 ✅** | Transport lifecycle. An SDK missing one is broken, not incomplete. |
 | **T1** | 1:1 chat MVP | 18 | **18 ✅** | The smallest set that ships a two-person chat app a customer would launch. |
-| **T2** | Social graph and groups | 30 | **30 ✅** | What turns a chat into a messenger: contacts, blocking, groups, presence, reporting. |
+| **T2** | Social graph and groups | 32 | **32 ✅** | What turns a chat into a messenger: contacts, blocking, groups, presence, reporting. |
 | **T3** | Competitive parity | 20 | 0 | Not needed to ship, needed to win: the rows a buyer ticks against 融云 / 环信 / 网易云信. |
-| **T4** | Specialist verticals | 38 | 0 | Calls, service desk, E2EE, live rooms, AI streaming, scheduling, folders. |
+| **T4** | Specialist verticals | 41 | 0 (9 in TypeScript) | Calls, service desk, E2EE, live rooms, AI streaming, scheduling, folders. |
 
-**T0–T2 are complete on all five as of 2026-08-28** (51 targets each; the two newest, `moderation.report` and `push.clicked`, were typed that day). **The coverage numbers moved for a second reason on 2026-08-28** and it is worth knowing which: the generator used to search doc comments too, so `group.setRole` counted as typed in TypeScript on the strength of a JSDoc line saying it was *not* typed. Comments are now stripped before the search, and the five columns agree exactly — which is itself evidence, since the previous run had TypeScript one ahead of everybody for no reason anyone could name. The
+**T0–T2 are complete on all five, and have been since 2026-08-28** — 51 targets each that day, when
+the two newest, `moderation.report` and `push.clicked`, were typed; **53 since 2026-08-29**, when
+`diag.logRequests` and `diag.logUploaded` arrived and were tiered into T2 and typed on all five in
+the same change. T0–T2 is **53 targets** today, on every one of the five.
+**The coverage numbers moved for a second reason on 2026-08-28** and it is worth knowing which: the generator used to search doc comments too, so `group.setRole` counted as typed in TypeScript on the strength of a JSDoc line saying it was *not* typed. Comments are now stripped before the search, and the five columns agree exactly — which is itself evidence, since the previous run had TypeScript one ahead of everybody for no reason anyone could name. The
 "typed today" column was 2 / 8 / 1 / 0 / 0 when this document was written; it is left visible in
 §1's collapsed block rather than deleted, because a tier plan whose starting point disappears reads
 as if it were always nearly done.
 
 Per-endpoint assignments live in [`tools/endpoint-tiers.json`](tools/endpoint-tiers.json) and are
 projected into `endpoint-inventory.json` under `tiers` and on each endpoint. The generator **fails**
-if the server grows an endpoint nobody tiered, so this table cannot silently go stale.
+if the server grows an endpoint nobody tiered — so no endpoint can escape a tier unnoticed.
+
+**That is a smaller guarantee than it used to claim here.** This sentence read "so this table cannot
+silently go stale", and the table had gone stale anyway: the generator pins `endpoint-tiers.json`,
+not this markdown, and when `diag.*` was tiered into T2 on 2026-08-29 the row above kept saying 30
+for nine days while the inventory said 32. The numbers in these five rows are transcribed by hand.
+They are now held to `endpoint-inventory.json` by `ContractInventoryParityTests` in
+`IM.Server/tests/IM.Tests.Unit`, along with §4.5's payload counts, which had drifted the same way
+— which is why the claim can be made at all, and why it is worth distrusting any similar claim in
+this document that does not name the assertion behind it.
+上面这五行数字是手抄的。生成器钉的是 endpoint-tiers.json，钉不到这张表——它确实漂过一次，
+从 2026-08-29 到 2026-09-07 一直写着 30 而清单里是 32。现在由 ContractInventoryParityTests 对着
+endpoint-inventory.json 比对，§4.5 那两个数（同样漂了）一并钉住。
 
 **T0 — Session floor (3).** `conn.heartbeat`, `conn.reauth`, `conn.sync`. `conn.reauth` was the gap:
 without it a token expiry costs a full reconnect, and on a flaky network a reconnect is exactly what
@@ -198,10 +214,11 @@ reviewer, never mind the customer. `conv.unreadTotal` is there because the app b
 without it. Ten of these eighteen were missing everywhere when this tier was written;
 **all eighteen are typed in all five today.**
 
-**T2 — Social graph and groups (30).** All ten core `group.*` (create, info, update, dismiss,
+**T2 — Social graph and groups (32).** All ten core `group.*` (create, info, update, dismiss,
 memberList, joined, invite, kick, quit, join), all eight `friend.*` except `setRemark`, the three
 presence calls, `conv.setting` / `conv.delete` / `conv.clear`, `msg.edit` / `msg.forward` /
-`msg.react` / `msg.receipt`, plus `moderation.report` and `push.clicked`.
+`msg.react` / `msg.receipt`, plus `moderation.report`, `push.clicked`, `diag.logRequests` and
+`diag.logUploaded`.
 
 `friend.block` is not optional: app-store review treats user blocking as mandatory for any app
 carrying user-generated content — and `moderation.report`, added 2026-08-28, is the other half of
@@ -209,15 +226,30 @@ that same requirement. Reviewers ask for both a way to block an abusive user and
 objectionable content; an SDK that completed T2 without reporting still could not pass review, which
 is the argument that put blocking here in the first place. `push.clicked` joined on the same day: it
 closes the sent → delivered → clicked funnel, and on iOS and the domestic OEM channels — which do
-not report delivery at all — a tap is the only evidence a notification ever arrived.
+not report delivery at all — a tap is the only evidence a notification ever arrived. `diag.*`
+(2026-08-29) is here for the same class of reason: a support engineer who cannot ask a device for
+its logs debugs a delivery complaint by guessing, and an SDK that cannot answer that request makes
+its own platform the one nobody can diagnose.
 
 **T3 — Competitive parity (20).** Group administration (`transfer`, `setRole`, `mute`, `muteMember`,
 `announcement`, `setNickname`, `applicationList`, `handleApplication`), pins, favourites, search,
 `msg.burn`, `msg.receiptDetail`, `conv.markUnread`, `user.setStatus`, `friend.setRemark`.
 
-**T4 — Specialist verticals (38).** `call.*` (7), `keys.*` (7), `room.*` (7), `desk.*` (6),
+**T4 — Specialist verticals (41).** `call.*` (7), `keys.*` (7), `room.*` (7), `desk.*` (9),
 message streaming (4), scheduling (3), conversation folders (3), `msg.translate`. Type these when a
 customer asks. They are never a reason to delay T0–T3.
+
+**`desk.*` is typed in TypeScript as of 2026-09-07, and in TypeScript only.** The customer that
+§3's rule waits for is 客服云, whose visitor widget bundles `@cyaim/im-client` and whose agent
+workbench is an ordinary application of it. It is typed **whole** — all nine — because a
+half-typed family is worse than an untyped one: a developer cannot tell which half is there and
+finds out one endpoint at a time. Per §3.1 this does **not** make T4 done: a tier is done when all
+five SDKs have it, and the other four still reach the desk through `invoke()`. The count above stays
+`0` for that reason, with the exception named beside it rather than folded into it.
+`typescript/test/coverage.test.ts` holds both halves of this — every `desk.*` target typed, and
+nothing else outside T0–T2 typed at all.
+desk.* 只在 TypeScript 上类型化，且是整族九条一起做的。按 §3.1，这**不**代表 T4 完成——
+一个 tier 要五端都做完才算完成，另外四端仍走 invoke()。
 
 ### 3.1 Definition of done for a tier
 
@@ -294,8 +326,8 @@ an empty result.
 
 ### 4.5 Types
 
-Declare every payload type in `endpoint-inventory.json`'s `payloadTypes` (120 classes) and
-`payloadEnums` (16 enums) that your tier reaches. Rules:
+Declare every payload type in `endpoint-inventory.json`'s `payloadTypes` (131 classes) and
+`payloadEnums` (17 enums) that your tier reaches. Rules:
 
 - Optional means **optional**: any field the server may omit is nullable with a sane empty default.
   Only fields the server marks `required` may be non-optional.
@@ -316,6 +348,15 @@ Declare every payload type in `endpoint-inventory.json`'s `payloadTypes` (120 cl
 - `Dictionary<string, object?>` fields (`content`, `extensions`) map to the language's untyped JSON
   node — `unknown`/`JsonElement`/`JSONValue`/`Map<String, dynamic>`/`JsonValue`. Do not invent a
   typed model for `content`: its shape is per `contentType` and tenant-extensible.
+- **Some closed sets are not enums on the server and so are not in `payloadEnums`.** The `change`
+  values on an `evt.desk` frame are string constants on a static class, which the type walk above
+  cannot reach: they live in their own `deskChanges` block, keyed by the server constant's name and
+  ordered as `DeskSessionChange.All` declares them. Read them from there. An SDK that models them as
+  a closed union — TypeScript does, deliberately, so a workbench can write a switch the compiler
+  proves it has finished — **must** assert that union against this block, or the union goes one
+  short on the day the server adds a value and the SDK silently drops the frame.
+  有些封闭集合在服务端不是 enum，因此不在 `payloadEnums` 里：`evt.desk` 的 change 值是静态类上的字符串常量，
+  单列在 `deskChanges` 块里。把它建成封闭联合的 SDK **必须**拿这一块做断言，否则服务端加值的那天就开始丢帧。
 
 ---
 
