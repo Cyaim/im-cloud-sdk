@@ -6069,7 +6069,8 @@
     "WidgetOriginDenied": 2508,
     "AgentNotEnabled": 2509,
     "ChannelWindowExhausted": 2510,
-    "TransferDeclined": 2511
+    "TransferDeclined": 2511,
+    "DeskQueueFull": 2512
   },
   "pushTargets": {
     "Message": "evt.message",
