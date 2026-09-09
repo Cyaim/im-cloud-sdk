@@ -117,20 +117,21 @@ namespace Cyaim.Im.Tests
             var recall = Sent("msg.recall", _harness.Client.Msg.RecallAsync(new ImRecallMessageRequest
             {
                 ConversationId = "c1",
-                MessageId = 900,
+                MessageId = "900",
                 Reason = "typo",
             }));
-            Assert.That(recall["messageId"].AsLong(), Is.EqualTo(900));
+            Assert.That(recall["messageId"].AsString(), Is.EqualTo("900"));
             Assert.That(recall.Has("asAdmin"), Is.False,
                 "the server forces admin recall off for a client, so a field for it would be a lie");
 
             var delete = Sent("msg.delete", _harness.Client.Msg.DeleteAsync(new ImDeleteMessagesRequest
             {
                 ConversationId = "c1",
-                MessageIds = new List<long> { 9007199254740993L },
+                MessageIds = new List<string> { "9007199254740993" },
             }));
-            Assert.That(delete["messageIds"][0].AsLong(), Is.EqualTo(9007199254740993L),
-                "a snowflake id past 2^53 must not be rounded on the way out");
+            Assert.That(delete["messageIds"][0].AsString(), Is.EqualTo("9007199254740993"),
+                "a snowflake id past 2^53 must not be rounded on the way out, which is why it "
+                + "travels as a JSON string rather than a JSON number");
             Assert.That(delete["forEveryone"].AsBool(), Is.False);
 
             var typing = Sent("msg.typing", _harness.Client.Msg.TypingAsync(
@@ -346,7 +347,7 @@ namespace Cyaim.Im.Tests
             var edit = Sent("msg.edit", _harness.Client.Msg.EditAsync(new ImEditMessageRequest
             {
                 ConversationId = "c1",
-                MessageId = 5,
+                MessageId = "5",
                 Content = JsonValue.NewObject().Set("text", "fixed"),
             }));
             Assert.That(edit["content"]["text"].AsString(), Is.EqualTo("fixed"));
@@ -354,7 +355,7 @@ namespace Cyaim.Im.Tests
             var forward = Sent("msg.forward", _harness.Client.Msg.ForwardAsync(new ImForwardMessagesRequest
             {
                 SourceConversationId = "c1",
-                MessageIds = new List<long> { 5, 6 },
+                MessageIds = new List<string> { "5", "6" },
                 TargetConversationIds = new List<string> { "c2" },
                 Merge = true,
                 MergeTitle = "yesterday",
@@ -366,7 +367,7 @@ namespace Cyaim.Im.Tests
             var react = Sent("msg.react", _harness.Client.Msg.ReactAsync(new ImReactRequest
             {
                 ConversationId = "c1",
-                MessageId = 5,
+                MessageId = "5",
                 Emoji = "👍",
             }));
             Assert.That(react["emoji"].AsString(), Is.EqualTo("👍"));
@@ -375,9 +376,9 @@ namespace Cyaim.Im.Tests
             var receipt = Sent("msg.receipt", _harness.Client.Msg.ReceiptAsync(new ImReceiptRequest
             {
                 ConversationId = "c1",
-                MessageIds = new List<long> { 5 },
+                MessageIds = new List<string> { "5" },
             }));
-            Assert.That(receipt["messageIds"][0].AsLong(), Is.EqualTo(5));
+            Assert.That(receipt["messageIds"][0].AsString(), Is.EqualTo("5"));
         }
 
         /// <summary>The reporter is the connection, so the body has nowhere to name one.</summary>

@@ -7,10 +7,26 @@ namespace Cyaim.Im
     /// Business result codes carried inside the response body, mirroring docs/SPEC-02-protocol.md §4.
     /// </summary>
     /// <remarks>
-    /// These are published API: a value that has shipped never changes meaning. Only the codes a
-    /// client can actually act on are listed — the full range lives in the spec, and
-    /// <see cref="ImException.Code"/> carries whatever the server sent whether it is named here or
-    /// not, so a new server-side code never becomes an unhandled crash in an old build.
+    /// <para>
+    /// These are published API: a value that has shipped never changes meaning. The codes listed are
+    /// the ones a client can reach; the console-only (<c>1800–1899</c>) and payment-operations
+    /// (<c>1900–1999</c>) bands are deliberately absent, because SPEC-02 §4 says the tenant face and
+    /// the gateway face never return them. <see cref="ImException.Code"/> carries whatever the
+    /// server sent whether it is named here or not, so a new server-side code never becomes an
+    /// unhandled crash in an old build.
+    /// </para>
+    /// <para>
+    /// <b>This table must agree with the other four SDKs', and something now checks that.</b> Until
+    /// 2026-09-09 it carried 42 of the 66 codes the TypeScript, Kotlin, Swift and Flutter tables all
+    /// carry — 24 missing, 19 of them raised by calls this SDK already types. Nothing caught it
+    /// because no test in either repository read an SDK error table at all: a game handling
+    /// <c>1406 DuplicateClientMessageId</c> had to hardcode the number, and one handling
+    /// <c>1509 JoinForbidden</c> by waiting for <c>evt.group</c> waited forever. The guard is
+    /// <c>IM.Tests.Unit/SdkErrorCodeParityTests.cs</c> in the server repository, which reads all
+    /// five tables off disk against the server's own <c>ImErrorCode</c>.
+    /// 这张表必须与另外四个 SDK 一致，而现在有东西在查了：到 2026-09-09 为止它只有 66 个里的 42 个。
+    /// 没人发现，是因为两个仓库里没有任何一条测试读过 SDK 的错误码表。
+    /// </para>
     /// </remarks>
     public static class ImErrorCode
     {
@@ -67,12 +83,29 @@ namespace Cyaim.Im
         /// <summary>The account is banned.</summary>
         public const int UserBanned = 1104;
 
+        /// <summary>The request signature did not verify, or its headers were incomplete.</summary>
+        /// <remarks>
+        /// Seen from a game client only when a tenant backend minted the token; the SDK itself never
+        /// signs. Distinct from <see cref="TokenInvalid"/> because the fix is on the tenant's server.
+        /// </remarks>
+        public const int SignatureInvalid = 1105;
+
+        /// <summary>A signed request arrived a second time, or outside its timestamp window.</summary>
+        public const int ReplayDetected = 1106;
+
         /// <summary>Another device took this session over under the multi-login policy.</summary>
         public const int KickedByOtherDevice = 1107;
 
         /// <summary>The page's origin is not on the app's web allowlist. A tenant sets that list in the console; it does not vary by user, so retrying or re-authenticating will not help and the SDK must not.</summary>
         /// <remarks>页面来源不在该应用的 Web 安全域名表里。这张表由租户在控制台设置、与用户无关——重试或重新登录都没有用，SDK 也不该那么做。</remarks>
         public const int OriginNotAllowed = 1109;
+
+        /// <summary>No app with this <c>appId</c> exists in this deployment.</summary>
+        /// <remarks>
+        /// Almost always a build pointed at the wrong environment: the id is a staging app and the
+        /// endpoint is production, or the reverse. Retrying cannot help.
+        /// </remarks>
+        public const int AppNotFound = 1200;
 
         /// <summary>The tenant app was disabled in the console.</summary>
         public const int AppDisabled = 1201;
@@ -100,6 +133,9 @@ namespace Cyaim.Im
         /// <summary>No such user in this app.</summary>
         public const int UserNotFound = 1300;
 
+        /// <summary>A user with this id already exists in this app.</summary>
+        public const int UserAlreadyExists = 1301;
+
         /// <summary>The recipient is not a friend and the app requires friendship to message.</summary>
         public const int NotFriend = 1302;
 
@@ -109,8 +145,17 @@ namespace Cyaim.Im
         /// <summary>The sender has blocked the recipient.</summary>
         public const int BlockedPeer = 1304;
 
+        /// <summary>No such friend request — it was already accepted, declined, or withdrawn.</summary>
+        public const int FriendRequestNotFound = 1305;
+
+        /// <summary>The account is at the tenant's friend-list ceiling.</summary>
+        public const int FriendLimitExceeded = 1306;
+
         /// <summary>A user tried to add themselves as a friend.</summary>
         public const int CannotAddSelf = 1307;
+
+        /// <summary>No such message, or it is not visible to this user.</summary>
+        public const int MessageNotFound = 1400;
 
         /// <summary>The message body exceeded the tenant's length limit.</summary>
         public const int MessageTooLong = 1401;
@@ -120,6 +165,38 @@ namespace Cyaim.Im
 
         /// <summary>The recall window for this message has passed.</summary>
         public const int RecallWindowExpired = 1403;
+
+        /// <summary>Recall is switched off for this app, or this caller lacks the authority for it.</summary>
+        /// <remarks>
+        /// Distinct from <see cref="RecallWindowExpired"/>: waiting does not help, and neither does
+        /// retrying sooner next time — the operation itself is not available to this caller.
+        /// </remarks>
+        public const int RecallForbidden = 1404;
+
+        /// <summary>Editing is switched off for this app, or the edit window has passed.</summary>
+        public const int EditWindowExpired = 1405;
+
+        /// <summary>
+        /// This <c>clientMsgId</c> was already accepted, so the send was not performed twice.
+        /// </summary>
+        /// <remarks>
+        /// The idempotency key doing its job, not a failure: the original message exists. A client
+        /// that treats this as an error and retries with a fresh key is the thing that produces the
+        /// duplicate the key was there to prevent.
+        /// </remarks>
+        public const int DuplicateClientMessageId = 1406;
+
+        /// <summary>No such conversation, or it is not visible to this user.</summary>
+        public const int ConversationNotFound = 1407;
+
+        /// <summary>The sender is silenced, so the message was not accepted.</summary>
+        public const int SenderMuted = 1408;
+
+        /// <summary>This deployment does not accept that <see cref="ImMessageContentType"/>.</summary>
+        public const int UnsupportedContentType = 1409;
+
+        /// <summary>This message does not track read receipts, so there is nothing to report.</summary>
+        public const int ReceiptDisabled = 1410;
 
         /// <summary>No such group, or it is not visible to this user.</summary>
         public const int GroupNotFound = 1500;
@@ -142,8 +219,42 @@ namespace Cyaim.Im
         /// <summary>This member is muted in the group.</summary>
         public const int MemberMuted = 1506;
 
+        /// <summary>The user is already in this group, so joining did nothing.</summary>
+        public const int AlreadyGroupMember = 1507;
+
         /// <summary>Joining raised an application instead; wait for <c>evt.group</c>.</summary>
         public const int JoinNeedsApproval = 1508;
+
+        /// <summary>This group does not accept new members at all.</summary>
+        /// <remarks>
+        /// Distinct from <see cref="JoinNeedsApproval"/>: nothing was raised and nothing is coming,
+        /// so a client waiting for <c>evt.group</c> after this one waits forever.
+        /// </remarks>
+        public const int JoinForbidden = 1509;
+
+        /// <summary>Invitations are disabled for this group, or restricted to administrators.</summary>
+        public const int InviteForbidden = 1510;
+
+        /// <summary>The group owner cannot be kicked, muted, demoted or otherwise operated on.</summary>
+        public const int CannotOperateOwner = 1511;
+
+        /// <summary>No such join application — it was already approved, rejected, or withdrawn.</summary>
+        public const int ApplicationNotFound = 1512;
+
+        /// <summary>No such chat room, or it is not visible to this user.</summary>
+        public const int RoomNotFound = 1600;
+
+        /// <summary>The chat room is at its occupant ceiling.</summary>
+        public const int RoomFull = 1601;
+
+        /// <summary>The caller has not joined this chat room.</summary>
+        public const int NotInRoom = 1602;
+
+        /// <summary>The whole chat room is muted.</summary>
+        public const int RoomMuted = 1603;
+
+        /// <summary>The upload did not complete; the object was not stored.</summary>
+        public const int UploadFailed = 1700;
 
         /// <summary>The tenant's allow-list does not include this MIME type.</summary>
         public const int FileTypeNotAllowed = 1701;

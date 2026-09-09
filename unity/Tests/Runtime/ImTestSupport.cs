@@ -139,6 +139,12 @@ namespace Cyaim.Im.Tests
             return count;
         }
 
+        /// <summary>True when a request for this endpoint is on the wire with no reply yet.</summary>
+        internal bool HasUnanswered(string target)
+        {
+            return FindOldestUnanswered(target) != null;
+        }
+
         /// <summary>The newest request body for an endpoint, or null if it was never asked for.</summary>
         internal JsonValue LastBody(string target)
         {
@@ -645,6 +651,40 @@ namespace Cyaim.Im.Tests
             {
                 AnswerResume();
             }
+
+            AnswerHousekeeping();
+        }
+
+        /// <summary>
+        /// Answers the housekeeping a connect triggers besides the resume — today that is the one
+        /// <c>diag.logRequests</c> pull ADR-003 makes after every connect.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Unanswered, that pull sits in the correlation map until it times out, and any test that
+        /// counts pending requests is then counting it too. That is exactly how
+        /// <c>Cancelling_abandons_the_reply_and_leaves_no_entry_behind</c> read "2" where the
+        /// contract (§10.21) says the map holds only the call under test — a wrong reading of a
+        /// correct SDK, produced by a harness that answered half of what a connect asks.
+        /// 未被答复时，这条拉取会一直待在关联表里直到超时，于是任何数 pending 的用例都把它一起数了。
+        /// </para>
+        /// <para>
+        /// An empty list is the answer in every test here, because a test that wanted a log request
+        /// would say so itself. The Swift harness answers the same set for the same reason
+        /// (<c>MockGateway.answerHousekeeping</c>); this is that, in Unity's shape.
+        /// 空列表是这里每个用例的答案——想要别的答案的用例会自己说。Swift 的 harness 出于同样理由
+        /// 答复同一组端点。
+        /// </para>
+        /// </remarks>
+        internal void AnswerHousekeeping()
+        {
+            if (!Socket.HasUnanswered("diag.logRequests"))
+            {
+                return;
+            }
+
+            Socket.Reply("diag.logRequests", JsonValue.NewArray());
+            Pump();
         }
 
         /// <summary>Answers the <c>conn.sync</c> the client sends on every (re)connect.</summary>
