@@ -280,7 +280,6 @@ abstract final class ImPushTarget {
   static const String group = 'evt.group';
   static const String system = 'evt.system';
   static const String stream = 'evt.stream';
-  static const String call = 'evt.call';
   static const String desk = 'evt.desk';
   static const String kick = 'conn.kick';
 }

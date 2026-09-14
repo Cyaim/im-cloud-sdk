@@ -259,7 +259,6 @@ public object PushTarget {
     public const val Group: String = "evt.group"
     public const val System: String = "evt.system"
     public const val Stream: String = "evt.stream"
-    public const val Call: String = "evt.call"
     public const val Desk: String = "evt.desk"
     public const val Kick: String = "conn.kick"
 }

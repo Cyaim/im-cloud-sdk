@@ -258,7 +258,6 @@ export const PushTarget = {
   Group: 'evt.group',
   System: 'evt.system',
   Stream: 'evt.stream',
-  Call: 'evt.call',
   Desk: 'evt.desk',
   Kick: 'conn.kick',
 } as const;

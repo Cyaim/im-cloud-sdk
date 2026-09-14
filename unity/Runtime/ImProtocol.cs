@@ -346,10 +346,6 @@ namespace Cyaim.Im
         /// <summary>AI streaming fragment.</summary>
         public const string Stream = "evt.stream";
 
-        /// <summary>Call signalling: invite, accept, reject, hang up, media change. One target for
-        /// the whole state machine.</summary>
-        public const string Call = "evt.call";
-
         /// <summary>Support session lifecycle for the agent console: queued, assigned, transferred,
         /// closed, queue position.</summary>
         public const string Desk = "evt.desk";

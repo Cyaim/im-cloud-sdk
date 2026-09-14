@@ -24,27 +24,44 @@ Do not copy those lists into an SDK by hand — read the JSON.
 false for a day — it is reproduced below, because the gap between the two is the whole point of
 this document.**
 
-Verified 2026-08-23, not estimated. Procedure, so you can re-run it: take every target tiered
-`T0`/`T1`/`T2` in [`endpoint-inventory.json`](endpoint-inventory.json) (49 of them) and look each
-one up as a string literal in that SDK's published sources (`sdk/typescript/src`,
-`sdk/kotlin/src/main`, `sdk/swift/Sources`, `sdk/flutter/lib`, `sdk/unity/Runtime`).
+Verified 2026-08-23 by hand; **re-measured 2026-09-14, and now read out of the generator rather
+than counted by a person** — `implementedIn` in [`endpoint-inventory.json`](endpoint-inventory.json)
+runs exactly the procedure below, with comments stripped. Procedure, so you can re-run it: take
+every target tiered `T0`/`T1`/`T2` (53 of them) and look each one up as a string literal in that
+SDK's published sources (`sdk/typescript/src`, `sdk/kotlin/src/main`, `sdk/swift/Sources`,
+`sdk/flutter/lib`, `sdk/unity/Runtime`).
 
-| | T0–T2 typed | of 107 total | remaining, reachable via `invoke()` |
+| | T0–T2 typed | typed overall, of 107 | remaining, reachable via `invoke()` |
 |---|---|---|---|
-| `sdk/typescript` | **49 / 49** | 45.8% | T3 (20) + T4 (38) |
-| `sdk/kotlin` | **49 / 49** | 45.8% | T3 (20) + T4 (38) |
-| `sdk/swift` | **49 / 49** | 45.8% | T3 (20) + T4 (38) |
-| `sdk/flutter` | **49 / 49** | 45.8% | T3 (20) + T4 (38) |
-| `sdk/unity` | **49 / 49** | 45.8% | T3 (20) + T4 (38) |
+| `sdk/typescript` | **53 / 53** | 62 (57.9%) | T3 (20) + T4 (25) |
+| `sdk/kotlin` | **53 / 53** | 53 (49.5%) | T3 (20) + T4 (34) |
+| `sdk/swift` | **53 / 53** | 53 (49.5%) | T3 (20) + T4 (34) |
+| `sdk/flutter` | **53 / 53** | 53 (49.5%) | T3 (20) + T4 (34) |
+| `sdk/unity` | **53 / 53** | 53 (49.5%) | T3 (20) + T4 (34) |
 
-**Intersection = union = 49.** That equality is the property this document exists to produce, and
-it is the one worth asserting in CI: five SDKs that each type a *different* 49 would score the same
-on this table and still fail every customer who ships on two platforms.
+Every row adds up to 107 — what is typed, plus what is left. TypeScript's extra nine are the
+`desk.*` family, typed for 客服云; they are T4 work, which is why the first column still reads 53
+on all five. §3 explains why that does not make T4 partly done.
+
+**Intersection = union = 53 across T0–T2.** That equality is the property this document exists to
+produce, and it is the one worth asserting in CI: five SDKs that each type a *different* 53 would
+score the same on this table and still fail every customer who ships on two platforms.
+`ContractInventoryParityTests` now asserts it, along with every number in the table above.
 
 T3 and T4 are **deliberately untyped**, not missing. A customer can call all 107 endpoints today;
-58 of them without types, against payload shapes they must read out of the server's C# source. Say
+54 of them without types, against payload shapes they must read out of the server's C# source. Say
 that plainly in a sales conversation — it is a real cost, and it is one the buyer discovers in
 their first sprint if you do not.
+
+> **How this table was wrong until 2026-09-14 — which is worth more than the corrected numbers.**
+> It read `49 / 49` and `of 107 total`: the 2026-08-23 measurement, left untouched while the server
+> grew to **114** endpoints (T0–T2 reached 51 on 2026-08-28 and 53 on 2026-08-29, per §3) and then
+> came back to **107** when the seven `call.*` were withdrawn on 2026-09-14. So the total was right
+> the day it was written, wrong for three weeks, and **right again by coincidence** — the same 107
+> over a different set of endpoints. Nothing here could have told you which of the three you were
+> reading. §3's table had a test and §4.5's counts had a test; this section — the one a buyer and a
+> new SDK team read first — had none, and a number that is accidentally correct today is the kind
+> that goes wrong quietly tomorrow.
 
 <details>
 <summary><b>What this section said before, and why it is kept</b></summary>
@@ -170,7 +187,7 @@ choosing against the weakest one.
 | **T1** | 1:1 chat MVP | 18 | **18 ✅** | The smallest set that ships a two-person chat app a customer would launch. |
 | **T2** | Social graph and groups | 32 | **32 ✅** | What turns a chat into a messenger: contacts, blocking, groups, presence, reporting. |
 | **T3** | Competitive parity | 20 | 0 | Not needed to ship, needed to win: the rows a buyer ticks against 融云 / 环信 / 网易云信. |
-| **T4** | Specialist verticals | 41 | 0 (9 in TypeScript) | Calls, service desk, E2EE, live rooms, AI streaming, scheduling, folders. |
+| **T4** | Specialist verticals | 34 | 0 (9 in TypeScript) | Service desk, E2EE, live rooms, AI streaming, scheduling, folders. |
 
 **T0–T2 are complete on all five, and have been since 2026-08-28** — 51 targets each that day, when
 the two newest, `moderation.report` and `push.clicked`, were typed; **53 since 2026-08-29**, when
@@ -235,9 +252,14 @@ its own platform the one nobody can diagnose.
 `announcement`, `setNickname`, `applicationList`, `handleApplication`), pins, favourites, search,
 `msg.burn`, `msg.receiptDetail`, `conv.markUnread`, `user.setStatus`, `friend.setRemark`.
 
-**T4 — Specialist verticals (41).** `call.*` (7), `keys.*` (7), `room.*` (7), `desk.*` (9),
-message streaming (4), scheduling (3), conversation folders (3), `msg.translate`. Type these when a
-customer asks. They are never a reason to delay T0–T3.
+**T4 — Specialist verticals (34).** `keys.*` (7), `room.*` (7), `desk.*` (9), message streaming
+(4), scheduling (3), conversation folders (3), `msg.translate`. Type these when a customer asks.
+They are never a reason to delay T0–T3.
+
+**`call.*` (7) was in this tier until 2026-09-14**, when calling was withdrawn from every product
+surface — the server no longer routes those targets, so they are not here to be typed. No platform
+had typed any of them, which is why the count moved and no other column did. §9.1 records why
+removing seven published endpoints did not force a MAJOR bump, and when that stops being true.
 
 **`desk.*` is typed in TypeScript as of 2026-09-07, and in TypeScript only.** The customer that
 §3's rule waits for is 客服云, whose visitor widget bundles `@cyaim/im-client` and whose agent
@@ -326,8 +348,8 @@ an empty result.
 
 ### 4.5 Types
 
-Declare every payload type in `endpoint-inventory.json`'s `payloadTypes` (131 classes) and
-`payloadEnums` (17 enums) that your tier reaches. Rules:
+Declare every payload type in `endpoint-inventory.json`'s `payloadTypes` (122 classes) and
+`payloadEnums` (15 enums) that your tier reaches. Rules:
 
 - Optional means **optional**: any field the server may omit is nullable with a sane empty default.
   Only fields the server marks `required` may be non-optional.
@@ -922,6 +944,18 @@ The intersection of what five registries accept is narrow, so stay inside it:
 - Removing or renaming a published endpoint is a **server** breaking change and forces MAJOR
   everywhere. `endpoint-tiers.json` fails the build when the server drops an endpoint, which is
   where that conversation should start.
+
+**2026-09-14: that conversation happened, and the outcome is recorded here rather than left to be
+inferred from a version number that did not move.** The server withdrew the seven `call.*`
+endpoints, so the contract lost seven published endpoints — exactly the case the bullet above
+describes. The build did fail first, as promised: the generator threw on a tier entry naming a
+target the server no longer exposes, before any comparison ran. It did **not** force MAJOR, for a
+reason that is narrow and has an expiry date: the rule protects integrators who are on a released
+version, and per §9.3 there are none — nothing has been published to any registry and the
+repository still has no tags. Below `1.0.0`, SemVer permits a breaking change in a MINOR bump, so
+all five stay `0.9.0`. **The first publish ends this exemption**, and the next removal after it
+costs a MAJOR. Anyone reading the bullet, seeing seven endpoints gone and no bump, should not
+conclude the rule is dead — it was applied, and its precondition was missing.
 
 Every SDK exposes the contract version as a constant (`ImSdk.contractVersion`, currently `"1.0"`,
 sourced from `endpoint-inventory.json`) and sends its own package version as the `cv` handshake

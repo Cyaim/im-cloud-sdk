@@ -238,7 +238,6 @@ public struct PushTarget: RawRepresentable, Hashable, Sendable, Codable, CustomS
     public static let group = PushTarget("evt.group")
     public static let system = PushTarget("evt.system")
     public static let stream = PushTarget("evt.stream")
-    public static let call = PushTarget("evt.call")
     public static let desk = PushTarget("evt.desk")
 
     /// Not an `evt.*` event: the server pushes this immediately before closing the socket.

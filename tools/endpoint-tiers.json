@@ -140,14 +140,6 @@
     "room.mute": { "tier": "T4" },
     "room.kick": { "tier": "T4" },
 
-    "call.invite": { "tier": "T4", "note": "IM.Modules.Calls; signalling only, the SDK never carries media." },
-    "call.accept": { "tier": "T4" },
-    "call.reject": { "tier": "T4" },
-    "call.hangup": { "tier": "T4" },
-    "call.inviteMore": { "tier": "T4" },
-    "call.media": { "tier": "T4" },
-    "call.get": { "tier": "T4" },
-
     "desk.request": { "tier": "T4", "note": "Agent-console surface. The customer side of a desk session arrives as ordinary messages." },
     "desk.accept": { "tier": "T4" },
     "desk.transfer": { "tier": "T4" },

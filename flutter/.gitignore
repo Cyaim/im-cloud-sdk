@@ -1,0 +1,6 @@
+# Dart/Flutter build output. `dart test` creates it on the first run, and nothing else in this
+# repository ignores it — the sibling `kotlin/.gitignore` covers `build/` and the TypeScript one
+# covers `dist/`, so this package was the one place a gate run left files in the tree.
+.dart_tool/
+.packages
+build/
