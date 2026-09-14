@@ -1066,21 +1066,28 @@ This is the one with real lead time; start it first.
 - **Namespace verification for `com.cyaim`** — a DNS TXT record on `cyaim.com`, or use
   `io.github.cyaim` instead, which verifies through the GitHub account and needs no domain.
 - GPG key generated, published to a public keyserver, and the signing plugin wired in.
-- **The POM is currently insufficient and Central will reject it.** It has `name`, `description`
-  and `licenses`; Central also requires `url`, `scm` (connection, developerConnection, url) and at
-  least one `developers` entry.
-- **A javadoc jar is required.** `withSourcesJar()` is configured; `withJavadocJar()` is not.
+- ~~**The POM is currently insufficient and Central will reject it.**~~ — **this bullet was wrong
+  when it was written, and is recorded rather than deleted.** `url`, `inceptionYear`, `developers`,
+  `scm` (all three) and `issueManagement` were already in `kotlin/build.gradle.kts` before
+  2026-09-14; a checklist that asks for finished work sends the next person to redo it, on the one
+  registry whose lead time actually matters. What 2026-09-14 *did* change here is the addresses:
+  every one of those six fields pointed at `Cyaim/IM`, which 404s since the repository split.
+- ~~**A javadoc jar is required.**~~ — **done as of 2026-09-14**: `withSourcesJar()` and
+  `withJavadocJar()` are both configured. Kotlin produces no Javadoc, so `:javadoc` runs NO-SOURCE
+  and the jar is the placeholder Central explicitly allows; it carries `README.md` and
+  `META-INF/LICENSE` so it points the reader somewhere, which is what Central asks of a placeholder.
 - Publish through the Central Portal; the legacy OSSRH path is closed to new namespaces.
 
 **Swift Package Manager — `CyaimIM`**
 
 - **Blocking structural problem: SPM requires `Package.swift` at the root of the repository it
-  resolves.** This one is at `sdk/swift/Package.swift`, so `https://github.com/Cyaim/IM` cannot be
-  added as a dependency as it stands.
-- Recommended fix: **mirror `sdk/swift` to its own repository** (`Cyaim/im-swift`) with a CI
+  resolves.** This one is at `swift/Package.swift`, so `https://github.com/Cyaim/im-cloud-sdk`
+  cannot be added as a dependency as it stands.
+- Recommended fix: **mirror `swift/` to its own repository** (`Cyaim/im-swift` — this spelling,
+  including the capital C, is the one `swift/README.md` and the catalogue generator now use) with a CI
   `git subtree push` on each `v*` tag. Standard practice, keeps the monorepo, and means an iOS
   developer's `Package.resolved` does not drag in the entire server.
-- The alternative — moving `Package.swift` to the repository root with `path: "sdk/swift/Sources/…"`
+- The alternative — moving `Package.swift` to the repository root with `path: "swift/Sources/…"`
   — works, but makes every SPM consumer clone the whole product. Do not.
 - Tags on the mirror must be bare semver. Swift 6 toolchain and the declared platform floor
   (iOS 16 / macOS 13 / tvOS 16 / visionOS 1) are already set.
@@ -1088,8 +1095,8 @@ This is the one with real lead time; start it first.
 **Unity Package Manager — `com.cyaim.im`**
 
 - UPM resolves a subfolder of a git repo directly, so **no mirror is needed**:
-  `https://github.com/Cyaim/IM.git?path=/sdk/unity#v1.2.3`.
-- Requires the `v1.2.3` tag to exist (§9.3) and `package.json` to stay at `sdk/unity/package.json`.
+  `https://github.com/Cyaim/im-cloud-sdk.git?path=/unity#v1.2.3`.
+- Requires the `v1.2.3` tag to exist (§9.3) and `package.json` to stay at `unity/package.json`.
 - `package.json` needs `documentationUrl`, `changelogUrl`, `licensesUrl`, and its `license` field
   updated per §9.2. `unity: "2022.3"`, the samples entry and the asmdefs are already correct.
 - For OpenUPM later: a scoped registry entry and the same tag scheme; no extra repository work.
@@ -1099,10 +1106,10 @@ This is the one with real lead time; start it first.
 - A verified publisher (`cyaim.com`, DNS-verified) or a Google account that owns the name. Claim the
   name early; pub.dev names are first-come and not transferable on request.
 - **A `LICENSE` file is required for a full pub score** and pub.dev shows its absence on the package
-  page. The root `LICENSE` does not travel in the tarball — this needs the `sdk/LICENSE` copy from
-  §9.2, still outstanding.
-- ~~`sdk/flutter/example/` exists but is **empty**~~ — **done as of 2026-08-23**:
-  `sdk/flutter/example/main.dart` is in place, so git carries it and pub.dev will score it.
+  page. A repository-root `LICENSE` does not travel in the tarball — `flutter/LICENSE` is the copy
+  that does, and it is in place (byte-identical to the repository `LICENSE`).
+- ~~`flutter/example/` exists but is **empty**~~ — **done as of 2026-08-23**:
+  `flutter/example/main.dart` is in place, so git carries it and pub.dev will score it.
 - `CHANGELOG.md`, `repository`, `issue_tracker` and `topics` are already correct. `dart pub publish
   --dry-run` should be clean before the first real publish.
 

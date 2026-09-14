@@ -23,18 +23,22 @@ dependencies {
 >
 > ```bash
 > # From a clone of this repository:
-> cd sdk/kotlin && ./gradlew publishToMavenLocal
+> cd kotlin && ./gradlew publishToMavenLocal
 > ```
 > ```kotlin
 > repositories { mavenLocal() }
 > dependencies { implementation("com.cyaim.im:im-client:0.9.0") }
 > ```
 >
-> Maven Central is the one with real lead time (namespace verification, GPG key, POM fields,
-> a javadoc jar) — none of it is done. Start it before you need it.
+> Maven Central is the one with real lead time. **As of 2026-09-14 the parts that live in this
+> repository are done** — the POM carries every field Central requires, `withSourcesJar()` and
+> `withJavadocJar()` are configured, `META-INF/LICENSE` is in all three jars, and `publishing{}`
+> names a real Central Portal repository. What is left needs an account and a domain, not a commit:
+> namespace verification for `com.cyaim` (a DNS TXT record — the long pole) and a published GPG key.
+> Start those before you need them.
 >
 > The registry prerequisites still outstanding are listed in
-> [`sdk/CONTRACT.md` §9.4](../CONTRACT.md).
+> [`CONTRACT.md` §9.4](../CONTRACT.md).
 
 ```kotlin
 val im = ImClient(

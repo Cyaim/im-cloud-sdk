@@ -1,8 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- Directory.Build.props pins a single TargetFramework for the service; this package ships
-         for the frameworks a tenant backend is likely to be on, so clear it before multi-targeting. -->
+    <!-- Cleared on purpose, and kept cleared. There is no Directory.Build.props above this tree
+         today (SDK/ is a sibling of IM.Server/, whose props file does not reach here), but the
+         service's props pinned a single TargetFramework when this project lived inside it, and a
+         set TargetFramework silently wins over TargetFrameworks. Blanking it costs nothing and
+         keeps the multi-targeting below true if a SDK/Directory.Build.props is ever added. -->
     <TargetFramework></TargetFramework>
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <LangVersion>latest</LangVersion>
@@ -17,6 +20,44 @@
     <Authors>Cyaim Studio</Authors>
     <PackageTags>im;chat;messaging;sdk</PackageTags>
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+
+    <!-- Without this line MSBuild picks 1.0.0, and it picked it silently: `dotnet pack -c Release`
+         produced Cyaim.Im.ServerSdk.1.0.0.nupkg while Build-SdkCatalog.ps1, failing to find a
+         <Version> here, fell back to the client SDKs' number and told every trial customer through
+         GET /console/v1/sdks that the package was 0.9.0. Neither half complained. 1.0.0 is also the
+         number CONTRACT.md §9.1 reserves for after a real integrator has lived on this SDK, and
+         NuGet cannot delete a published version — only unlist it.
+         The server SDK is versioned on its own (CONTRACT.md §9.1 puts the lockstep on the five
+         *client* SDKs); it is pinned here, in its own manifest, because that is where both the
+         catalogue generator and SdkVersionLockstepTests read it from. -->
+    <Version>0.9.0</Version>
+
+    <!-- sdk/** is Apache-2.0 (CONTRACT.md §9.2). An SPDX expression rather than PackageLicenseFile:
+         this directory has no LICENSE of its own, so the file route would mean packing a second copy
+         of the 11KB text that can drift from SDK/LICENSE, while nuget.org renders the expression as a
+         structured licence. Measured before this line existed: the produced .nupkg carried no licence
+         at all — not the element, not the file — even though SDK/LICENSE sits two directories up. -->
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <Copyright>Copyright (c) 2026 Cyaim Studio</Copyright>
+
+    <!-- The SDKs moved to their own public repository on 2026-08-31. These two were absent rather
+         than wrong, which on nuget.org means the "Project website" and "Source repository" links do
+         not render at all: someone holding the package has no way back to the source. RepositoryUrl
+         is written out rather than derived with PublishRepositoryUrl, which reads the git remote and
+         so reports whatever fork the build happened to run in. -->
+    <PackageProjectUrl>https://github.com/Cyaim/im-cloud-sdk</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Cyaim/im-cloud-sdk</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <!-- Needs the <None> item below as well: this property alone fails the pack with NU5039. -->
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The README is one directory up, shared with anyone reading the repository; pack it into the
+         package root so nuget.org has a front page. Pack="true" is the half that actually copies it.
+         打包根目录，PackagePath 必须与 PackageReadmeFile 的文件名一致。 -->
+    <None Include="../README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
 </Project>

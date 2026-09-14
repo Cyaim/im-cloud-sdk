@@ -21,17 +21,17 @@ npm install @cyaim/im-client
 >
 > ```bash
 > # From a clone of this repository (submodules not needed for the SDK):
-> cd sdk/typescript && npm install && npm run build && npm pack
+> cd typescript && npm install && npm run build && npm pack
 > # then, in your app:
 > npm install /path/to/cyaim-im-client-0.9.0.tgz
 > ```
 >
-> A `file:` dependency on `sdk/typescript` works too, but `npm pack` is what you want for a
+> A `file:` dependency on `typescript` works too, but `npm pack` is what you want for a
 > smoke test: it exercises the same `files` allow-list the real publish will use, so a file
 > that is missing from the tarball fails here rather than at a customer.
 >
 > The registry prerequisites still outstanding are listed in
-> [`sdk/CONTRACT.md` §9.4](../CONTRACT.md).
+> [`CONTRACT.md` §9.4](../CONTRACT.md).
 
 ```ts
 import { ImClient, ImCursorScope, ImCursorStore, MessageContentType } from '@cyaim/im-client';

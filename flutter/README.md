@@ -24,14 +24,14 @@ dart pub add cyaim_im
 > # pubspec.yaml — a path dependency on a clone of this repository
 > dependencies:
 >   cyaim_im:
->     path: ../IM/sdk/flutter
+>     path: ../im-cloud-sdk/flutter
 > ```
 >
-> A `git:` dependency with `path: sdk/flutter` also resolves, but needs a ref that exists —
+> A `git:` dependency with `path: flutter` also resolves, but needs a ref that exists —
 > and there are no tags, so it would have to be a branch or a commit sha.
 >
 > The registry prerequisites still outstanding are listed in
-> [`sdk/CONTRACT.md` §9.4](../CONTRACT.md).
+> [`CONTRACT.md` §9.4](../CONTRACT.md).
 
 ## Quick start
 

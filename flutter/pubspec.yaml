@@ -14,10 +14,15 @@ description: >-
 # Keep in step with ImSdk.packageVersion in lib/src/version.dart.
 version: 0.9.0
 
-homepage: https://github.com/Cyaim/IM
-repository: https://github.com/Cyaim/IM
-issue_tracker: https://github.com/Cyaim/IM/issues
-documentation: https://github.com/Cyaim/IM/blob/main/sdk/flutter/README.md
+# The SDKs moved out to their own public repository on 2026-08-31; these four kept pointing at
+# the private pre-split repo until 2026-09-14, and all four were a 404 for the only people who
+# ever follow them: someone on the pub.dev page looking for the source. pub.dev freezes a
+# published version's metadata -- a wrong link here is correctable only by publishing again.
+# 这四条此前都指向拆仓前的私有仓（对外 404）；pub.dev 的版本元数据一经发布即冻结，只能靠发新版盖过去。
+homepage: https://github.com/Cyaim/im-cloud-sdk
+repository: https://github.com/Cyaim/im-cloud-sdk
+issue_tracker: https://github.com/Cyaim/im-cloud-sdk/issues
+documentation: https://github.com/Cyaim/im-cloud-sdk/blob/main/flutter/README.md
 topics:
   - im
   - chat

@@ -115,7 +115,28 @@ $sdkVersion = $distinct[0]
 # 服务端 SDK 单独版本：受众与节奏都不同，实现的是 REST 契约而不是 socket 契约。
 $dotnetCsproj = Join-Path $repoRoot 'SDK/dotnet/Cyaim.Im.ServerSdk/Cyaim.Im.ServerSdk.csproj'
 $dotnetMatch = [regex]::Match([System.IO.File]::ReadAllText($dotnetCsproj), '<Version>([^<]+)</Version>')
-$dotnetVersion = if ($dotnetMatch.Success) { $dotnetMatch.Groups[1].Value.Trim() } else { $sdkVersion }
+
+# No fallback here. This line read `else { $sdkVersion }` until 2026-09-14, and the csproj declared
+# no <Version>, so the branch that ran was the fallback one: the catalogue told every trial customer
+# through GET /console/v1/sdks that Cyaim.Im.ServerSdk was on 0.9.0 while `dotnet pack` produced
+# Cyaim.Im.ServerSdk.1.0.0.nupkg. The number was not read from anywhere — it was invented, out of the
+# client SDKs' version, by a regex that had failed. Nothing reported the failure.
+#
+# That is this repository's own rule broken inside its own tooling: a number nobody measured must be
+# drawn as unmeasured, never as a plausible default. There is no "unmeasured" to draw here — the
+# catalogue's version field is asserted non-empty by SdkCatalogTests, and a customer cannot install a
+# blank — so the only honest action left is to refuse to write the file.
+# 这正是本仓「拿不到的数字画未测量，不画 0」在它自己的工具里被犯的那一次；而这里没有「未测量」可画，
+# 于是唯一正确的动作是拒绝生成。
+if (-not $dotnetMatch.Success) {
+    throw ('SDK/dotnet/Cyaim.Im.ServerSdk/Cyaim.Im.ServerSdk.csproj declares no <Version>, so MSBuild ' +
+        'defaults it to 1.0.0 and the package this catalogue advertises cannot be built under the ' +
+        'number it advertises. Pin <Version> in that csproj — not here. Filling it in from the client ' +
+        'SDKs would publish a version that has never existed, through GET /console/v1/sdks, to every ' +
+        'trial customer, and NuGet cannot delete a published version once the two disagree in public.')
+}
+
+$dotnetVersion = $dotnetMatch.Groups[1].Value.Trim()
 
 $contractVersion = (Get-Content -LiteralPath $tierFile -Raw | ConvertFrom-Json -AsHashtable)['contractVersion']
 
@@ -145,7 +166,14 @@ $platforms = @(
     [ordered]@{
         id = 'swift'; name = 'iOS / macOS'; kind = 'client'; language = 'Swift'
         package = 'CyaimIM'; version = $swiftVersion
-        install = ".package(url: `"https://github.com/cyaim/im-swift`", from: `"$swiftVersion`")"
+        # The mirror repository does not exist yet (measured 2026-09-14: 404), and until it does
+        # this line is the future install command, exactly like the other five rows -- not one
+        # of the six packages resolves today. What it must not also be is spelled differently
+        # in each place it appears: this line spelled the owner in lower case, CONTRACT.md §9.4
+        # spelled it `Cyaim/im-swift`, and nobody had compared them. GitHub redirects a wrong-cased
+        # owner in a browser, which is exactly why the disagreement survived unnoticed.
+        # 镜像仓尚未建立；这一行与其余五行一样是「发布之后」的安装命令，但至少要与另外两处拼法一致。
+        install = ".package(url: `"https://github.com/Cyaim/im-swift`", from: `"$swiftVersion`")"
         targets = @('Swift 6.0+', 'iOS', 'macOS')
         docs = 'SDK/swift/README.md'; changelog = 'SDK/swift/CHANGELOG.md'
         demo = $null; source = 'SDK/swift/Sources'
@@ -161,7 +189,16 @@ $platforms = @(
     [ordered]@{
         id = 'unity'; name = 'Unity'; kind = 'client'; language = 'C#'
         package = 'com.cyaim.im'; version = $unityVersion
-        install = 'Unity Package Manager → Add package from git URL → https://github.com/cyaim/im-unity.git'
+        # Was `https://github.com/cyaim/im-unity.git` -- a repository that has never existed
+        # (404), with no `?path=` and no revision, in a single-quoted string so the version
+        # never followed $unityVersion. It also disagreed outright with unity/README.md, which
+        # gave a third form; the two were written separately and never read against each other.
+        # Shape per docs.unity3d.com/Manual/upm-git.html: the `?path=` query parameter always
+        # precedes the revision anchor (the reverse order fails), and the revision should be a
+        # tag rather than the default branch, which is a moving target.
+        # 形态依 UPM 文档：?path= 必须在 # 之前，# 后面取 tag 而不是默认分支。
+        install = "Unity Package Manager → Add package from git URL → " +
+            "https://github.com/Cyaim/im-cloud-sdk.git?path=/unity#v$unityVersion"
         targets = @('Unity 2021.3+', 'IL2CPP', 'WebGL')
         docs = 'SDK/unity/README.md'; changelog = 'SDK/unity/CHANGELOG.md'
         demo = 'SDK/unity/Samples~/ChatQuickstart'; source = 'SDK/unity/Runtime'
@@ -217,7 +254,15 @@ function Test-Current {
 }
 
 if ($Check) {
-    $ok = (Test-Current $outputFile) -and (Test-Current $embeddedFile)
+    # Both, always. `-and` short-circuits in PowerShell, so the earlier form named the first
+    # stale file and never looked at the second — and these two are generated from the same data,
+    # so they go stale together. A reader who fixed the one file named, re-ran, and saw it fail
+    # again on a file that had been stale the whole time would reasonably think the generator was
+    # broken. 两个都查。PowerShell 的 -and 会短路，于是它只报第一个过期的文件、
+    # 根本不看第二个——而这两份是同一批数据生成的，要过期一起过期。
+    $outputCurrent = Test-Current $outputFile
+    $embeddedCurrent = Test-Current $embeddedFile
+    $ok = $outputCurrent -and $embeddedCurrent
     if (-not $ok) {
         Write-Host '  Run: pwsh -File SDK/tools/Build-SdkCatalog.ps1'
         exit 1

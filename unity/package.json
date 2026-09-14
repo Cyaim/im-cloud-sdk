@@ -5,9 +5,9 @@
   "description": "Client SDK for Cyaim IM Cloud. Multiplexed WebSocket with a typed surface over conn/msg/conv/user/friend/group/media/push, full-jitter reconnect, kick handling, in-place token renewal, offline push registration, and a durable two-cursor model that repairs gaps across a process restart instead of silently skipping them. Callbacks are marshalled to the Unity main thread, and WebGL is supported through a browser WebSocket transport.",
   "unity": "2022.3",
   "license": "Apache-2.0",
-  "licensesUrl": "https://github.com/Cyaim/IM/blob/main/sdk/unity/LICENSE.md",
-  "documentationUrl": "https://github.com/Cyaim/IM/blob/main/sdk/unity/README.md",
-  "changelogUrl": "https://github.com/Cyaim/IM/blob/main/sdk/unity/CHANGELOG.md",
+  "licensesUrl": "https://github.com/Cyaim/im-cloud-sdk/blob/main/unity/LICENSE.md",
+  "documentationUrl": "https://github.com/Cyaim/im-cloud-sdk/blob/main/unity/README.md",
+  "changelogUrl": "https://github.com/Cyaim/im-cloud-sdk/blob/main/unity/CHANGELOG.md",
   "author": {
     "name": "Cyaim",
     "url": "https://github.com/Cyaim"

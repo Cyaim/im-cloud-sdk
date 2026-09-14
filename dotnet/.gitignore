@@ -1,0 +1,17 @@
+# `dotnet build`/`dotnet pack` 的两个输出目录。它们此前**没有任何规则挡得住**：
+# 工作区根的 .gitignore 写着 `[Bb]in/` `[Oo]bj/`，但忽略规则不跨进子模块，而 SDK/ 自
+# 2026-08-31 起是独立的公开仓（Cyaim/im-cloud-sdk）。实测：一次 `dotnet pack -c Release`
+# 之后 `git status` 在这里报出 `?? dotnet/Cyaim.Im.ServerSdk/bin/` 与 `obj/`，
+# 于是一次 `git add -A` 会把三个 TFM 的编译产物连同 NuGet 的还原缓存提交进公开仓。
+# kotlin/ swift/ typescript/ flutter/ 各有一份 .gitignore；dotnet/ 与 unity/ 一份都没有。
+#
+# The two directories `dotnet build`/`dotnet pack` write. Nothing covered them: the workspace
+# root's ignore rules do not cross into a submodule, and SDK/ has been its own public repository
+# since 2026-08-31. Measured after one `dotnet pack -c Release`: `?? bin/`, `?? obj/`.
+[Bb]in/
+[Oo]bj/
+
+# `dotnet pack -o .` 或 `dotnet nuget push` 的顺手产物，落在这里就会被连同源码提交。
+# A package built into the tree rather than into an output directory.
+*.nupkg
+*.snupkg

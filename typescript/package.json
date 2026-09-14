@@ -39,14 +39,14 @@
     "push"
   ],
   "license": "Apache-2.0",
-  "homepage": "https://github.com/Cyaim/IM/tree/main/sdk/typescript#readme",
+  "homepage": "https://github.com/Cyaim/im-cloud-sdk/tree/main/typescript#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Cyaim/IM.git",
-    "directory": "sdk/typescript"
+    "url": "git+https://github.com/Cyaim/im-cloud-sdk.git",
+    "directory": "typescript"
   },
   "bugs": {
-    "url": "https://github.com/Cyaim/IM/issues"
+    "url": "https://github.com/Cyaim/im-cloud-sdk/issues"
   },
   "publishConfig": {
     "access": "public"

@@ -3,7 +3,7 @@
 Unity client for Cyaim IM Cloud. Unity 2022 LTS and newer, every build target including WebGL.
 
 Install through the Package Manager: **Add package from git URL** with
-`https://github.com/Cyaim/IM.git?path=/sdk/unity#v0.9.0`, **Add package from disk** pointing at this
+`https://github.com/Cyaim/im-cloud-sdk.git?path=/unity#v0.9.0`, **Add package from disk** pointing at this
 folder's `package.json`, or by copying the folder into your project's `Packages/com.cyaim.im`.
 
 > ### ⚠️ Not published yet — the line above is the *future* install command
@@ -18,7 +18,7 @@ folder's `package.json`, or by copying the folder into your project's `Packages/
 >
 > **What works today / 今天真正能用的方式：**
 >
-> Use **Add package from disk**, pointing at `sdk/unity/package.json` in a clone of this
+> Use **Add package from disk**, pointing at `unity/package.json` in a clone of this
 > repository, or copy the folder into your project's `Packages/com.cyaim.im`.
 >
 > The git-URL form is the one that does not work yet, and it fails for a reason worth knowing:
@@ -26,7 +26,7 @@ folder's `package.json`, or by copying the folder into your project's `Packages/
 > and UPM takes the default branch, which is a moving target and not something to ship against.
 >
 > The registry prerequisites still outstanding are listed in
-> [`sdk/CONTRACT.md` §9.4](../CONTRACT.md).
+> [`CONTRACT.md` §9.4](../CONTRACT.md).
 
 ```csharp
 using Cyaim.Im;

@@ -4,7 +4,7 @@ Swift client for Cyaim IM Cloud. iOS, macOS, tvOS and visionOS.
 
 ```swift
 // Package.swift
-.package(url: "https://github.com/cyaim/im-swift", from: "0.9.0")
+.package(url: "https://github.com/Cyaim/im-swift", from: "0.9.0")
 ```
 
 > ### ⚠️ Not published yet — the line above is the *future* install command
@@ -21,17 +21,17 @@ Swift client for Cyaim IM Cloud. iOS, macOS, tvOS and visionOS.
 >
 > ```swift
 > // Package.swift — a local path dependency on a clone of this repository
-> .package(path: "../IM/sdk/swift")
+> .package(path: "../im-cloud-sdk/swift")
 > ```
 >
-> The `cyaim/im-swift` URL above is the **planned mirror**; that repository does not exist yet.
+> The `Cyaim/im-swift` URL above is the **planned mirror**; that repository does not exist yet.
 > SPM requires `Package.swift` at the root of the repository it resolves, and this one lives at
-> `sdk/swift/Package.swift`, so `github.com/Cyaim/IM` cannot be added as an SPM dependency as
+> `swift/Package.swift`, so `github.com/Cyaim/im-cloud-sdk` cannot be added as an SPM dependency as
 > it stands — the mirror is the fix, not an optimisation. Xcode's **Add Local…** does the same
 > thing as the snippet above.
 >
 > The registry prerequisites still outstanding are listed in
-> [`sdk/CONTRACT.md` §9.4](../CONTRACT.md).
+> [`CONTRACT.md` §9.4](../CONTRACT.md).
 
 ```swift
 import CyaimIM

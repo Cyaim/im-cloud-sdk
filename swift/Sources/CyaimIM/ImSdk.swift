@@ -4,7 +4,7 @@ import Foundation
 ///
 /// The package version and the contract version are separate on purpose. The package version says
 /// which build of *this* SDK you are running; the contract version says which
-/// [`sdk/CONTRACT.md`](https://github.com/Cyaim/IM/blob/main/sdk/CONTRACT.md) it implements, and
+/// [`CONTRACT.md`](https://github.com/Cyaim/im-cloud-sdk/blob/main/CONTRACT.md) it implements, and
 /// therefore which endpoints exist on every platform at once. A ticket carrying both answers "which
 /// endpoints do you have" without anyone having to ask which platform the customer is on.
 ///
