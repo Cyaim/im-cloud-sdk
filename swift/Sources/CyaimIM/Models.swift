@@ -455,6 +455,7 @@ public struct MessageDraft: Encodable, Sendable, Hashable {
     /// the server reads today, and the server drops an unknown nested key anyway, so nothing it would
     /// act on is lost — until the server adds an option this SDK version does not know.
     /// `invoke` 原样写出；`send(_:)` 只保留 MessageOptions 建模的开关，类型不对时整组回落到默认值。
+    public var options: [String: JSONValue]?
 
     /// The device clock, echoed back for display. The server never orders by it.
     public var sendTime: Int64
