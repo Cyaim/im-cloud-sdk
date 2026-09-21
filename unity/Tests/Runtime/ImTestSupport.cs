@@ -7,6 +7,7 @@ using Cyaim.Im;
 using Cyaim.Im.Json;
 using Cyaim.Im.Threading;
 using Cyaim.Im.Transport;
+using NUnit.Framework;
 
 namespace Cyaim.Im.Tests
 {
@@ -272,6 +273,118 @@ namespace Cyaim.Im.Tests
                 Target = target;
                 Body = body;
             }
+        }
+    }
+
+    /// <summary>
+    /// Kind-strict readers for a body the SDK put on the wire. Use these, never
+    /// <c>AsString</c>/<c>AsLong</c>/<c>AsInt</c>/<c>AsBool</c>, when asserting a request.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="JsonValue"/>'s own readers are lenient on purpose: they decode what a server sends,
+    /// and refusing a quoted seq would lose messages. On a request that leniency hides the one thing
+    /// the gateway's socket binder cares about. <c>AsString()</c> on <c>360306324097966081</c> returns
+    /// the same digits whether they went out as a JSON string or a JSON number, <c>AsLong()</c> parses a
+    /// quoted number, and <c>AsBool()</c> reads <c>1</c> as true — while the binder answers
+    /// <c>1000</c> for a number sent to a C# <c>string</c>, a string sent to a <c>long</c>, a <c>1</c>
+    /// sent to a <c>bool</c>, and a <c>1.0</c> sent to an <c>int</c>, before the endpoint runs. So an
+    /// assertion that names the right value through a lenient reader passes for the wrong wire form;
+    /// <see cref="ImSendRequest.QuoteMessageId"/> went out as a JSON number for exactly that reason.
+    /// </para>
+    /// <para>
+    /// 请求体一律用这组读法断言：JsonValue 自带的 AsString 读数字也返回同样的数字串，
+    /// 于是「值对、类型错」的请求体照样通过——而网关的套接字绑定器对类型错的字段直接回 1000。
+    /// </para>
+    /// </remarks>
+    internal static class WireJson
+    {
+        /// <summary>The member as a JSON string, failing on any other kind — a number above all.</summary>
+        internal static string WireString(this JsonValue value)
+        {
+            RequireKind(value, JsonKind.String, "a JSON string (the server member is a C# string)");
+            return value.AsString();
+        }
+
+        /// <summary>The member as a bare JSON integer: not quoted, not a fraction, not an exponent.</summary>
+        internal static long WireLong(this JsonValue value)
+        {
+            RequireInteger(value);
+            return value.AsLong();
+        }
+
+        /// <summary>As <see cref="WireLong"/>, and within the range of a C# <c>int</c>.</summary>
+        internal static int WireInt(this JsonValue value)
+        {
+            var number = WireLong(value);
+            if (number < int.MinValue || number > int.MaxValue)
+            {
+                throw new AssertionException("expected a JSON integer that fits a C# int; the wire carried " + value.ToJson());
+            }
+
+            return (int)number;
+        }
+
+        /// <summary>The member as JSON <c>true</c>/<c>false</c>, failing on <c>1</c>, <c>0</c> or a quoted word.</summary>
+        internal static bool WireBool(this JsonValue value)
+        {
+            RequireKind(value, JsonKind.Bool, "JSON true/false (the server member is a C# bool)");
+            return value.AsBool();
+        }
+
+        /// <summary>The member as an array whose every element is a JSON string.</summary>
+        internal static List<string> WireStrings(this JsonValue value)
+        {
+            RequireKind(value, JsonKind.Array, "a JSON array (the server member is a List<string>)");
+
+            var result = new List<string>(value.Count);
+            var index = 0;
+            foreach (var item in value.Items)
+            {
+                if (item.Kind != JsonKind.String)
+                {
+                    throw new AssertionException("element " + index.ToString(CultureInfo.InvariantCulture)
+                        + " should be a JSON string (the server member is a List<string>); the wire carried "
+                        + Describe(item) + " in " + value.ToJson());
+                }
+
+                result.Add(item.AsString());
+                index++;
+            }
+
+            return result;
+        }
+
+        private static void RequireInteger(JsonValue value)
+        {
+            RequireKind(value, JsonKind.Number, "a bare JSON integer (the server member is a C# long, int or enum)");
+
+            // The binder refuses 1.5 and 1E+21 for an integral member. What it sees is this text:
+            // JsonValue writes a whole double as bare digits ("R" format), which the binder
+            // accepts, so a parsed 1.0 reading back as 1 misses nothing this SDK can put on the wire.
+            var text = value.ToJson();
+            if (text.IndexOfAny(new[] { '.', 'e', 'E' }) >= 0)
+            {
+                throw new AssertionException("expected a bare JSON integer; the wire carried the non-integral number " + text);
+            }
+        }
+
+        private static void RequireKind(JsonValue value, JsonKind kind, string expected)
+        {
+            if (value == null || value.Kind != kind)
+            {
+                throw new AssertionException("expected " + expected + "; the wire carried " + Describe(value));
+            }
+        }
+
+        private static string Describe(JsonValue value)
+        {
+            if (value == null || value.IsNull)
+            {
+                return "nothing (the member is absent or null)";
+            }
+
+            return "a JSON " + value.Kind.ToString().ToLowerInvariant() + ": " + value.ToJson();
         }
     }
 

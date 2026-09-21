@@ -164,7 +164,7 @@ namespace Cyaim.Im.Tests
 
                 var reauth = harness.Socket.LastBody("conn.reauth");
                 Assert.That(reauth, Is.Not.Null, "the SDK has to try renewing before giving up on the call");
-                Assert.That(reauth["token"].AsString(), Is.EqualTo("token-fresh"));
+                Assert.That(reauth["token"].WireString(), Is.EqualTo("token-fresh"));
                 Assert.That(harness.Transports, Has.Count.EqualTo(1), "and it must not drop the socket to do it");
 
                 harness.Socket.Reply("conn.reauth", JsonValue.Null);

@@ -71,6 +71,23 @@ public class UserApi internal constructor(private val connection: ImConnection) 
     /** [unsubscribePresence] for the common call shape. */
     public suspend fun unsubscribePresence(userIds: List<String>): Unit =
         unsubscribePresence(UserIdsRequest(userIds))
+
+    /**
+     * Sets the caller's custom status line; `SetStatusRequest()` clears it.
+     *
+     * **It expires.** The server keeps it for seven days and then drops it without telling anyone,
+     * so set it again on login if it should persist. Subscribers see it as
+     * [PresenceState.customStatus] on `evt.presence`. `1005` when the presence store is down.
+     *
+     * One asymmetry, the same shape as [subscribePresence]'s: this call does **not** check the
+     * tenant's presence flag, while reading the status back through [presence] does. A status set
+     * on a presence-disabled app succeeds and is then unreadable.
+     *
+     * 七天后自动消失（不通知），要常驻就在每次登录时重设。写入不检查 EnablePresence，读取检查。
+     */
+    public suspend fun setStatus(request: SetStatusRequest) {
+        connection.execute("user.setStatus", request.asBody())
+    }
 }
 
 /**
@@ -129,4 +146,16 @@ public class FriendApi internal constructor(private val connection: ImConnection
 
     public suspend fun blockList(request: CursorRequest = CursorRequest()): Page<BlockEntry> =
         connection.request("friend.blockList", request.asBody())
+
+    /**
+     * Sets the remark (the caller's private name for a contact) and optionally the tags.
+     *
+     * Read [SetRemarkRequest] before calling: **a null remark clears the remark**, while null tags
+     * leave the tags alone. `1001` for a missing `userId` or a value past its limit; `1302` when the
+     * user is not a contact. The change reaches the caller's own devices as `evt.friend` with
+     * action `"updated"`; the contact is not told.
+     */
+    public suspend fun setRemark(request: SetRemarkRequest) {
+        connection.execute("friend.setRemark", request.asBody())
+    }
 }

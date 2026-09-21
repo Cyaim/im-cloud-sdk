@@ -294,7 +294,9 @@ public struct MessageOptions: Codable, Sendable, Hashable {
     /// Do not echo this message back to the sender's other devices.
     public var noSelfSync: Bool
 
-    /// Seconds until the server deletes it. `nil` means never.
+    /// **Milliseconds** until the server deletes it, counted from when the server receives it.
+    /// `nil` means never. The server adds this straight to its unix-ms clock (`expireAt = now +
+    /// expireIn`), so a value meant as seconds expires a thousand times too soon.
     public var expireIn: Int64?
 
     /// Skip content moderation. Server-side policy decides whether a client may ask.
@@ -480,6 +482,141 @@ public struct GroupMember: Codable, Sendable, Hashable, Identifiable {
         joinTime = c.imInt64(.joinTime) ?? 0
         joinSource = c.imString(.joinSource)
         extensions = c.imJSONMap(.extensions) ?? [:]
+    }
+}
+
+/// A request to join a group, as `group.applicationList` returns it.
+///
+/// **Every status comes back, not only pending ones** — the server does not filter. For a "waiting
+/// for you" list, keep the rows whose ``status`` is ``ApplicationStatus/pending``. The server never
+/// produces ``ApplicationStatus/expired`` today.
+///
+/// 服务端不按状态过滤，各种状态都会返回；「等你处理」要自己筛 pending。
+public struct GroupApplication: Codable, Sendable, Hashable, Identifiable {
+    public let appId: String
+    public let groupId: String
+
+    /// Who wants to join. Pass it back as ``HandleApplicationRequest/applicantId``.
+    public let applicantId: String
+
+    /// Set when an ordinary member invited ``applicantId`` into a group that needs approval.
+    public let inviterId: String?
+
+    public let reason: String?
+    public let status: ApplicationStatus
+
+    /// Who accepted or rejected it.
+    public let handlerId: String?
+
+    public let handleReason: String?
+
+    /// Unix ms.
+    public let createdAt: Int64
+
+    /// Unix ms. `nil` while pending.
+    public let handledAt: Int64?
+
+    /// The server keeps one row per applicant per group, so the pair is unique.
+    public var id: String { "\(groupId)/\(applicantId)" }
+
+    enum CodingKeys: String, CodingKey {
+        case appId, groupId, applicantId, inviterId, reason, status, handlerId, handleReason
+        case createdAt, handledAt
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        applicantId = try c.decode(String.self, forKey: .applicantId)
+        appId = c.imString(.appId) ?? ""
+        groupId = c.imString(.groupId) ?? ""
+        inviterId = c.imString(.inviterId)
+        reason = c.imString(.reason)
+        status = c.imValue(ApplicationStatus.self, .status) ?? .pending
+        handlerId = c.imString(.handlerId)
+        handleReason = c.imString(.handleReason)
+        createdAt = c.imInt64(.createdAt) ?? 0
+        handledAt = c.imInt64(.handledAt)
+    }
+}
+
+// MARK: - Message extras
+
+/// One entry on a conversation's pinned board, as `msg.pins` returns it.
+///
+/// ``messageId`` arrives as a JSON string, like every message id the server writes, and decodes into
+/// the `Int64` exactly.
+public struct PinnedMessage: Codable, Sendable, Hashable, Identifiable {
+    public let messageId: Int64
+    public let seq: Int64
+
+    /// Who pinned it.
+    public let pinnedBy: String
+
+    /// Unix ms, server clock.
+    public let pinnedAt: Int64
+
+    /// Built fresh when the board is read, so it reflects a recall that happened after the pin
+    /// (`digest` `"[Recalled]"`, `recalled == true`). Tokens such as `"[Image]"` are fixed wire
+    /// values for the client to localise. `msg.pins` always fills it; optional because the server's
+    /// type allows it to be absent.
+    public let brief: MessageBrief?
+
+    public var id: Int64 { messageId }
+
+    enum CodingKeys: String, CodingKey {
+        case messageId, seq, pinnedBy, pinnedAt, brief
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        messageId = c.imInt64(.messageId) ?? 0
+        seq = c.imInt64(.seq) ?? 0
+        pinnedBy = c.imString(.pinnedBy) ?? ""
+        pinnedAt = c.imInt64(.pinnedAt) ?? 0
+        brief = c.imValue(MessageBrief.self, .brief)
+    }
+}
+
+/// `msg.receiptDetail` — who has read one message.
+///
+/// **``totalCount`` includes the sender and ``readUserIds`` never does**, so "read by everyone" is
+/// `readCount == totalCount - 1`, not `readCount == totalCount`. ``totalCount`` is a snapshot taken
+/// at the last receipt, not a live member count.
+///
+/// 发送者计入 totalCount 却不会出现在 readUserIds 里，「全员已读」是 readCount == totalCount - 1。
+public struct MessageReceipt: Codable, Sendable, Hashable, Identifiable {
+    public let appId: String
+    public let conversationId: String
+
+    /// Arrives quoted, decodes exactly.
+    public let messageId: Int64
+
+    /// Never contains the sender. Not truncated: nothing caps this read.
+    public let readUserIds: [String]
+
+    public let readCount: Int
+
+    /// Includes the sender: 2 in a single chat, the member count in a group.
+    public let totalCount: Int
+
+    /// Unix ms. Equal to the message's `createTime` when nobody has read it yet.
+    public let updatedAt: Int64
+
+    public var id: Int64 { messageId }
+
+    enum CodingKeys: String, CodingKey {
+        case appId, conversationId, messageId, readUserIds, readCount, totalCount, updatedAt
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        appId = c.imString(.appId) ?? ""
+        conversationId = c.imString(.conversationId) ?? ""
+        messageId = c.imInt64(.messageId) ?? 0
+        readUserIds = c.imStrings(.readUserIds) ?? []
+        readCount = c.imInt(.readCount) ?? 0
+        totalCount = c.imInt(.totalCount) ?? 0
+        updatedAt = c.imInt64(.updatedAt) ?? 0
     }
 }
 

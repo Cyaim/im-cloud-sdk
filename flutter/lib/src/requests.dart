@@ -394,6 +394,125 @@ class ImReceiptRequest implements ImRequestBody {
       };
 }
 
+// ---------------------------------------------------------------------------- msg (T3)
+
+/// `msg.pin`, `msg.unpin`, `msg.favourite`, `msg.unfavourite`, `msg.burn`. The server's
+/// `ConversationMessageRequest`: one message, named by its conversation and its id.
+///
+/// **[messageId] is a string, and on these endpoints the server insists on it.** The DTO declares
+/// it as a C# `string`, and the gateway's socket binder does not go through the platform's JSON
+/// options: a JSON number for a string property is not coerced, it throws, and the call comes back
+/// `1000` with nothing to say which field was wrong. The package's own reason — a snowflake does
+/// not survive a web `int` — points the same way.
+///
+/// 这里的 messageId 在服务端就是 string；套接字绑定器不做类型转换，发数字会被拒成一个说不出原因的 1000。
+class ImConversationMessageRequest implements ImRequestBody {
+  const ImConversationMessageRequest({required this.conversationId, required this.messageId});
+
+  final String conversationId;
+
+  /// The snowflake as decimal digits, exactly as [ImMessage.messageId] holds it.
+  final String messageId;
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+        'conversationId': conversationId,
+        'messageId': messageId,
+      };
+}
+
+/// `msg.favourites`. The server's `PageRequest`: a cursor and a page size, nothing else.
+class ImPageRequest implements ImRequestBody {
+  const ImPageRequest({this.cursor, this.limit = 20});
+
+  /// From the previous page's [ImPage.nextCursor]. A cursor the server cannot read restarts at page
+  /// one rather than failing.
+  final String? cursor;
+
+  /// `0` or less becomes 20 server-side; anything above 100 becomes 100.
+  final int limit;
+
+  @override
+  Map<String, Object?> toJson() => imBody(<String, Object?>{
+        'cursor': cursor,
+        'limit': limit,
+      });
+}
+
+/// `msg.search`. Full-text search over what the caller can see.
+///
+/// Only [keyword] is required. The other filters are applied **after** the index returns a page, so
+/// a page can come back short — even empty — with [ImPage.hasMore] still true. Page on
+/// [ImPage.nextCursor], never on `items.length`.
+class ImSearchMessagesRequest implements ImRequestBody {
+  const ImSearchMessagesRequest({
+    required this.keyword,
+    this.conversationId,
+    this.contentTypes,
+    this.senderId,
+    this.startTime,
+    this.endTime,
+    this.cursor,
+    this.limit = 20,
+  });
+
+  /// Blank is refused with [ImErrorCode.invalidArgument]. One made only of punctuation or emoji is
+  /// not refused — it returns an empty page.
+  final String keyword;
+
+  /// One conversation. **Without it only the caller's 200 most recently updated conversations are
+  /// searched** (`IM:Search:MaxConversationsPerQuery`), so an old chat is reachable only by naming
+  /// it. A conversation the caller cannot see is [ImErrorCode.forbidden] — a group the caller is not
+  /// in included, which is not [ImErrorCode.notGroupMember] here.
+  final String? conversationId;
+
+  /// Integers on the wire, like every enum in this package.
+  final List<ImMessageContentType>? contentTypes;
+
+  final String? senderId;
+
+  /// Inclusive, against the server's `createTime`, unix ms.
+  final int? startTime;
+
+  /// Inclusive, against the server's `createTime`, unix ms.
+  final int? endTime;
+
+  final String? cursor;
+
+  /// `0` or less becomes 20 server-side; anything above 100 becomes 100.
+  final int limit;
+
+  @override
+  Map<String, Object?> toJson() => imBody(<String, Object?>{
+        'keyword': keyword,
+        'conversationId': conversationId,
+        'contentTypes': contentTypes == null
+            ? null
+            : <int>[for (final ImMessageContentType type in contentTypes!) type.wireValue],
+        'senderId': senderId,
+        'startTime': startTime,
+        'endTime': endTime,
+        'cursor': cursor,
+        'limit': limit,
+      });
+}
+
+/// `msg.receiptDetail`. Who has read one message.
+///
+/// [messageId] is a C# `string` on the server, for the reason [ImConversationMessageRequest] gives.
+class ImReceiptDetailRequest implements ImRequestBody {
+  const ImReceiptDetailRequest({required this.conversationId, required this.messageId});
+
+  final String conversationId;
+  final String messageId;
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+        'conversationId': conversationId,
+        'messageId': messageId,
+      };
+}
+
 // ---------------------------------------------------------------------------- conv (T1/T2)
 
 /// `conv.list`. Incremental by design: pass the largest `updatedAt` you already hold.
@@ -461,6 +580,25 @@ class ImUpdateConversationSettingRequest implements ImRequestBody {
       };
 }
 
+/// `conv.markUnread` (T3). The "remind me later" mark, set or cleared by hand.
+class ImMarkUnreadRequest implements ImRequestBody {
+  const ImMarkUnreadRequest({required this.conversationId, this.unread = true});
+
+  final String conversationId;
+
+  /// True sets the mark, false clears it. **Always sent**: the server reads an absent field as
+  /// `true` — a property initialiser, not a nullable — so a request that left it out could only
+  /// ever set the mark.
+  /// 服务端把缺省读作 true，所以这个字段总是发出去：清除标记必须显式发 false。
+  final bool unread;
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+        'conversationId': conversationId,
+        'unread': unread,
+      };
+}
+
 // ---------------------------------------------------------------------------- user (T1/T2)
 
 /// `user.profile`, `friend.delete`, `friend.unblock`. The server's `UserIdRequest`.
@@ -521,6 +659,18 @@ class ImSubscribePresenceRequest implements ImRequestBody {
         'userIds': userIds,
         'ttlSeconds': ttlSeconds,
       };
+}
+
+/// `user.setStatus` (T3). The caller's own free-text status line — "in a meeting", "on leave".
+class ImSetStatusRequest implements ImRequestBody {
+  const ImSetStatusRequest({this.status});
+
+  /// Trimmed server-side; more than 64 characters is [ImErrorCode.invalidArgument]. **Null or blank
+  /// clears it**, so `const ImSetStatusRequest()` is how a status is removed.
+  final String? status;
+
+  @override
+  Map<String, Object?> toJson() => imBody(<String, Object?>{'status': status});
 }
 
 // ---------------------------------------------------------------------------- friend (T2)
@@ -612,6 +762,36 @@ class ImBlockRequest implements ImRequestBody {
   Map<String, Object?> toJson() => imBody(<String, Object?>{
         'userId': userId,
         'reason': reason,
+      });
+}
+
+/// `friend.setRemark` (T3). What the caller calls a contact, and which of their folders the contact
+/// is filed in. Never shown to the contact.
+///
+/// **The two optional fields are not symmetric, and the asymmetry is the server's.** A null
+/// [remark] *clears* the remark; a null [tags] leaves the tags alone. So changing only the tags
+/// means sending the current remark along with them, or the remark is lost in the same call.
+///
+/// 两个可选字段不对称：remark 为空是清空备注，tags 为空是不动标签。只改标签时要把现有备注一起带上。
+class ImSetRemarkRequest implements ImRequestBody {
+  const ImSetRemarkRequest({required this.userId, this.remark, this.tags});
+
+  /// The contact. Not a contact is [ImErrorCode.notFriend].
+  final String userId;
+
+  /// At most 64 characters — longer is refused with [ImErrorCode.invalidArgument], not truncated.
+  /// Null or blank clears it.
+  final String? remark;
+
+  /// Null leaves the tags as they are; an empty list clears them. At most 20, each non-blank and at
+  /// most 32 characters, or the whole call is [ImErrorCode.invalidArgument].
+  final List<String>? tags;
+
+  @override
+  Map<String, Object?> toJson() => imBody(<String, Object?>{
+        'userId': userId,
+        'remark': remark,
+        'tags': tags,
       });
 }
 
@@ -757,8 +937,9 @@ class ImJoinGroupRequest implements ImRequestBody {
       });
 }
 
-/// `group.memberList`. Always paged, never "give me everyone": a super group holds a hundred
-/// thousand members and materialising that into one frame is a self-inflicted outage.
+/// `group.memberList`, `group.applicationList`. Always paged, never "give me everyone": a super
+/// group holds a hundred thousand members and materialising that into one frame is a
+/// self-inflicted outage.
 class ImGroupCursorRequest implements ImRequestBody {
   const ImGroupCursorRequest({
     required this.groupId,
@@ -766,10 +947,14 @@ class ImGroupCursorRequest implements ImRequestBody {
     this.limit = 50,
   });
 
+  /// For `group.applicationList` an empty string means "every group I manage" — see
+  /// `ImGroupApi.applicationList`.
   final String groupId;
+
   final String? cursor;
 
-  /// Server clamps to 1…200.
+  /// `group.memberList`: server clamps to 1…200. `group.applicationList`: 1…200 is kept and
+  /// anything else — 0, negative, over 200 — becomes 50.
   final int limit;
 
   @override
@@ -777,6 +962,177 @@ class ImGroupCursorRequest implements ImRequestBody {
         'groupId': groupId,
         'cursor': cursor,
         'limit': limit,
+      });
+}
+
+// ---------------------------------------------------------------------------- group (T3)
+
+/// `group.transfer`. Hands the group to another member.
+class ImTransferOwnerRequest implements ImRequestBody {
+  const ImTransferOwnerRequest({required this.groupId, required this.newOwnerId});
+
+  final String groupId;
+
+  /// Must already be a member ([ImErrorCode.notGroupMember] otherwise) and must not be the caller
+  /// ([ImErrorCode.invalidArgument]).
+  final String newOwnerId;
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+        'groupId': groupId,
+        'newOwnerId': newOwnerId,
+      };
+}
+
+/// `group.handleApplication`. Accepts or rejects one join request.
+class ImHandleApplicationRequest implements ImRequestBody {
+  const ImHandleApplicationRequest({
+    required this.groupId,
+    required this.applicantId,
+    required this.accept,
+    this.reason,
+  });
+
+  final String groupId;
+  final String applicantId;
+
+  /// **Required here although the server does not require it: absent means reject.** The C#
+  /// default is `false`, so a body that forgot the field would turn somebody away without anyone
+  /// deciding to. The constructor makes the decision explicit instead.
+  /// 服务端省略即拒绝，所以这里设成必填：忘了写的请求会在没人决定的情况下拒掉一个人。
+  final bool accept;
+
+  /// Stored as the application's `handleReason`.
+  final String? reason;
+
+  @override
+  Map<String, Object?> toJson() => imBody(<String, Object?>{
+        'groupId': groupId,
+        'applicantId': applicantId,
+        'accept': accept,
+        'reason': reason,
+      });
+}
+
+/// `group.setRole`. Promotes a member to admin, or demotes an admin.
+class ImSetRoleRequest implements ImRequestBody {
+  /// [role] must be [ImGroupRole.member] or [ImGroupRole.admin]; anything else fails an assertion
+  /// in a debug build, and is a compile-time error in a `const` one.
+  const ImSetRoleRequest({required this.groupId, required this.userId, required this.role})
+      : assert(
+          role == ImGroupRole.member || role == ImGroupRole.admin,
+          'group.setRole takes ImGroupRole.member or ImGroupRole.admin only. Ownership moves with '
+          'group.transfer, and any other number is stored by the server as a privilege bug.',
+        );
+
+  final String groupId;
+  final String userId;
+
+  /// **[ImGroupRole.member] or [ImGroupRole.admin], and nothing else — checked here, because the
+  /// server does not.** It refuses [ImGroupRole.owner] (`1008`, "use group.transfer") but stores any
+  /// other integer it is given, and two of them are privilege bugs: `0` escapes a group-wide mute
+  /// (only `Member` is muted) and `4` or above counts as a manager that outranks every admin. The
+  /// field is required because the server reads an absent role as `Member` — a demotion should
+  /// never be the result of leaving something out.
+  ///
+  /// The check is an `assert`, so it guards development and compiles away in release; the SDK does
+  /// not refuse the call on the server's behalf.
+  /// 只接受 member / admin：服务端拒 owner，却会原样存下其它任何整数——0 能躲过全员禁言，4 以上比管理员还大。
+  final ImGroupRole role;
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+        'groupId': groupId,
+        'userId': userId,
+        'role': role.wireValue,
+      };
+}
+
+/// `group.mute`. The group-wide switch.
+class ImMuteGroupRequest implements ImRequestBody {
+  const ImMuteGroupRequest({required this.groupId, this.mute = true, this.untilMs});
+
+  final String groupId;
+
+  /// True mutes, false unmutes (and [untilMs] is then ignored). **Always sent**: the server reads an
+  /// absent field as `true`.
+  final bool mute;
+
+  /// Unix ms the mute lasts until. Null with [mute] true is indefinite.
+  ///
+  /// **Never send a time that has already passed: the server reads it as *indefinite*, not as
+  /// "unmute".** Its own comment says the opposite; its code sets the group muted and drops the
+  /// deadline. A value computed as `now + duration` at the moment of the call is safe; one kept from
+  /// an old form state is not. To unmute, send `mute: false`.
+  /// 不要发已经过去的时间：服务端把它当成「无限期」，而不是「解除」。解除请发 mute: false。
+  final int? untilMs;
+
+  @override
+  Map<String, Object?> toJson() => imBody(<String, Object?>{
+        'groupId': groupId,
+        'mute': mute,
+        'untilMs': untilMs,
+      });
+}
+
+/// `group.muteMember`. One member.
+class ImMuteMemberRequest implements ImRequestBody {
+  const ImMuteMemberRequest({required this.groupId, required this.userId, this.untilMs});
+
+  final String groupId;
+  final String userId;
+
+  /// Unix ms the member stays muted until. **Null, or a time in the past, unmutes**; there is no
+  /// indefinite member mute — send a far-future time for one. Note the opposite reading from
+  /// [ImMuteGroupRequest.untilMs], where a past time mutes indefinitely.
+  /// 缺省或过去的时间即解除；没有「无限期禁言个人」，要就发一个很远的时间。与全员禁言的读法正好相反。
+  final int? untilMs;
+
+  @override
+  Map<String, Object?> toJson() => imBody(<String, Object?>{
+        'groupId': groupId,
+        'userId': userId,
+        'untilMs': untilMs,
+      });
+}
+
+/// `group.setNickname`. The name somebody goes by inside one group.
+class ImSetGroupNicknameRequest implements ImRequestBody {
+  const ImSetGroupNicknameRequest({required this.groupId, this.userId, this.nickname});
+
+  final String groupId;
+
+  /// Whose nickname. **Null, empty or the caller's own id means the caller**, which any member may
+  /// set. Anybody else's needs owner or admin *and* outranking them
+  /// ([ImErrorCode.noGroupPermission] / [ImErrorCode.cannotOperateOwner]).
+  final String? userId;
+
+  /// Trimmed; null or blank clears it. Longer than 64 characters is **silently truncated**, not
+  /// refused.
+  final String? nickname;
+
+  @override
+  Map<String, Object?> toJson() => imBody(<String, Object?>{
+        'groupId': groupId,
+        'userId': userId,
+        'nickname': nickname,
+      });
+}
+
+/// `group.announcement`. Replaces the group's announcement.
+class ImAnnouncementRequest implements ImRequestBody {
+  const ImAnnouncementRequest({required this.groupId, this.announcement});
+
+  final String groupId;
+
+  /// Trimmed; null or blank clears it. Longer than 4096 characters is **silently truncated**, not
+  /// refused.
+  final String? announcement;
+
+  @override
+  Map<String, Object?> toJson() => imBody(<String, Object?>{
+        'groupId': groupId,
+        'announcement': announcement,
       });
 }
 
@@ -958,11 +1314,12 @@ class ImSubmitReportRequest implements ImRequestBody {
   Map<String, Object?> toJson() => imBody(<String, Object?>{
         'targetUserId': targetUserId,
         'conversationId': conversationId,
-        // An empty id is omitted rather than sent. On the wire this field is a quoted snowflake,
-        // but on the server it is a 64-bit number, and `""` fails to bind there — while an absent
-        // field is the documented way to say "this is about the account, not one message". A UI
-        // that reports from a screen with no message selected produces exactly that empty string.
-        // 空串按缺省处理：服务端那边它是数字，`""` 绑定不上；而缺省本来就表示「举报账号」。
+        // An empty id is omitted rather than sent. The server reads this field as a string: absent,
+        // blank or "0" means "this is about the account, not one message", digits name that
+        // message, and anything else is refused with 1001. Omitting is the one spelling every
+        // server version has read as the account. A UI that reports from a screen with no message
+        // selected produces exactly that empty string.
+        // 空串按缺省处理：服务端这个字段是字符串，缺省、空白或 "0" 都表示举报账号；省略是各版本都认的写法。
         'messageId': messageId == '' ? null : messageId,
         'category': category,
         'note': note,

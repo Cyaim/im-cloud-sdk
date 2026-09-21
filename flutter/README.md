@@ -222,18 +222,44 @@ endpoint greps straight to the call.
 | Namespace | Methods |
 |---|---|
 | `im.conn` | `heartbeat` `reauth` `sync` |
-| `im.msg` | `send` `sync` `history` `recall` `delete` `typing` `edit` `forward` `react` `receipt` |
-| `im.conv` | `list` `get` `read` `unreadTotal` `setting` `delete` `clear` |
-| `im.user` | `me` `profile` `batchProfile` `updateProfile` `presence` `subscribePresence` `unsubscribePresence` |
-| `im.friend` | `list` `add` `handleRequest` `requestList` `delete` `blockList` `block` `unblock` |
-| `im.group` | `create` `info` `update` `dismiss` `memberList` `joined` `invite` `kick` `quit` `join` |
+| `im.msg` | `send` `sync` `history` `recall` `delete` `typing` `edit` `forward` `react` `receipt` · `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search` `receiptDetail` |
+| `im.conv` | `list` `get` `read` `unreadTotal` `setting` `delete` `clear` · `markUnread` |
+| `im.user` | `me` `profile` `batchProfile` `updateProfile` `presence` `subscribePresence` `unsubscribePresence` · `setStatus` |
+| `im.friend` | `list` `add` `handleRequest` `requestList` `delete` `blockList` `block` `unblock` · `setRemark` |
+| `im.group` | `create` `info` `update` `dismiss` `memberList` `joined` `invite` `kick` `quit` `join` · `transfer` `applicationList` `handleApplication` `setRole` `mute` `muteMember` `setNickname` `announcement` |
 | `im.media` | `uploadTicket` `downloadUrl` |
 | `im.push` | `register` `unregister` `clicked` · plus `setToken` / `clearToken` for the lifecycle above |
 | `im.moderation` | `report` |
+| `im.diag` | `logRequests` `logUploaded` — the client drives both; ordinary applications never call them |
 
-That is contract tiers **T0, T1 and T2 complete** — session floor, 1:1 chat MVP, social graph and
-groups. Every method takes exactly one request object named for the server DTO, so the server
-adding an optional field stays additive instead of breaking your call sites.
+That is contract tiers **T0, T1, T2 and T3 complete** — session floor, 1:1 chat MVP, social graph
+and groups, and competitive parity: 73 of the server's 107 endpoints. The names after the `·` are
+T3. The 34 endpoints of T4 go through `invoke()` until they are typed. Every method takes exactly
+one request object named for the server DTO, so the server adding an optional field stays
+additive instead of breaking your call sites.
+
+### Tier T3 — what the signatures do not say
+
+Every T3 method carries its full list of refusals in its doc comment. These are the ones that bite:
+
+- **Message ids leave as strings, and the server insists.** The T3 request bodies declare
+  `messageId` as a string server-side, and the socket refuses a JSON number for one with an opaque
+  `1000` rather than a `1001` naming the field. The id types here are `String` for that reason and
+  for the older one — a snowflake does not survive a web `int`.
+- **`msg.search` is off unless the tenant turned it on** (`1203`), needs the search add-on (`1204`),
+  and is rate limited per user (`1003`, 30 a minute by default) **before** either check — so calls
+  against a tenant with search off still spend the budget. Debounce search-as-you-type.
+- **`msg.receiptDetail`'s `totalCount` includes the sender**; `readUserIds` never does. Fully read is
+  `readCount == totalCount - 1`. The read itself has no size cap: in groups above the tenant's
+  receipt limit it is `msg.receipt` that refuses, so nothing is recorded to read.
+- **`group.mute` with an `untilMs` in the past mutes indefinitely**, while `group.muteMember` with one
+  in the past unmutes. `mute` and `conv.markUnread`'s `unread` both default to `true`, and this
+  package always sends them.
+- **`group.setRole` asserts `member` or `admin`.** The server refuses `owner` but stores any other
+  integer, and `0` or `4` are privilege bugs rather than roles.
+- **`group.applicationList` returns every status**, not only pending — filter on `status` yourself.
+  Called with no argument it lists across every group you manage.
+- **`friend.setRemark` without `remark` clears the remark**, while leaving out `tags` keeps them.
 
 Client-side members:
 
@@ -254,16 +280,15 @@ a screen that stops listening stops costing anything.
 
 ### `invoke` — the escape hatch
 
-112 endpoints and five release trains mean the typed surface will always trail the server. `invoke`
+107 endpoints and five release trains mean the typed surface will always trail the server. `invoke`
 is the difference between "wait for the next SDK release" and "ship on Friday". It shares one code
 path with every typed method — same timeouts, same cancellation, same error mapping — and it never
 touches a cursor.
 
 ```dart
-// group.transfer is tier T3 and not typed yet:
-await im.invoke<void>('group.transfer', <String, Object?>{
-  'groupId': groupId,
-  'newOwnerId': userId,
+// msg.cancelScheduled is tier T4 and not typed yet:
+await im.invoke<void>('msg.cancelScheduled', <String, Object?>{
+  'scheduleId': scheduleId,
 });
 ```
 
@@ -339,9 +364,14 @@ dart pub get
 dart test
 ```
 
-59 cases, no Flutter toolchain required — the suite runs under the plain Dart SDK, which is worth
+100 cases, no Flutter toolchain required — the suite runs under the plain Dart SDK, which is worth
 preserving. It drives a fake socket, because every behaviour worth testing here is defined by what
 happens when a socket dies and a real one cannot be made to die on cue. The 26 conformance cases
 from `sdk/CONTRACT.md` §10 are named and numbered in `test/cursor_test.dart`, `test/push_test.dart`,
 `test/error_test.dart` and `test/ordering_test.dart`; the backoff is checked statistically, because
 5000 draws is the only honest way to tell full jitter from a fixed delay.
+
+`test/t3_test.dart` pins every T3 request body on the wire — key set, values and JSON kind —
+because a field of the wrong kind is what the server's socket binder turns into an unexplained
+`1000`; it also drives all twenty T3 methods and compares the targets that reach the wire with the
+inventory's own T3 list, so "T3 is complete" is something the suite can fail on.

@@ -123,5 +123,32 @@ namespace Cyaim.Im
             Require(request.ConversationId, "conversationId");
             return ExecuteAsync("conv.clear", request, cancellationToken);
         }
+
+        /// <summary>
+        /// Marks a conversation unread by hand, or clears that mark — the "mark as unread" swipe.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// It does not move the read cursor, so the other side's receipts are unaffected. It shows up
+        /// as <see cref="ImConversationView.ManuallyUnread"/>, and the server reports an
+        /// <see cref="ImConversationView.UnreadCount"/> of 1 where it would otherwise be 0.
+        /// <see cref="ReadAsync(ImReadRequest,CancellationToken)"/>, <c>conv.delete</c> and
+        /// <c>conv.clear</c> all clear the mark.
+        /// </para>
+        /// <para>
+        /// Setting the value it already has succeeds and sends nothing; a change reaches this user's
+        /// other devices as <c>evt.conversationUpdate</c> with kind <c>"unread"</c>. Access errors:
+        /// <see cref="ImErrorCode.Forbidden"/>, and <see cref="ImErrorCode.NotGroupMember"/> in a
+        /// group.
+        /// </para>
+        /// </remarks>
+        public Task MarkUnreadAsync(
+            ImMarkUnreadRequest request,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            RequireRequest(request);
+            Require(request.ConversationId, "conversationId");
+            return ExecuteAsync("conv.markUnread", request, cancellationToken);
+        }
     }
 }

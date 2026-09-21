@@ -447,7 +447,14 @@ public struct MessageDraft: Encodable, Sendable, Hashable {
     public var quoteMessageId: Int64?
 
     /// Per-message switches the server understands, e.g. `["offlinePush": false]`.
-    public var options: [String: JSONValue]?
+    ///
+    /// Two paths read this differently. `invoke("msg.send", body: draft)` writes the dictionary as
+    /// given. `send(_:)` goes through ``request``, which reads it with ``MessageOptions``' decoder:
+    /// only the switches ``MessageOptions`` models survive, and a value of the wrong JSON kind makes
+    /// the whole dictionary fall back to the server's defaults. ``MessageOptions`` models every option
+    /// the server reads today, and the server drops an unknown nested key anyway, so nothing it would
+    /// act on is lost — until the server adds an option this SDK version does not know.
+    /// `invoke` 原样写出；`send(_:)` 只保留 MessageOptions 建模的开关，类型不对时整组回落到默认值。
 
     /// The device clock, echoed back for display. The server never orders by it.
     public var sendTime: Int64
@@ -489,6 +496,10 @@ public struct MessageDraft: Encodable, Sendable, Hashable {
     /// is a genuinely better way to say "to this user" than three mutually exclusive optionals.
     /// This is the bridge: `im.msg.send(_:)` takes ``SendMessageRequest`` because §4.3 names the
     /// request object after the server DTO, and the draft converts into one.
+    ///
+    /// `options` crosses as well, read through ``MessageOptions``' own decoder: a switch the draft
+    /// leaves out takes the default the server would have applied anyway. It used to be left behind
+    /// here, so `send(_:)` quietly sent every draft with the defaults whatever it asked for.
     public var request: SendMessageRequest {
         var built = SendMessageRequest(
             clientMsgId: clientMsgId,
@@ -497,6 +508,7 @@ public struct MessageDraft: Encodable, Sendable, Hashable {
             mentionAll: mentionAll,
             mentionedUserIds: mentionedUserIds,
             quoteMessageId: quoteMessageId,
+            options: options.flatMap { try? JSONValue.object($0).decoded(as: MessageOptions.self) },
             sendTime: sendTime,
             extensions: extensions
         )
@@ -531,7 +543,8 @@ public struct MessageDraft: Encodable, Sendable, Hashable {
 
         if mentionAll { try container.encode(true, forKey: .mentionAll) }
         try container.encodeIfPresent(mentionedUserIds, forKey: .mentionedUserIds)
-        try container.encodeIfPresent(quoteMessageId, forKey: .quoteMessageId)
+        // Quoted: the server's field is `string?`. See ``RecallMessageRequest``.
+        try container.encodeIfPresent(quoteMessageId.map { String($0) }, forKey: .quoteMessageId)
         try container.encodeIfPresent(options, forKey: .options)
         try container.encodeIfPresent(extensions, forKey: .extensions)
     }

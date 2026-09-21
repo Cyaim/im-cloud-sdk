@@ -111,19 +111,23 @@ class ImClient {
   /// `conn.*` — heartbeat, reauth, sync.
   late final ImConnApi conn;
 
-  /// `msg.*` — send, sync, history, recall, delete, typing, edit, forward, react, receipt.
+  /// `msg.*` — send, sync, history, recall, delete, typing, edit, forward, react, receipt; and
+  /// pin, unpin, pins, favourite, unfavourite, favourites, burn, search, receiptDetail (T3).
   late final ImMsgApi msg;
 
-  /// `conv.*` — list, get, read, unreadTotal, setting, delete, clear.
+  /// `conv.*` — list, get, read, unreadTotal, setting, delete, clear, markUnread.
   late final ImConvApi conv;
 
-  /// `user.*` — me, profile, batchProfile, updateProfile, presence, subscribe/unsubscribe.
+  /// `user.*` — me, profile, batchProfile, updateProfile, presence, subscribe/unsubscribe,
+  /// setStatus.
   late final ImUserApi user;
 
-  /// `friend.*` — contacts, applications, blocklist.
+  /// `friend.*` — contacts, applications, blocklist, remarks.
   late final ImFriendApi friend;
 
-  /// `group.*` — create, info, update, dismiss, memberList, joined, invite, kick, quit, join.
+  /// `group.*` — create, info, update, dismiss, memberList, joined, invite, kick, quit, join; and
+  /// the administration calls of T3: transfer, applicationList, handleApplication, setRole, mute,
+  /// muteMember, setNickname, announcement.
   late final ImGroupApi group;
 
   /// `media.*` — upload tickets and download URLs.
@@ -463,10 +467,9 @@ class ImClient {
   /// returns messages and moves nothing.
   ///
   /// ```dart
-  /// // group.transfer is T3 and not typed yet:
-  /// await im.invoke<void>('group.transfer', <String, Object?>{
-  ///   'groupId': groupId,
-  ///   'newOwnerId': userId,
+  /// // msg.cancelScheduled is T4 and not typed yet:
+  /// await im.invoke<void>('msg.cancelScheduled', <String, Object?>{
+  ///   'scheduleId': scheduleId,
   /// });
   /// ```
   Future<T> invoke<T>(String target, [Object? body, ImCancelToken? cancel]) =>

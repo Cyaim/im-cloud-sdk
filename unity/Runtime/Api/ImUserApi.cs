@@ -123,5 +123,34 @@ namespace Cyaim.Im
             RequireRequest(request);
             return ExecuteAsync("user.unsubscribePresence", request, cancellationToken);
         }
+
+        /// <summary>
+        /// Sets the signed-in user's free-text status — "in a raid", "back at 9" — or clears it.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Called with no request, or with a null or blank <see cref="ImSetStatusRequest.Status"/>,
+        /// it clears the status. Longer than 64 characters after trimming is refused with
+        /// <see cref="ImErrorCode.InvalidArgument"/>. Fails with
+        /// <see cref="ImErrorCode.ServiceUnavailable"/> when the presence store is down.
+        /// </para>
+        /// <para>
+        /// <b>It expires.</b> The server keeps a status for seven days and then drops it silently,
+        /// so set it again at login if it is meant to persist. Subscribers see it as
+        /// <see cref="ImPresenceState.CustomStatus"/> on <see cref="ImPushTarget.Presence"/>. Like
+        /// <see cref="SubscribePresenceAsync(ImSubscribePresenceRequest,CancellationToken)"/>, this
+        /// call does not check the tenant's presence switch — but reading the status back through
+        /// <see cref="PresenceAsync(ImUserIdsRequest,CancellationToken)"/> does.
+        /// </para>
+        /// </remarks>
+        public Task SetStatusAsync(
+            ImSetStatusRequest request = null,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            return ExecuteAsync(
+                "user.setStatus",
+                request != null ? request : new ImSetStatusRequest(),
+                cancellationToken);
+        }
     }
 }

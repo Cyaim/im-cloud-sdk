@@ -158,20 +158,43 @@ report can be grepped rather than translated.
 | Namespace | Methods |
 |---|---|
 | `im.conn` | `heartbeat` `reauth` `sync` — the SDK drives all three; public for the odd case |
-| `im.msg` | `send` `sync` `history` `recall` `delete` `edit` `forward` `react` `receipt` `typing` |
-| `im.conv` | `list` `get` `read` `setting` `delete` `clear` `unreadTotal` |
-| `im.user` | `me` `profile` `batchProfile` `updateProfile` `presence` `subscribePresence` `unsubscribePresence` |
-| `im.friend` | `list` `add` `handleRequest` `requestList` `delete` `blockList` `block` `unblock` |
-| `im.group` | `create` `info` `update` `dismiss` `memberList` `joined` `invite` `kick` `quit` `join` |
+| `im.msg` | `send` `sync` `history` `recall` `delete` `edit` `forward` `react` `receipt` `typing` · `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search` `receiptDetail` |
+| `im.conv` | `list` `get` `read` `setting` `delete` `clear` `unreadTotal` · `markUnread` |
+| `im.user` | `me` `profile` `batchProfile` `updateProfile` `presence` `subscribePresence` `unsubscribePresence` · `setStatus` |
+| `im.friend` | `list` `add` `handleRequest` `requestList` `delete` `blockList` `block` `unblock` · `setRemark` |
+| `im.group` | `create` `info` `update` `dismiss` `memberList` `joined` `invite` `kick` `quit` `join` · `transfer` `applicationList` `handleApplication` `setRole` `mute` `muteMember` `setNickname` `announcement` |
 | `im.media` | `uploadTicket` `downloadUrl` |
 | `im.push` | `register` `unregister` `clicked` `setToken` |
 | `im.moderation` | `report` |
 | `im.diag` | `logRequests` `logUploaded` — the client drives both; ordinary applications never call them |
 | `im.desk` | `request` `accept` `transfer` `close` `status` `queue` `rate` `canned` `suggest` |
 
-That is tiers **T0, T1 and T2 in full, plus the whole of `desk.*` from T4** — 62 of the server's 114
-endpoints, verified against `sdk/endpoint-inventory.json` by the test suite rather than counted by
-hand. The rest of T3 and T4 goes through `invoke()` until it is typed.
+That is tiers **T0, T1, T2 and T3 in full, plus the whole of `desk.*` from T4** — 82 of the
+server's 107 endpoints, verified against `sdk/endpoint-inventory.json` by the test suite rather than
+counted by hand. The names after the `·` are T3. The other 25 endpoints of T4 go through `invoke()`
+until they are typed.
+
+### Tier T3 — what the signatures do not say
+
+Every T3 method carries its full list of refusals in its doc comment. These are the ones that bite:
+
+- **Message ids leave as strings, and the server insists.** The T3 request bodies declare
+  `messageId` as a string server-side, and the socket refuses a JSON number for one with an opaque
+  `1000` rather than a `1001` naming the field. The id types here are `string` for that reason and
+  for the older one — a snowflake does not survive a JavaScript number.
+- **`msg.search` is off unless the tenant turned it on** (`1203`), needs the search add-on (`1204`),
+  and is rate limited per user (`1003`, 30 a minute by default) **before** either check — so calls
+  against a tenant with search off still spend the budget. Debounce search-as-you-type.
+- **`msg.receiptDetail`'s `totalCount` includes the sender**; `readUserIds` never does. Fully read is
+  `readCount === totalCount - 1`. The read itself has no size cap: in groups above the tenant's
+  receipt limit it is `msg.receipt` that refuses, so nothing is recorded to read.
+- **`group.mute` with an `untilMs` in the past mutes indefinitely**, while `group.muteMember` with one
+  in the past unmutes. `mute` and `conv.markUnread`'s `unread` both default to `true` when omitted.
+- **`group.setRole` is typed to `Member` or `Admin` only.** The server refuses `Owner` but stores
+  any other integer, and `0` or `4` are privilege bugs rather than roles.
+- **`group.applicationList` returns every status**, not only pending — filter on `status` yourself.
+  Called with no argument it lists across every group you manage.
+- **`friend.setRemark` without `remark` clears the remark**, while leaving out `tags` keeps them.
 
 Client-level:
 
@@ -201,13 +224,13 @@ returns the original result rather than a second message.
 
 ### `invoke()` — the escape hatch
 
-With 114 endpoints and five release trains, the typed surface will always trail the server. `invoke`
+With 107 endpoints and five release trains, the typed surface will always trail the server. `invoke`
 is permanent, shares the typed methods' code path exactly (same timeouts, cancellation and error
 mapping), and never touches a cursor.
 
 ```ts
-// group.setRole is tier T3 and not typed yet:
-await im.invoke<void>('group.setRole', { groupId, userId: 'bob', role: 2 });
+// msg.cancelScheduled is tier T4 and not typed yet:
+await im.invoke<void>('msg.cancelScheduled', { scheduleId });
 ```
 
 ## Customer-service desk
@@ -366,8 +389,10 @@ Three things are checked in ways worth knowing about:
   `MAX_DELAY_MS` are asserted against the values the other SDKs use, since a fleet of mixed clients
   only de-synchronises evenly if every SDK draws from the same interval.
 - **Tier coverage is measured, not claimed.** `coverage.test.ts` drives every typed method with a
-  recording invoker and compares the targets against `sdk/endpoint-inventory.json`, so "T2 is
-  complete" is something the suite can fail on.
+  recording invoker and compares the targets against `sdk/endpoint-inventory.json`, so "T3 is
+  complete" is something the suite can fail on. `t3.test.ts` then pins every T3 request body on
+  the wire — key set, values and JSON kind — because a field of the wrong kind is what the server's
+  socket binder turns into an unexplained `1000`.
 - **Adoption ordering is tested with a store that blocks inside `save`**, so "the next `conn.sync`
   page had not gone out yet" is observed rather than inferred — the ordering it asserts is one no
   amount of polling could see.

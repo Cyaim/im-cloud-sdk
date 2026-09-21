@@ -60,9 +60,9 @@ namespace Cyaim.Im.Tests
 
                 var body = harness.Socket.LastBody("push.register");
                 Assert.That(body, Is.Not.Null);
-                Assert.That(body["provider"].AsString(), Is.EqualTo("apns"));
-                Assert.That(body["token"].AsString(), Is.EqualTo("abc123"));
-                Assert.That(body["language"].AsString(), Is.EqualTo("en-GB"));
+                Assert.That(body["provider"].WireString(), Is.EqualTo("apns"));
+                Assert.That(body["token"].WireString(), Is.EqualTo("abc123"));
+                Assert.That(body["language"].WireString(), Is.EqualTo("en-GB"));
                 Assert.That(body.Has("userId"), Is.False, "the server would ignore it; sending it is a lie");
                 Assert.That(body.Has("deviceId"), Is.False);
             }
@@ -143,8 +143,8 @@ namespace Cyaim.Im.Tests
 
                 var body = harness.Socket.LastBody("push.register");
                 Assert.That(body, Is.Not.Null);
-                Assert.That(body["token"].AsString(), Is.EqualTo("oem-token"));
-                Assert.That(body["provider"].AsString(), Is.EqualTo("xiaomi"),
+                Assert.That(body["token"].WireString(), Is.EqualTo("oem-token"));
+                Assert.That(body["provider"].WireString(), Is.EqualTo("xiaomi"),
                     "Android fragments across five OEM channels and the server cannot guess which one");
             }
         }
@@ -166,7 +166,7 @@ namespace Cyaim.Im.Tests
                 harness.Pump();
 
                 Assert.That(harness.Socket.CountOf("push.register"), Is.EqualTo(2));
-                Assert.That(harness.Socket.LastBody("push.register")["token"].AsString(), Is.EqualTo("second"));
+                Assert.That(harness.Socket.LastBody("push.register")["token"].WireString(), Is.EqualTo("second"));
             }
         }
 

@@ -8,6 +8,19 @@ to ask which platform.
 
 ## [Unreleased]
 
+### Changed on the server (2026-09-21)
+
+- `moderation.report` `messageId` and `msg.translate` `messageIds` are strings on the server now
+  (they were `long` / `List<long>`, which refused the quoted ids SDKs send). The typed calls send
+  strings; a raw `invoke` that sends either as a JSON number is now refused with `status 1` /
+  `code 1000`. On `moderation.report`, absent, blank or `"0"` reports the account and any other
+  unreadable id is refused with 1001.
+- Nested request objects (`options`, `pushConfig`, `setting`, group updates) bind as the SDKs send
+  them since the same day; until then every nested option was dropped. Two of them are authority,
+  decided by the credential: from a client, a `msg.send` whose `options.pushConfig` has a non-empty
+  `title` or `body` is refused with 1103, and so is an image, voice, video or file message with
+  `persistent: false` or `onlineOnly: true` while the app moderates content. See CONTRACT.md §2.
+
 ### Fixed
 
 - **This assembly did not compile.** Two deprecated overloads on `ImClient` — `RecallAsync` and
@@ -17,9 +30,40 @@ to ask which platform.
   whole assembly sat broken for as long as nobody opened it in an editor. Fixed, and
   `IM.Tests.UnitySdkCompile` now compiles `Runtime/` against a hand-written UnityEngine shim as part
   of the server solution, so it cannot happen again.
+- **Every send that quoted a message failed.** `ImSendRequest.QuoteMessageId` went on the wire as
+  a JSON number, while the server declares `quoteMessageId` a `string?` and the gateway's socket
+  binder refuses a number for a string member: the call answered `1000 InternalError` before the
+  endpoint ran. It is now written as the decimal string of the id; the property stays a `long?`,
+  so an `ImMessage.MessageId` still goes in unconverted. The suite's request assertions now read
+  through kind-strict helpers (`WireString` / `WireLong` / `WireInt` / `WireBool` /
+  `WireStrings`), because `JsonValue.AsString()` returns the same digits for `7` and `"7"` — which
+  is how the existing tests could not have seen this. All 73 typed endpoints' request members were
+  audited against the server's C# types; this was the only one of the wrong kind.
 
 ### Added
 
+- **Tier T3 typed — all twenty endpoints.** `im.Msg.PinAsync` / `UnpinAsync` / `PinsAsync` /
+  `FavouriteAsync` / `UnfavouriteAsync` / `FavouritesAsync` / `BurnAsync` / `SearchAsync` /
+  `ReceiptDetailAsync`, `im.Conv.MarkUnreadAsync`, `im.User.SetStatusAsync`,
+  `im.Friend.SetRemarkAsync`, and `im.Group.TransferAsync` / `ApplicationListAsync` /
+  `HandleApplicationAsync` / `SetRoleAsync` / `MuteAsync` / `MuteMemberAsync` /
+  `SetNicknameAsync` / `AnnouncementAsync`. With T0–T2 that is 73 of the server's 107 endpoints;
+  the 34 of T4 stay on `InvokeAsync`. New request types carry the server DTO names
+  (`ImConversationMessageRequest`, `ImPageRequest`, `ImSearchMessagesRequest`,
+  `ImReceiptDetailRequest`, `ImMarkUnreadRequest`, `ImSetStatusRequest`, `ImSetRemarkRequest`,
+  `ImTransferOwnerRequest`, `ImHandleApplicationRequest`, `ImSetRoleRequest`,
+  `ImMuteGroupRequest`, `ImMuteMemberRequest`, `ImSetGroupNicknameRequest`,
+  `ImAnnouncementRequest`), and three new payloads decode the answers (`ImPinnedMessage`,
+  `ImMessageReceipt`, `ImGroupApplication`). Three places refuse input before it is sent, because
+  the server would accept it and do the wrong thing: a message id that is not the digits of a
+  positive integer (`msg.unpin` and `msg.unfavourite` answer success for one), a
+  `HandleApplicationAsync` with `Accept` left null (the server reads that as a rejection, and it
+  cannot be undone), and a `SetRoleAsync` with any role but `Member` or `Admin` (the server stores
+  any other integer, and `0` or `4` are privilege bugs). A `SearchAsync` with a blank keyword
+  throws too: the server refuses it, but only after its rate limiter has charged the call to the
+  user's per-minute search budget. Message ids leave as strings, which the
+  server's socket binder requires for these endpoints; the ids in the answers are read back into
+  `long` without passing through a double, like every other message id in this SDK.
 - **`LogStore` and the device log (ADR-003).** `im.Diag`, an `IImLogStore` option with
   `ImLogStore.InMemory()` as its default and `ImLogStore.File(path)` for when the studio has decided
   where its players' runtime detail may be written. `im.Log` takes the game's own lines. Every

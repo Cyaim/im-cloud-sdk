@@ -8,12 +8,10 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 
 /**
  * `moderation.report` — the half of app-store review that `friend.block` does not cover.
@@ -71,13 +69,11 @@ class ModerationTest {
         assertEquals(null, sent.bodyStringOrNull("reporterId"))
         assertEquals(null, sent.bodyStringOrNull("userId"))
 
-        val messageId = sent.body.getValue("messageId").jsonPrimitive
-        assertTrue(
-            messageId.isString,
-            "the id has to leave quoted: as a JSON number this one is 38 times past what a " +
-                "JavaScript client can hold, and the platform writes every message id as a string",
-        )
-        assertEquals(bigId.toString(), messageId.content)
+        // Quoted, because the server's SubmitReportRequest.MessageId is a `string?` and the socket
+        // binder refuses a JSON number there with 1000. (Until the server moved it off `long`, this
+        // assertion was pinning the one request on which quoting was the defect: every report about
+        // a message was refused. It is right now because the server changed, not the SDK.)
+        assertEquals(bigId.toString(), sent.bodyString("messageId"))
 
         val receipt = call.await()
         assertEquals("rp_7f3c", receipt.reportId)
@@ -100,7 +96,7 @@ class ModerationTest {
         runCurrent()
 
         val sent = gateway.latest.requestsTo("moderation.report").single()
-        assertEquals("0", sent.body.getValue("messageId").jsonPrimitive.content)
+        assertEquals("0", sent.bodyString("messageId"), "the server reads a quoted 0 as \"the account\"")
         assertEquals("other", sent.bodyString("category"), "the server's own default, said out loud")
         assertEquals("rp_7f3c", call.await().reportId)
     }

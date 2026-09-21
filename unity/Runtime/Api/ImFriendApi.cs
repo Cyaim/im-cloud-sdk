@@ -123,5 +123,29 @@ namespace Cyaim.Im
         {
             return UnblockAsync(new ImUserIdRequest(userId), cancellationToken);
         }
+
+        /// <summary>Sets the caller's private remark and tags for one contact.</summary>
+        /// <remarks>
+        /// <para>
+        /// <b>Leaving <see cref="ImSetRemarkRequest.Remark"/> null clears the remark</b>, while
+        /// leaving <see cref="ImSetRemarkRequest.Tags"/> null keeps the tags — so to change only the
+        /// tags, send the current remark back with them. An empty tag list clears the tags.
+        /// </para>
+        /// <para>
+        /// Refused with <see cref="ImErrorCode.InvalidArgument"/> for a remark over 64 characters
+        /// (refused, not truncated), more than 20 tags, or a tag that is blank or over 32
+        /// characters; with <see cref="ImErrorCode.NotFriend"/> when the user is not a contact. The
+        /// change reaches only the caller's own devices, as <see cref="ImPushTarget.Friend"/> with
+        /// action <c>"updated"</c>.
+        /// </para>
+        /// </remarks>
+        public Task SetRemarkAsync(
+            ImSetRemarkRequest request,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            RequireRequest(request);
+            Require(request.UserId, "userId");
+            return ExecuteAsync("friend.setRemark", request, cancellationToken);
+        }
     }
 }

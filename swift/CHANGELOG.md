@@ -13,8 +13,36 @@ First published release. The version is deliberately **0.9.0** rather than 1.0.0
 reserved for tiers 0 and 1 complete on all five SDKs, and until then the number would be a promise
 the family does not keep. Implements client contract **1.0**.
 
+### Changed on the server (2026-09-21)
+
+- `moderation.report` `messageId` and `msg.translate` `messageIds` are strings on the server now
+  (they were `long` / `List<long>`, which refused the quoted ids SDKs send). The typed calls send
+  strings; a raw `invoke` that sends either as a JSON number is now refused with `status 1` /
+  `code 1000`. On `moderation.report`, absent, blank or `"0"` reports the account and any other
+  unreadable id is refused with 1001.
+- Nested request objects (`options`, `pushConfig`, `setting`, group updates) bind as the SDKs send
+  them since the same day; until then every nested option was dropped. Two of them are authority,
+  decided by the credential: from a client, a `msg.send` whose `options.pushConfig` has a non-empty
+  `title` or `body` is refused with 1103, and so is an image, voice, video or file message with
+  `persistent: false` or `onlineOnly: true` while the app moderates content. See CONTRACT.md §2.
+
 ### Fixed
 
+- **Recall, edit, delete, forward, react and read receipts work again.** `RecallMessageRequest`,
+  `EditMessageRequest`, `ReactRequest`, `DeleteMessagesRequest`, `ForwardMessagesRequest` and
+  `ReceiptRequest` wrote their message ids as JSON numbers, and so did `SendMessageRequest`'s
+  `quoteMessageId` and `threadRootId` and `MessageDraft`'s `quoteMessageId`. The server declares
+  every one of them `string`, and the gateway binds each field by its C# type without converting,
+  so each of those calls came back status `1`, `1000 InternalError`, before the endpoint ran — and
+  a send that quoted or threaded a message failed outright. They are now written as quoted strings.
+  The properties stay `Int64`, so `ImMessage.messageId` still goes straight in; nothing changes at a
+  call site. `RequestWireKindTests` compares every T0–T2 request body whole, kind included.
+- **`send(_ draft:)` no longer drops the draft's `options`.** `MessageDraft.request` left them
+  behind, so every draft went out with the default switches whatever it asked for. They now cross
+  through `MessageOptions`' own decoder: a switch the draft leaves out takes the server's default.
+- `MessageOptions.expireIn` was documented as seconds. The server adds it to its millisecond clock,
+  so it is **milliseconds**, and a value written as seconds expired the message a thousand times too
+  soon.
 - **Cold start no longer loses messages.** The client now keeps two cursors per conversation — the
   `seq` it has handed the application (`delivered`, in memory) and the `seq` the application has
   told it is durably stored (`committed`, in the cursor store) — and reports the second one in
@@ -44,6 +72,10 @@ the family does not keep. Implements client contract **1.0**.
   `1005` claims the call was never delivered, and the SDK does not know that.
 - `JSONValue.decoded(as:)` no longer declares a generic type inside a generic function, which the
   Swift 6 frontend rejects outright on the corelibs platforms.
+- `invoke(_:body:as: EmptyBody.self)` now succeeds on an acknowledgement. The gateway omits `data`
+  on a reply that has none, and the escape hatch threw `1000 "… returned no payload"` for exactly
+  the call its own documentation used as the example — so every write endpoint reached through
+  `invoke` reported failure after it had succeeded.
 
 ### Added
 
@@ -75,6 +107,31 @@ the family does not keep. Implements client contract **1.0**.
 - **Typed methods for all of tiers 0, 1 and 2 — 51 endpoints**, grouped into namespaces named for
   the target prefix: `im.conn`, `im.msg`, `im.conv`, `im.user`, `im.media`, `im.push`, `im.friend`,
   `im.group`, `im.moderation`. Every method takes one request object named for the server DTO.
+- **Tier 3, competitive parity — all 20 endpoints typed**, on the namespaces that already existed:
+  `im.msg.pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search`
+  `receiptDetail`; `im.conv.markUnread`; `im.user.setStatus`; `im.friend.setRemark`;
+  `im.group.transfer` `applicationList` `handleApplication` `setRole` `mute` `muteMember`
+  `setNickname` `announcement`.
+  - Request types `ConversationMessageRequest`, `ReceiptDetailRequest`, `PageRequest`,
+    `SearchMessagesRequest`, `MarkUnreadRequest`, `SetStatusRequest`, `SetRemarkRequest`,
+    `TransferOwnerRequest`, `HandleApplicationRequest`, `SetRoleRequest`, `MuteGroupRequest`,
+    `MuteMemberRequest`, `SetGroupNicknameRequest`, `AnnouncementRequest`; payload types
+    `PinnedMessage`, `MessageReceipt`, `GroupApplication`. `msg.pins` reuses
+    `ConversationIdRequest` and `group.applicationList` reuses `GroupCursorRequest`, defaulting to an
+    empty `groupId` — "every group I manage".
+  - **The message id leaves quoted.** `ConversationMessageRequest` and `ReceiptDetailRequest` keep
+    an `Int64` property, so `ImMessage.messageId` goes straight in, and write it as a JSON string:
+    the server's field is a `string`, and the gateway refuses a JSON number there with `1000`.
+    The older `msg.*` requests now do the same; see **Fixed**.
+  - **`im.group.setRole` throws before sending** anything but `.member` or `.admin` — `.owner` as
+    `1008` (use `group.transfer`, the server's own answer), anything else as `1001` — because the
+    server stores any other integer it is given, and `0` escapes a group-wide mute while `4` or more
+    outranks the admins.
+  - Destructive-when-absent fields carry no default: `SetRemarkRequest.remark`,
+    `SetStatusRequest.status`, `SetGroupNicknameRequest.nickname`, `AnnouncementRequest.announcement`
+    and `MuteMemberRequest.untilMs` clear or unmute when `nil`, and `HandleApplicationRequest.accept`
+    and `SetRoleRequest.role` would reject or demote when absent. Each has to be written at the call
+    site.
 - Payload types: `UserProfile`, `PresenceState`, `MediaUploadTicket`, `Group`, `GroupMember`,
   `Friend`, `FriendRequest`, `BlockEntry`, `ReportReceipt`, `ConversationSetting`, `MessageOptions`,
   `PushConfig`, and the open enums `MuteMode`, `MessageStatus`, `MessagePriority`,
@@ -108,6 +165,8 @@ the family does not keep. Implements client contract **1.0**.
 
 ### Known gaps
 
-- Tiers 3 and 4 (39 endpoints: group administration, pins, favourites, search, calls, E2EE, live
-  rooms, service desk, AI streaming, scheduling, conversation folders) are reachable through
-  `invoke(_:body:as:)` and are not yet typed.
+- Tier 4 (34 endpoints: live rooms, service desk, the E2EE key directory, AI streaming and
+  translation, scheduling, conversation folders) is reachable through `invoke(_:body:as:)` and is
+  not yet typed.
+- `evt.messageUpdate` with `kind: "burn"` — what `im.msg.burn` makes the server push — has no typed
+  payload yet; read it through `events(_:as:)`.

@@ -33,23 +33,29 @@ SDK's published sources (`sdk/typescript/src`, `sdk/kotlin/src/main`, `sdk/swift
 
 | | T0–T2 typed | typed overall, of 107 | remaining, reachable via `invoke()` |
 |---|---|---|---|
-| `sdk/typescript` | **53 / 53** | 62 (57.9%) | T3 (20) + T4 (25) |
-| `sdk/kotlin` | **53 / 53** | 53 (49.5%) | T3 (20) + T4 (34) |
-| `sdk/swift` | **53 / 53** | 53 (49.5%) | T3 (20) + T4 (34) |
-| `sdk/flutter` | **53 / 53** | 53 (49.5%) | T3 (20) + T4 (34) |
-| `sdk/unity` | **53 / 53** | 53 (49.5%) | T3 (20) + T4 (34) |
+| `sdk/typescript` | **53 / 53** | 82 (76.6%) | T3 (0) + T4 (25) |
+| `sdk/kotlin` | **53 / 53** | 73 (68.2%) | T3 (0) + T4 (34) |
+| `sdk/swift` | **53 / 53** | 73 (68.2%) | T3 (0) + T4 (34) |
+| `sdk/flutter` | **53 / 53** | 73 (68.2%) | T3 (0) + T4 (34) |
+| `sdk/unity` | **53 / 53** | 73 (68.2%) | T3 (0) + T4 (34) |
 
 Every row adds up to 107 — what is typed, plus what is left. TypeScript's extra nine are the
 `desk.*` family, typed for 客服云; they are T4 work, which is why the first column still reads 53
 on all five. §3 explains why that does not make T4 partly done.
+
+**T3 has been typed on all five since 2026-09-21**, which is why it reads `0` under *remaining* on
+every row and why the middle column moved by exactly twenty everywhere. The first column keeps its
+definition — T0–T2, the floor every SDK must meet — rather than growing to include T3: finishing a
+tier is not the same event as changing what the floor is.
 
 **Intersection = union = 53 across T0–T2.** That equality is the property this document exists to
 produce, and it is the one worth asserting in CI: five SDKs that each type a *different* 53 would
 score the same on this table and still fail every customer who ships on two platforms.
 `ContractInventoryParityTests` now asserts it, along with every number in the table above.
 
-T3 and T4 are **deliberately untyped**, not missing. A customer can call all 107 endpoints today;
-54 of them without types, against payload shapes they must read out of the server's C# source. Say
+Since 2026-09-21 only **T4 is deliberately untyped** — not missing; T3 is typed on all five. A
+customer can call all 107 endpoints today;
+34 of them without types on the weakest SDK (25 on TypeScript), against payload shapes they must read out of the server's C# source. Say
 that plainly in a sales conversation — it is a real cost, and it is one the buyer discovers in
 their first sprint if you do not.
 
@@ -159,16 +165,47 @@ Response and push frames are structurally identical, which is what lets one deco
 - Both layers matter. `status` tells you whether the call was delivered; `code` tells you what the
   business rule decided. Never collapse them.
 
-JSON policy, set once in `GatewayRegistration.CreateJsonOptions()` and binding on every SDK:
+There are two JSON rules, one per direction, and they are not symmetric.
+
+**What the server writes (responses and pushes)** is serialized with
+`GatewayRegistration.CreateJsonOptions()`, and every SDK decoder must accept it:
 
 - Property names are **camelCase**.
 - **Nulls are omitted when writing.** A missing field means null/default. Decoding must never fail
   because a field is absent.
-- Numbers may arrive as JSON **strings** (`NumberHandling.AllowReadingFromString`). Decoders must
-  accept both. This one bites: a 64-bit `seq` sent as `"1234"` must not throw.
-- Property matching is **case-insensitive on read**.
+- Numbers may arrive as JSON **strings**, and message ids always do. Decoders must accept both. This
+  one bites: a 64-bit `seq` sent as `"1234"` must not throw.
 - Unknown fields are ignored; unknown enum values are **preserved as their raw value**, never
   coerced to a default member. The server ships new content types without waiting for the app.
+
+**What an SDK writes (request bodies)** is bound by the socket dispatcher, which never uses those
+options. A top-level field is matched to its C# property ignoring case and converted with
+`JsonNode.GetValue<T>()`; a nested object (`options`, `setting`, `pushConfig`, a group update, a
+room message, prekeys) is deserialized with System.Text.Json's **defaults**. So, for every field:
+
+- Send the **JSON kind of the server's C# type**: `string` → JSON string, `long`/`int`/`double` →
+  number, `bool` → `true`/`false`, enum → **integer**, `List<T>` → array of T's kind. A quoted
+  number, a numeric string id, an enum by name, or `1`/`0` for a bool is refused with `status 1` /
+  `code 1000`, not coerced. (The server does **not** read numbers from strings on this path.)
+- **Message ids are strings** in every request (`messageId`, `messageIds`, `quoteMessageId`,
+  `threadRootId`), all digits, never a JSON number: a double cannot carry a 64-bit id. As of
+  2026-09-21 this includes `moderation.report` and `msg.translate`, which took numbers until then;
+  a raw `invoke` sending them as numbers is now refused with 1000.
+- Nested keys must be the **exact camelCase** names the inventory lists. Top-level keys are matched
+  ignoring case; nested keys are not, and an unmatched nested key is **dropped without an error**
+  (until 2026-09-21 every nested option every SDK sent was dropped this way).
+- `SDK/wire-samples/<sdk>.json` records what each SDK actually writes, and
+  `SdkWireSampleBindingTests` replays it through the server's real binder.
+
+Two options in `MessageOptions` are authority rather than preference, and the server decides them by
+the credential, not the body. From a client (user token) call:
+
+- `pushConfig.title` / `pushConfig.body`, when non-empty, are **refused with 1103**. They replace the
+  notification template that names the sender and moderation never reads them; a tenant server
+  sending through `/v1` or a server SDK may set them. Sound, channel, badge and payload stay open.
+- An image, voice, video or file message with `persistent: false` or `onlineOnly: true` is **refused
+  with 1103** while the app moderates content: media is moderated after delivery by retracting the
+  stored row, and an unstored message has none. `moderationBypass` from a client is ignored, as before.
 
 `id` must be unique per connection for the life of a pending request. Use a monotonic counter or a
 ULID; do not reuse an id while its reply is outstanding.
@@ -186,13 +223,19 @@ choosing against the weakest one.
 | **T0** | Session floor | 3 | **3 ✅** | Transport lifecycle. An SDK missing one is broken, not incomplete. |
 | **T1** | 1:1 chat MVP | 18 | **18 ✅** | The smallest set that ships a two-person chat app a customer would launch. |
 | **T2** | Social graph and groups | 32 | **32 ✅** | What turns a chat into a messenger: contacts, blocking, groups, presence, reporting. |
-| **T3** | Competitive parity | 20 | 0 | Not needed to ship, needed to win: the rows a buyer ticks against 融云 / 环信 / 网易云信. |
+| **T3** | Competitive parity | 20 | **20 ✅** | Not needed to ship, needed to win: the rows a buyer ticks against 融云 / 环信 / 网易云信. |
 | **T4** | Specialist verticals | 34 | 0 (9 in TypeScript) | Service desk, E2EE, live rooms, AI streaming, scheduling, folders. |
 
 **T0–T2 are complete on all five, and have been since 2026-08-28** — 51 targets each that day, when
 the two newest, `moderation.report` and `push.clicked`, were typed; **53 since 2026-08-29**, when
 `diag.logRequests` and `diag.logUploaded` arrived and were tiered into T2 and typed on all five in
 the same change. T0–T2 is **53 targets** today, on every one of the five.
+
+**T3 joined them on 2026-09-21**: all twenty typed on all five in one change, so the tier went from
+0 to 20 without passing through a partial state on any SDK. Say one thing plainly about Swift: its
+twenty were written on a machine with no Swift toolchain, so the only thing that compiles and tests
+them is this repository's macOS `swift` job. `implementedIn` proves the target string is present in
+the source, not that it compiles — for Swift, "typed" means that job was green.
 **The coverage numbers moved for a second reason on 2026-08-28** and it is worth knowing which: the generator used to search doc comments too, so `group.setRole` counted as typed in TypeScript on the strength of a JSDoc line saying it was *not* typed. Comments are now stripped before the search, and the five columns agree exactly — which is itself evidence, since the previous run had TypeScript one ahead of everybody for no reason anyone could name. The
 "typed today" column was 2 / 8 / 1 / 0 / 0 when this document was written; it is left visible in
 §1's collapsed block rather than deleted, because a tier plan whose starting point disappears reads

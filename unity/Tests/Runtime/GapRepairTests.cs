@@ -52,11 +52,11 @@ namespace Cyaim.Im.Tests
 
             var body = _harness.Socket.LastBody("msg.sync");
             Assert.That(body, Is.Not.Null, "a skipped seq must trigger msg.sync");
-            Assert.That(body["conversationId"].AsString(), Is.EqualTo("c1"));
-            Assert.That(body["fromSeq"].AsLong(), Is.EqualTo(3), "the range starts one past what we hold");
-            Assert.That(body["toSeq"].AsLong(), Is.EqualTo(6), "the range stops one short of the message that arrived");
-            Assert.That(body["limit"].AsLong(), Is.EqualTo(4));
-            Assert.That(body["ascending"].AsBool(), Is.True);
+            Assert.That(body["conversationId"].WireString(), Is.EqualTo("c1"));
+            Assert.That(body["fromSeq"].WireLong(), Is.EqualTo(3), "the range starts one past what we hold");
+            Assert.That(body["toSeq"].WireLong(), Is.EqualTo(6), "the range stops one short of the message that arrived");
+            Assert.That(body["limit"].WireLong(), Is.EqualTo(4));
+            Assert.That(body["ascending"].WireBool(), Is.True);
 
             // Until the backfill lands, the app must not have seen 7: a conversation that jumps
             // forward and fills in behind is the bug this whole mechanism exists to prevent.
@@ -225,7 +225,7 @@ namespace Cyaim.Im.Tests
                 .Set("messageId", 700L)
                 .Set("seq", 2L)
                 .Set("conversationId", "c1")
-                .Set("clientMsgId", _harness.Socket.LastBody("msg.send")["clientMsgId"].AsString())
+                .Set("clientMsgId", _harness.Socket.LastBody("msg.send")["clientMsgId"].WireString())
                 .Set("createTime", 1767225600000L));
             _harness.Pump();
 
@@ -258,8 +258,8 @@ namespace Cyaim.Im.Tests
 
             var body = _harness.Socket.LastBody("msg.sync");
             Assert.That(body, Is.Not.Null, "adopting the higher seq quietly would hide a real hole");
-            Assert.That(body["fromSeq"].AsLong(), Is.EqualTo(2));
-            Assert.That(body["toSeq"].AsLong(), Is.EqualTo(3));
+            Assert.That(body["fromSeq"].WireLong(), Is.EqualTo(2));
+            Assert.That(body["toSeq"].WireLong(), Is.EqualTo(3));
 
             _harness.Socket.Reply("msg.sync", Messages("c1", 2, 3));
             _harness.Pump();
@@ -285,8 +285,8 @@ namespace Cyaim.Im.Tests
             // The client tells the server where it is, per conversation.
             var sync = _harness.Socket.LastBody("conn.sync");
             Assert.That(sync, Is.Not.Null);
-            Assert.That(sync["convSeqs"]["c1"].AsLong(), Is.EqualTo(4));
-            Assert.That(sync["conversationCursor"].AsLong(), Is.EqualTo(0));
+            Assert.That(sync["convSeqs"]["c1"].WireLong(), Is.EqualTo(4));
+            Assert.That(sync["conversationCursor"].WireLong(), Is.EqualTo(0));
 
             // …and the server answers with what moved. gapsFrom carries only the first seq we are
             // missing (SPEC-02 §3.4); the upper bound is that conversation's maxSeq in the same
@@ -297,8 +297,8 @@ namespace Cyaim.Im.Tests
 
             var repair = _harness.Socket.LastBody("msg.sync");
             Assert.That(repair, Is.Not.Null);
-            Assert.That(repair["fromSeq"].AsLong(), Is.EqualTo(5));
-            Assert.That(repair["toSeq"].AsLong(), Is.EqualTo(7));
+            Assert.That(repair["fromSeq"].WireLong(), Is.EqualTo(5));
+            Assert.That(repair["toSeq"].WireLong(), Is.EqualTo(7));
 
             _harness.Socket.Reply("msg.sync", Messages("c1", 5, 6, 7));
             _harness.Pump();
@@ -350,8 +350,8 @@ namespace Cyaim.Im.Tests
             _harness.PushMessage("c1", 6);
             var repair = _harness.Socket.LastBody("msg.sync");
             Assert.That(repair, Is.Not.Null);
-            Assert.That(repair["fromSeq"].AsLong(), Is.EqualTo(5));
-            Assert.That(repair["toSeq"].AsLong(), Is.EqualTo(5));
+            Assert.That(repair["fromSeq"].WireLong(), Is.EqualTo(5));
+            Assert.That(repair["toSeq"].WireLong(), Is.EqualTo(5));
         }
 
         [Test]

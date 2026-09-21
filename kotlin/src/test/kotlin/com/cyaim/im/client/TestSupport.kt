@@ -7,12 +7,13 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
 import java.io.IOException
 import kotlin.random.Random
@@ -165,13 +166,64 @@ internal class RecordingLogger : ImLogger {
 internal val JsonObject.target: String get() = getValue("target").jsonPrimitive.content
 internal val JsonObject.id: String get() = getValue("id").jsonPrimitive.content
 internal val JsonObject.body: JsonObject get() = getValue("body").jsonObject
-internal fun JsonObject.bodyLong(key: String): Long = body.getValue(key).jsonPrimitive.long
-internal fun JsonObject.bodyString(key: String): String = body.getValue(key).jsonPrimitive.content
-internal fun JsonObject.bodyStringOrNull(key: String): String? = body[key]?.jsonPrimitive?.content
 
-/** The `convSeqs` map out of a `conn.sync` request frame. */
+/*
+ * Body accessors that can see the JSON *kind*, not only the value.
+ *
+ * They used to read through `jsonPrimitive.content` and `jsonPrimitive.long`, which answer the same
+ * for `7` and `"7"`. That is exactly the difference the server's socket binder cares about — a C#
+ * `string` refuses a JSON number and a `long` refuses a quoted one, each with a `1000` for the whole
+ * call — so an assertion written through them passed for the wrong kind, and the msg.* message ids
+ * left as numbers for months with every test green. Assert on the kind; the value comes second.
+ * 这些访问器以前用 jsonPrimitive.content / .long 读，7 与 "7" 读出来一样——而服务端 socket
+ * 绑定器恰恰只在乎这个区别。断言必须先看 JSON 类型，再看值。
+ */
+
+/** A body field that must leave as a JSON string. Fails on a number, a boolean or null. */
+internal fun JsonObject.bodyString(key: String): String = body.jsonString(key)
+
+/** A body field that must leave as a JSON integer. Fails on a quoted number. */
+internal fun JsonObject.bodyLong(key: String): Long = body.jsonInteger(key)
+
+/** Absent (or null) is null; present must be a JSON string. */
+internal fun JsonObject.bodyStringOrNull(key: String): String? {
+    val value = body[key] ?: return null
+    if (value is JsonNull) return null
+    return body.jsonString(key)
+}
+
+internal fun JsonObject.jsonString(key: String): String {
+    val value = kotlin.test.assertIs<JsonPrimitive>(getValue(key), "$key is not a JSON primitive")
+    kotlin.test.assertTrue(value.isString, "$key has to leave as a JSON string, not $value")
+    return value.content
+}
+
+internal fun JsonObject.jsonInteger(key: String): Long = jsonInteger(getValue(key), key)
+
+internal fun jsonInteger(element: JsonElement, what: String): Long {
+    val value = kotlin.test.assertIs<JsonPrimitive>(element, "$what is not a JSON primitive")
+    kotlin.test.assertFalse(value.isString, "$what has to leave as a JSON number, not the string $value")
+    return kotlin.test.assertNotNull(value.content.toLongOrNull(), "$what is not a JSON integer: $value")
+}
+
+internal fun JsonObject.jsonBoolean(key: String): Boolean {
+    val value = kotlin.test.assertIs<JsonPrimitive>(getValue(key), "$key is not a JSON primitive")
+    kotlin.test.assertFalse(value.isString, "$key has to leave as a JSON boolean, not the string $value")
+    return kotlin.test.assertNotNull(value.booleanOrNull, "$key is not a JSON boolean: $value")
+}
+
+/** A body field that must leave as an array of JSON strings, every element checked. */
+internal fun JsonObject.jsonStrings(key: String): List<String> =
+    kotlin.test.assertIs<JsonArray>(getValue(key), "$key is not a JSON array").mapIndexed { i, element ->
+        val value = kotlin.test.assertIs<JsonPrimitive>(element, "$key[$i] is not a JSON primitive")
+        kotlin.test.assertTrue(value.isString, "$key[$i] has to leave as a JSON string, not $value")
+        value.content
+    }
+
+/** The `convSeqs` map out of a `conn.sync` request frame. Every value must be a JSON integer. */
 internal fun JsonObject.bodySeqMap(key: String): Map<String, Long> =
-    (body[key] as? JsonObject)?.mapValues { (_, value) -> value.jsonPrimitive.long } ?: emptyMap()
+    (body[key] as? JsonObject)?.mapValues { (conversationId, value) -> jsonInteger(value, "$key.$conversationId") }
+        ?: emptyMap()
 
 internal fun serverFrame(
     id: String,

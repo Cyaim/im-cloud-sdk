@@ -269,6 +269,97 @@ class ImPushConfig {
       });
 }
 
+// ---------------------------------------------------------------------------- msg (T3)
+
+/// One entry on a conversation's pinned board, as `msg.pins` returns it. The server's
+/// `PinnedMessage`.
+class ImPinnedMessage {
+  const ImPinnedMessage({
+    required this.messageId,
+    required this.seq,
+    required this.pinnedBy,
+    required this.pinnedAt,
+    this.brief,
+  });
+
+  factory ImPinnedMessage.fromJson(Map<String, dynamic> json) {
+    final Object? brief = json['brief'];
+    return ImPinnedMessage(
+      messageId: imId(json['messageId']),
+      seq: imIntOr(json['seq']),
+      pinnedBy: imStringOr(json['pinnedBy']),
+      pinnedAt: imIntOr(json['pinnedAt']),
+      brief: brief is Map<String, dynamic> ? ImMessageBrief.fromJson(brief) : null,
+    );
+  }
+
+  /// A string, like every message id in this package. The inventory's `payloadTypes` records the C#
+  /// `long`; on the wire it is quoted (`WriteAsString`).
+  final String messageId;
+
+  final int seq;
+
+  /// Who pinned it.
+  final String pinnedBy;
+
+  /// Unix ms.
+  final int pinnedAt;
+
+  /// The message as it is *now*, built at read time: a recalled one reads `digest: "[Recalled]"`
+  /// with [ImLastMessage.recalled] set. Digest tokens such as `"[Image]"` are fixed wire values to
+  /// localise, not text to show as it is. `msg.pins` always fills it; nullable because the server
+  /// type allows null.
+  final ImMessageBrief? brief;
+}
+
+/// Who has read one message, as `msg.receiptDetail` returns it. The server's `MessageReceipt`.
+///
+/// **[totalCount] includes the sender; [readUserIds] never does.** So "read by everyone" is
+/// `readCount == totalCount - 1`, not `readCount == totalCount` — in a single chat `totalCount` is
+/// 2 and one reader means "the other person", and a UI comparing the two numbers directly never
+/// shows a message as fully read.
+///
+/// totalCount 含发送者、readUserIds 永远不含：「全员已读」是 readCount == totalCount - 1。
+class ImMessageReceipt {
+  const ImMessageReceipt({
+    required this.appId,
+    required this.conversationId,
+    required this.messageId,
+    this.readUserIds = const <String>[],
+    this.readCount = 0,
+    this.totalCount = 0,
+    this.updatedAt = 0,
+  });
+
+  factory ImMessageReceipt.fromJson(Map<String, dynamic> json) => ImMessageReceipt(
+        appId: imStringOr(json['appId']),
+        conversationId: imStringOr(json['conversationId']),
+        messageId: imId(json['messageId']),
+        readUserIds: imStringList(json['readUserIds']),
+        readCount: imIntOr(json['readCount']),
+        totalCount: imIntOr(json['totalCount']),
+        updatedAt: imIntOr(json['updatedAt']),
+      );
+
+  final String appId;
+  final String conversationId;
+
+  /// A string on the wire (`WriteAsString`), whatever `payloadTypes` says.
+  final String messageId;
+
+  /// Everyone who has read it, `[]` when nobody has. Never contains the sender.
+  final List<String> readUserIds;
+
+  final int readCount;
+
+  /// Everyone expected to read it, **sender included** — a snapshot taken at the last receipt, so
+  /// members who joined later are not in it.
+  final int totalCount;
+
+  /// Unix ms. Equals the message's `createTime` on a receipt nobody has written to yet.
+  final int updatedAt;
+}
+
 // ---------------------------------------------------------------------------- user (T1)
 
 /// Multi-device login policy, per user, overriding the app's default.
@@ -851,6 +942,66 @@ class ImGroupMember {
   final int joinTime;
   final String? joinSource;
   final Map<String, dynamic> extensions;
+}
+
+/// A request to join a group, pending or settled, as `group.applicationList` returns it. The
+/// server's `GroupApplication`.
+class ImGroupApplication {
+  const ImGroupApplication({
+    required this.appId,
+    required this.groupId,
+    required this.applicantId,
+    required this.status,
+    this.inviterId,
+    this.reason,
+    this.handlerId,
+    this.handleReason,
+    this.createdAt = 0,
+    this.handledAt,
+  });
+
+  factory ImGroupApplication.fromJson(Map<String, dynamic> json) => ImGroupApplication(
+        appId: imStringOr(json['appId']),
+        groupId: imStringOr(json['groupId']),
+        applicantId: imStringOr(json['applicantId']),
+        inviterId: imString(json['inviterId']),
+        reason: imString(json['reason']),
+        status: ImApplicationStatus.fromWire(json['status']),
+        handlerId: imString(json['handlerId']),
+        handleReason: imString(json['handleReason']),
+        createdAt: imIntOr(json['createdAt']),
+        handledAt: imInt(json['handledAt']),
+      );
+
+  final String appId;
+  final String groupId;
+
+  /// Who wants in.
+  final String applicantId;
+
+  /// Set when an ordinary member invited [applicantId] into a group that needs approval, rather than
+  /// the applicant asking for themselves.
+  final String? inviterId;
+
+  /// What the applicant (or the inviter) wrote.
+  final String? reason;
+
+  /// **Every status comes back, not only [ImApplicationStatus.pending]** — filter on this for a
+  /// "waiting for you" list. [ImApplicationStatus.expired] is declared by the server but never
+  /// produced.
+  final ImApplicationStatus status;
+
+  /// The owner or admin who answered it. Null while pending.
+  final String? handlerId;
+
+  /// The reason they gave, from `group.handleApplication`.
+  final String? handleReason;
+
+  /// Unix ms.
+  final int createdAt;
+
+  /// Unix ms. Null while pending.
+  final int? handledAt;
 }
 
 // ---------------------------------------------------------------------------- moderation (T2)

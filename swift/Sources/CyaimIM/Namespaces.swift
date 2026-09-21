@@ -145,6 +145,135 @@ public struct ImMsgNamespace: Sendable {
     public func typing(_ request: TypingRequest) async throws {
         try await connection.execute("msg.typing", body: request)
     }
+
+    /// Pins a message to the conversation's shared board.
+    ///
+    /// A pin is an announcement, not a bookmark — one shared set per conversation — which is why it is
+    /// permission-gated and ``favourite(_:)`` is not. In a single chat either participant may pin; in
+    /// a group only the owner or an admin, while the deployment's `IM:Extras:GroupPinRequiresAdmin`
+    /// is on (the default), otherwise `1504`. Chat rooms are `1008`; a system or assistant
+    /// conversation is `1103` unless the caller has received something there.
+    ///
+    /// Refused with `1400` for a message that is not there (a missing or unparseable id included) or
+    /// has been recalled, `1008` for an ephemeral one (sent with ``MessageOptions/expireIn``), and
+    /// `1006` once the board holds `IM:Extras:MaxPinsPerConversation` pins (20 by default) — unpin one
+    /// first. Pinning something already pinned succeeds and announces nothing.
+    ///
+    /// Success posts a notification message into the conversation (`contentType` 9, `content.code`
+    /// 1514, `pinned: true`), sent as the operator, uncounted and unpushed. Its `content.messageId` is
+    /// a **bare JSON number**, unlike every other message id on this wire — re-read ``pins(_:)``
+    /// rather than trusting it across platforms.
+    ///
+    /// 置顶是全员共享的公告，群里受权限约束；成功后会在会话里发一条 1514 通知消息，
+    /// 其中 content.messageId 是裸数字而非字符串，以 msg.pins 为准。
+    public func pin(_ request: ConversationMessageRequest) async throws {
+        try await connection.execute("msg.pin", body: request)
+    }
+
+    /// Takes a message off the board. The same permission rules as ``pin(_:)``.
+    ///
+    /// **A message that is not pinned succeeds silently** — a missing or unparseable id included — so
+    /// a success here does not prove anything was removed. Notification 1514 with `pinned: false`
+    /// goes out only when a pin really was removed and the message still exists.
+    public func unpin(_ request: ConversationMessageRequest) async throws {
+        try await connection.execute("msg.unpin", body: request)
+    }
+
+    /// The conversation's pinned board, newest pin first.
+    ///
+    /// **Not paged**: a plain array of at most `MaxPinsPerConversation` entries (20 by default), and
+    /// `[]` when there are none. Any participant may read it — a group non-member is `1503`. Each
+    /// ``PinnedMessage/brief`` is built at read time, so a message recalled after it was pinned shows
+    /// as `"[Recalled]"`; pins whose message has since vanished are dropped and cleaned up.
+    public func pins(_ request: ConversationIdRequest) async throws -> [PinnedMessage] {
+        try await connection.request("msg.pins", body: request)
+    }
+
+    /// Bookmarks a message for the caller alone. Private and silent: nobody else can tell.
+    ///
+    /// Any participant may. `1400` for a message that is not there (a bad id included), `1008` for an
+    /// ephemeral one, and `1006` once the caller holds `IM:Extras:MaxFavouritesPerUser` (5000 by
+    /// default) — counted before the write, so re-favouriting at the cap fails too. A recalled message
+    /// is **not** refused. Repeating it is safe, but it resets the timestamp and moves the favourite
+    /// to the top.
+    public func favourite(_ request: ConversationMessageRequest) async throws {
+        try await connection.execute("msg.favourite", body: request)
+    }
+
+    /// Removes a bookmark. Always succeeds and is safe to repeat, and has no conversation access
+    /// check — so it still works after the caller has left the group.
+    public func unfavourite(_ request: ConversationMessageRequest) async throws {
+        try await connection.execute("msg.unfavourite", body: request)
+    }
+
+    /// The caller's bookmarks across every conversation, as whole messages, newest favourite first.
+    ///
+    /// **Page until ``Page/nextCursor`` is `nil`**: a page can be short — even empty — while a cursor
+    /// is still set, because favourites in conversations the caller can no longer read are hidden
+    /// (and kept), and favourites whose message is gone or was deleted for the caller are removed
+    /// as the page is read. Recalled messages **are** listed, with ``ImMessage/recalled`` set. The
+    /// payload carries no favourite timestamp, and ``Page/total`` is never present.
+    public func favourites(_ request: PageRequest = .init()) async throws -> Page<ImMessage> {
+        try await connection.request("msg.favourites", body: request)
+    }
+
+    /// Starts the burn-after-reading countdown on a message the caller has just displayed.
+    ///
+    /// Only for messages sent with ``MessageOptions/expireIn`` > 0; anything else is `1008`. A missing
+    /// or unparseable id is `1001` — the one call in this group that validates it — and a message
+    /// that is not there is `1400`.
+    ///
+    /// **Safe to call for every rendered message.** The sender calling it on their own message
+    /// succeeds and starts nothing. The first read by anyone else moves `expireAt` from
+    /// `createTime + expireIn` to `now + expireIn`, and that is conversation-wide: in a group the
+    /// first reader starts everyone's clock. Later calls succeed silently. Participants then get
+    /// `evt.messageUpdate` (low priority) with `kind: "burn"` and the absolute `expireAt`; a message
+    /// nobody reads still expires at `createTime + expireIn`.
+    ///
+    /// A courtesy between cooperating clients, not a defence: a recipient who already has the bytes
+    /// can keep them.
+    ///
+    /// 阅后即焚是协作客户端之间的约定：已经拿到字节的接收方仍可留存。
+    public func burn(_ request: ConversationMessageRequest) async throws {
+        try await connection.execute("msg.burn", body: request)
+    }
+
+    /// Full-text search over the conversations the caller can see, newest first.
+    ///
+    /// **Off by default.** It needs the tenant's `EnableSearch` (default off, and forced off on an
+    /// end-to-end-encrypted app) — `1203` otherwise — and the search add-on in the plan — `1204`
+    /// otherwise. Do not latch either: both can change at runtime.
+    ///
+    /// **Rate limited per user, before either gate:** `1003` past `MaxSearchPerMinutePerUser` (30 by
+    /// default) in a sliding minute, with no retry hint. Because the limiter runs first, calls against
+    /// disabled search still spend the budget — debounce search-as-you-type.
+    ///
+    /// Recalled messages and messages the caller deleted for themselves are left out. Filters are
+    /// applied after the index page (see ``SearchMessagesRequest``), so short or empty pages with
+    /// `hasMore` true are normal: page on ``Page/nextCursor``. An index that takes longer than five
+    /// seconds comes back as `1000`, not `1004` — retryable either way. ``Page/total`` may be absent.
+    ///
+    /// 默认关闭（EnableSearch、增值项两道闸），且限流在闸之前：关着也会消耗额度，输入即搜要防抖。
+    public func search(_ request: SearchMessagesRequest) async throws -> Page<ImMessage> {
+        try await connection.request("msg.search", body: request)
+    }
+
+    /// Who has read one message — the "seen by" list behind ``receipt(_:)``.
+    ///
+    /// Returns the stored receipt when there is one. Otherwise `1400` for a message that is not there
+    /// (a bad id included), `1410` for one not sent with ``MessageOptions/needReceipt``, and else an
+    /// empty receipt: no readers, `readCount` 0, the current `totalCount`. Access errors are `1001`,
+    /// `1103` and `1503`.
+    ///
+    /// **Nothing caps or truncates this read.** The group-size limit applies to the *write*: in a
+    /// group larger than the tenant's `ReceiptGroupMemberLimit` (100 by default) ``receipt(_:)``
+    /// is refused with `1410`, so no reads are recorded and this returns an empty — or frozen —
+    /// receipt. Read ``MessageReceipt/totalCount`` before comparing: it includes the sender.
+    ///
+    /// 这次读取本身没有上限；群人数上限卡的是 msg.receipt 的写入，超限群里这里只会是空的或停住的回执。
+    public func receiptDetail(_ request: ReceiptDetailRequest) async throws -> MessageReceipt {
+        try await connection.request("msg.receiptDetail", body: request)
+    }
 }
 
 // MARK: - conv
@@ -206,6 +335,17 @@ public struct ImConvNamespace: Sendable {
     public func clear(_ request: ConversationIdRequest) async throws {
         try await connection.execute("conv.clear", body: request)
     }
+
+    /// Marks a conversation unread — or, with `unread: false`, clears the mark.
+    ///
+    /// It does not move `readSeq`, so the other side's receipts are unaffected. The mark shows up as
+    /// ``ConversationView/manuallyUnread``, and ``ConversationView/unreadCount`` reads 1 where it would
+    /// otherwise be 0. ``read(_:)``, ``delete(_:)`` and ``clear(_:)`` all clear it. Setting the value
+    /// it already has succeeds and sends nothing; otherwise the caller's own devices get
+    /// `evt.conversationUpdate` with kind `"unread"`. Access errors are `1001`, `1103` and `1503`.
+    public func markUnread(_ request: MarkUnreadRequest) async throws {
+        try await connection.execute("conv.markUnread", body: request)
+    }
 }
 
 // MARK: - user
@@ -257,6 +397,18 @@ public struct ImUserNamespace: Sendable {
 
     public func unsubscribePresence(_ request: UserIdsRequest) async throws {
         try await connection.execute("user.unsubscribePresence", body: request)
+    }
+
+    /// Sets the caller's custom status — `"in a meeting"`, `"on call"` — or clears it with `nil`.
+    ///
+    /// **It lapses after seven days** and disappears silently; set it again on login if it should
+    /// persist. Longer than 64 characters (after trimming) is `1001`, and `1005` means the presence
+    /// store is down. Subscribers get `evt.presence` carrying ``PresenceState/customStatus``.
+    ///
+    /// Like ``subscribePresence(_:)`` this is **not** gated by `EnablePresence` — but reading it back
+    /// through ``presence(_:)`` is, so a status set on a presence-disabled app is stored and unseen.
+    public func setStatus(_ request: SetStatusRequest) async throws {
+        try await connection.execute("user.setStatus", body: request)
     }
 }
 
@@ -446,11 +598,31 @@ public struct ImFriendNamespace: Sendable {
     public func unblock(_ request: UserIdRequest) async throws {
         try await connection.execute("friend.unblock", body: request)
     }
+
+    /// Sets the caller's private remark and tags for a contact.
+    ///
+    /// **Read ``SetRemarkRequest`` first:** a `nil` remark *clears* it, while `nil` tags leave them
+    /// alone. Somebody who is not a contact is `1302`. Only the caller's own devices hear about it,
+    /// through `evt.friend` with action `"updated"`.
+    public func setRemark(_ request: SetRemarkRequest) async throws {
+        try await connection.execute("friend.setRemark", body: request)
+    }
 }
 
 // MARK: - group
 
-/// `group.*` — group lifecycle and membership.
+/// `group.*` — group lifecycle and membership, and the calls that administer a group: transfer,
+/// roles, mutes, nicknames, the announcement and join applications.
+///
+/// Most administrative calls announce themselves in the group as a notification message
+/// (`contentType` 9), so the other members' clients learn of them through the ordinary message
+/// stream rather than a separate event. Where a method below says "notification N", N is that
+/// message's `content.code`. **Those codes share their numbers with unrelated error codes** — 1511
+/// is an ownership transfer in a notification and ``ImErrorCode/cannotOperateOwner`` in an error,
+/// 1512 an announcement change and ``ImErrorCode/applicationNotFound`` — so never read one where you
+/// expect the other.
+///
+/// 通知消息的 content.code 与错误码数值重叠（1511、1512 在两边含义不同），不要混读。
 public struct ImGroupNamespace: Sendable {
     let connection: ImConnection
 
@@ -511,6 +683,111 @@ public struct ImGroupNamespace: Sendable {
     /// a state to render, not a failure to report.
     public func join(_ request: JoinGroupRequest) async throws {
         try await connection.execute("group.join", body: request)
+    }
+
+    /// Hands the group to another member. **Owner only** (`1504`).
+    ///
+    /// Not repeatable: a retry after it succeeded is `1504`, because the caller is no longer the
+    /// owner. The outgoing owner becomes a plain member, **not** an admin — have the new owner call
+    /// ``setRole(_:)`` if that is what you want. Transferring to yourself is `1001`; to a non-member,
+    /// `1503`. Announced with notification 1511.
+    public func transfer(_ request: TransferOwnerRequest) async throws {
+        try await connection.execute("group.transfer", body: request)
+    }
+
+    /// Join applications, newest first.
+    ///
+    /// With no group — the default, an empty ``GroupCursorRequest/groupId`` — it lists across every
+    /// group the caller manages, looking only at the first 200 groups they have joined. With a group,
+    /// the caller must be its owner or an admin (`1504`).
+    ///
+    /// **It returns every status, not only pending**: filter on ``GroupApplication/status`` for a
+    /// "waiting for you" list. ``GroupCursorRequest/limit`` 1…200 is kept; anything else becomes 50.
+    ///
+    /// 返回所有状态而不只是待处理的；「等你处理」要自己筛 pending。
+    public func applicationList(
+        _ request: GroupCursorRequest = GroupCursorRequest(groupId: "")
+    ) async throws -> Page<GroupApplication> {
+        try await connection.request("group.applicationList", body: request)
+    }
+
+    /// Accepts or rejects one join application. Owner or admin (`1504`).
+    ///
+    /// `1512` when there is no such application, `1006` when it was already handled. A rejection is
+    /// stored with its reason and **tells nobody**. An acceptance adds the member and announces
+    /// notification 1513 — unless the group is full (`1502`), in which case the application stays
+    /// pending.
+    public func handleApplication(_ request: HandleApplicationRequest) async throws {
+        try await connection.execute("group.handleApplication", body: request)
+    }
+
+    /// Promotes a member to admin, or demotes an admin to member. **Owner only** (`1504`).
+    ///
+    /// Only ``GroupRole/member`` and ``GroupRole/admin`` are sent. ``GroupRole/owner`` throws `1008`
+    /// here — the code the server gives it, with the same advice: ownership moves with
+    /// ``transfer(_:)``. Any other value throws `1001`. Both are thrown before a frame is written,
+    /// because the server stores any other integer it is given; see ``SetRoleRequest`` for why that
+    /// matters.
+    ///
+    /// A non-member target is `1503`; the owner as target — the owner calling on themselves included
+    /// — is `1511`. Setting the role a member already has succeeds and announces nothing; otherwise
+    /// notification 1507 (made admin) or 1508 (anything else) goes out.
+    public func setRole(_ request: SetRoleRequest) async throws {
+        guard request.role == .member || request.role == .admin else {
+            if request.role == .owner {
+                throw ImError(
+                    code: .unsupportedOperation,
+                    message: "group.setRole cannot make an owner; ownership moves with group.transfer",
+                    target: "group.setRole"
+                )
+            }
+
+            throw ImError(
+                code: .invalidArgument,
+                message: "group.setRole takes GroupRole.member or GroupRole.admin, not \(request.role.rawValue)",
+                target: "group.setRole"
+            )
+        }
+
+        try await connection.execute("group.setRole", body: request)
+    }
+
+    /// Mutes or unmutes the whole group. Owner or admin (`1504`); the owner and admins can still send
+    /// while it is on, and everyone else gets `1505`.
+    ///
+    /// **Read ``MuteGroupRequest`` first:** `mute` defaults to true, and **a past `untilMs` mutes
+    /// indefinitely**, not "until a moment already gone" — unmuting is `mute: false`. Every call
+    /// writes and announces notification 1509, even when nothing changed.
+    ///
+    /// 过去的 untilMs 是「无限期」而不是「解除」；每次调用都会写入并发 1509 通知，哪怕没有变化。
+    public func mute(_ request: MuteGroupRequest) async throws {
+        try await connection.execute("group.mute", body: request)
+    }
+
+    /// Mutes one member until a time, or unmutes them. Owner or admin (`1504`).
+    ///
+    /// **A `nil` or past `untilMs` unmutes** — the opposite reading from ``mute(_:)`` — and there is
+    /// no indefinite member mute. A non-member target is `1503`, the owner `1511`, yourself `1008`,
+    /// and an admin muting another admin `1504`. The muted member's sends then fail with `1506`.
+    /// Announced with notification 1510.
+    public func muteMember(_ request: MuteMemberRequest) async throws {
+        try await connection.execute("group.muteMember", body: request)
+    }
+
+    /// Sets a member's in-group nickname — the caller's own with no `userId`, which any member may
+    /// do. Someone else's needs owner or admin **and** outranking them (`1504` / `1511`); a
+    /// non-member target is `1503`. Past 64 characters it is silently truncated. Announced with
+    /// notification 1506, whose `fields` spells the field `"Nickname"`, capitalised.
+    public func setNickname(_ request: SetGroupNicknameRequest) async throws {
+        try await connection.execute("group.setNickname", body: request)
+    }
+
+    /// Replaces the group announcement; `nil` or blank clears it. Owner or admin (`1504`).
+    ///
+    /// Past 4096 characters it is silently truncated. Sets ``Group/announcementUpdatedAt``, and every
+    /// call announces notification 1512 — even when the text did not change.
+    public func announcement(_ request: AnnouncementRequest) async throws {
+        try await connection.execute("group.announcement", body: request)
     }
 }
 

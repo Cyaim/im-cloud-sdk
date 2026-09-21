@@ -11,8 +11,15 @@ import Foundation
 // 每个端点一个请求对象：服务端新增一个可选字段，用位置参数就是五种语言同时源码不兼容，
 // 用请求对象则处处只是新增。
 //
-// These are `Encodable` by synthesis on purpose: Swift's synthesised encoder uses `encodeIfPresent`
-// for optionals, which is exactly the gateway's "nulls are omitted when writing" policy (§2).
+// Synthesised `Encodable` is the default, on purpose: Swift's synthesised encoder uses
+// `encodeIfPresent` for optionals, which is exactly the gateway's "nulls are omitted when writing"
+// policy (§2). The exception is every request that carries a message id (`messageId`, `messageIds`,
+// `quoteMessageId`, `threadRootId`): the server's field is a string, and the socket binder refuses a
+// JSON number for it with 1000 (§2, request rule). Those types keep `Int64` properties and hand-write
+// `encode(to:)` to quote the id with `String(id)`, still using `encodeIfPresent` for the optionals.
+//
+// 默认靠合成的 Encodable（可选值走 encodeIfPresent，正是「写时省略 null」）。例外是带消息 id 的请求：
+// 服务端字段是字符串、发数字会被拒成 1000，所以这些类型手写 encode(to:) 把 Int64 写成带引号的字符串。
 
 // MARK: - conn
 
@@ -119,8 +126,13 @@ public struct SendMessageRequest: Encodable, Sendable, Hashable {
 
     public var mentionAll: Bool
     public var mentionedUserIds: [String]?
+
+    /// Leaves as a quoted string; see ``encode(to:)``.
     public var quoteMessageId: Int64?
+
+    /// Leaves as a quoted string; see ``encode(to:)``.
     public var threadRootId: Int64?
+
     public var options: MessageOptions?
 
     /// The device clock, echoed back for display. The server never orders by it.
@@ -163,6 +175,35 @@ public struct SendMessageRequest: Encodable, Sendable, Hashable {
     /// The overwhelmingly common case.
     public static func text(_ text: String, to target: MessageTarget) -> SendMessageRequest {
         MessageDraft.text(text, to: target).request
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case conversationId, receiverId, groupId, conversationType, clientMsgId, contentType, content
+        case mentionAll, mentionedUserIds, quoteMessageId, threadRootId, options, sendTime, extensions
+    }
+
+    /// Written by hand for two fields: `quoteMessageId` and `threadRootId` leave as **quoted**
+    /// strings, for the reason ``RecallMessageRequest`` gives — the server declares both `string?`,
+    /// and a JSON number there fails the whole send with `1000` before the endpoint runs.
+    ///
+    /// Everything else is what the synthesised encoder wrote: `encode` for the non-optionals,
+    /// `encodeIfPresent` for the optionals, so a `nil` is still absent rather than `null`.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(conversationId, forKey: .conversationId)
+        try container.encodeIfPresent(receiverId, forKey: .receiverId)
+        try container.encodeIfPresent(groupId, forKey: .groupId)
+        try container.encodeIfPresent(conversationType, forKey: .conversationType)
+        try container.encode(clientMsgId, forKey: .clientMsgId)
+        try container.encode(contentType, forKey: .contentType)
+        try container.encode(content, forKey: .content)
+        try container.encode(mentionAll, forKey: .mentionAll)
+        try container.encodeIfPresent(mentionedUserIds, forKey: .mentionedUserIds)
+        try container.encodeIfPresent(quoteMessageId.map { String($0) }, forKey: .quoteMessageId)
+        try container.encodeIfPresent(threadRootId.map { String($0) }, forKey: .threadRootId)
+        try container.encodeIfPresent(options, forKey: .options)
+        try container.encode(sendTime, forKey: .sendTime)
+        try container.encodeIfPresent(extensions, forKey: .extensions)
     }
 }
 
@@ -246,6 +287,17 @@ public struct HistoryRequest: Encodable, Sendable, Hashable {
 ///
 /// There is deliberately no `asAdmin`: `MsgController.Recall` forces it to `false` whatever the
 /// client claims, so a field for it would only mislead. Admin recall is a server-API capability.
+///
+/// **`messageId` leaves as a quoted string.** The server's DTO declares it `string`, and the gateway
+/// binds each request field by its C# type without the serialiser's number handling, so a JSON number
+/// there is not read as an id at all — the call comes back status `1`, `1000 InternalError`, before
+/// the endpoint runs. The property stays `Int64` so that ``ImMessage/messageId`` goes straight in;
+/// what has to be a string is the JSON. The same holds for every message id this SDK sends:
+/// ``DeleteMessagesRequest``, ``EditMessageRequest``, ``ForwardMessagesRequest``, ``ReactRequest``,
+/// ``ReceiptRequest`` and the two on ``SendMessageRequest``.
+///
+/// 消息 id 在线路上必须带引号：服务端 DTO 是 string，网关按 C# 类型逐字段绑定、不走序列化器的
+/// 数字处理，给 JSON 数字会在进端点之前就回 1000。属性仍是 Int64，好让 ImMessage.messageId 直接传进来。
 public struct RecallMessageRequest: Encodable, Sendable, Hashable {
     public var conversationId: String
     public var messageId: Int64
@@ -256,9 +308,24 @@ public struct RecallMessageRequest: Encodable, Sendable, Hashable {
         self.messageId = messageId
         self.reason = reason
     }
+
+    enum CodingKeys: String, CodingKey {
+        case conversationId, messageId, reason
+    }
+
+    /// Written by hand for one field: `messageId` leaves quoted. See the type's documentation.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(conversationId, forKey: .conversationId)
+        try container.encode(String(messageId), forKey: .messageId)
+        try container.encodeIfPresent(reason, forKey: .reason)
+    }
 }
 
 /// `msg.delete` — delete-for-me by default, distinct from ``RecallMessageRequest``.
+///
+/// Each of `messageIds` leaves as a quoted string: the server binds a `List<string>`, and one JSON
+/// number in the array fails the whole call with `1000`. See ``RecallMessageRequest``.
 public struct DeleteMessagesRequest: Encodable, Sendable, Hashable {
     public var conversationId: String
     public var messageIds: [Int64]
@@ -271,9 +338,21 @@ public struct DeleteMessagesRequest: Encodable, Sendable, Hashable {
         self.messageIds = messageIds
         self.forEveryone = forEveryone
     }
+
+    enum CodingKeys: String, CodingKey {
+        case conversationId, messageIds, forEveryone
+    }
+
+    /// Written by hand for one field: every element of `messageIds` leaves quoted.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(conversationId, forKey: .conversationId)
+        try container.encode(messageIds.map { String($0) }, forKey: .messageIds)
+        try container.encode(forEveryone, forKey: .forEveryone)
+    }
 }
 
-/// `msg.edit`.
+/// `msg.edit`. `messageId` leaves quoted; see ``RecallMessageRequest``.
 public struct EditMessageRequest: Encodable, Sendable, Hashable {
     public var conversationId: String
     public var messageId: Int64
@@ -284,9 +363,21 @@ public struct EditMessageRequest: Encodable, Sendable, Hashable {
         self.messageId = messageId
         self.content = content
     }
+
+    enum CodingKeys: String, CodingKey {
+        case conversationId, messageId, content
+    }
+
+    /// Written by hand for one field: `messageId` leaves quoted.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(conversationId, forKey: .conversationId)
+        try container.encode(String(messageId), forKey: .messageId)
+        try container.encode(content, forKey: .content)
+    }
 }
 
-/// `msg.forward`.
+/// `msg.forward`. Each of `messageIds` leaves quoted; see ``RecallMessageRequest``.
 public struct ForwardMessagesRequest: Encodable, Sendable, Hashable {
     public var sourceConversationId: String
     public var messageIds: [Int64]
@@ -314,9 +405,24 @@ public struct ForwardMessagesRequest: Encodable, Sendable, Hashable {
         self.mergeTitle = mergeTitle
         self.clientMsgId = clientMsgId
     }
+
+    enum CodingKeys: String, CodingKey {
+        case sourceConversationId, messageIds, targetConversationIds, merge, mergeTitle, clientMsgId
+    }
+
+    /// Written by hand for one field: every element of `messageIds` leaves quoted.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(sourceConversationId, forKey: .sourceConversationId)
+        try container.encode(messageIds.map { String($0) }, forKey: .messageIds)
+        try container.encode(targetConversationIds, forKey: .targetConversationIds)
+        try container.encode(merge, forKey: .merge)
+        try container.encodeIfPresent(mergeTitle, forKey: .mergeTitle)
+        try container.encode(clientMsgId, forKey: .clientMsgId)
+    }
 }
 
-/// `msg.react`.
+/// `msg.react`. `messageId` leaves quoted; see ``RecallMessageRequest``.
 public struct ReactRequest: Encodable, Sendable, Hashable {
     public var conversationId: String
     public var messageId: Int64
@@ -331,9 +437,24 @@ public struct ReactRequest: Encodable, Sendable, Hashable {
         self.emoji = emoji
         self.add = add
     }
+
+    enum CodingKeys: String, CodingKey {
+        case conversationId, messageId, emoji, add
+    }
+
+    /// Written by hand for one field: `messageId` leaves quoted.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(conversationId, forKey: .conversationId)
+        try container.encode(String(messageId), forKey: .messageId)
+        try container.encode(emoji, forKey: .emoji)
+        try container.encode(add, forKey: .add)
+    }
 }
 
 /// `msg.receipt` — per-message read marks, distinct from the conversation pointer in `conv.read`.
+///
+/// Each of `messageIds` leaves quoted; see ``RecallMessageRequest``.
 public struct ReceiptRequest: Encodable, Sendable, Hashable {
     public var conversationId: String
     public var messageIds: [Int64]
@@ -341,6 +462,17 @@ public struct ReceiptRequest: Encodable, Sendable, Hashable {
     public init(conversationId: String, messageIds: [Int64]) {
         self.conversationId = conversationId
         self.messageIds = messageIds
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case conversationId, messageIds
+    }
+
+    /// Written by hand for one field: every element of `messageIds` leaves quoted.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(conversationId, forKey: .conversationId)
+        try container.encode(messageIds.map { String($0) }, forKey: .messageIds)
     }
 }
 
@@ -354,6 +486,135 @@ public struct TypingRequest: Encodable, Sendable, Hashable {
     public init(conversationId: String, typing: Bool = true) {
         self.conversationId = conversationId
         self.typing = typing
+    }
+}
+
+/// `msg.pin`, `msg.unpin`, `msg.favourite`, `msg.unfavourite`, `msg.burn` — one message, named by
+/// its conversation and its id. The pair is the only way the server addresses a message: ids are
+/// unique per conversation, and every store read leads with the conversation.
+///
+/// **`messageId` leaves as a quoted string, and here that is the server's requirement rather than
+/// this SDK's caution.** The server's DTO declares it `string`, and the gateway binds request fields
+/// one by one without the serialiser's number handling, so a JSON number in that position is not
+/// read as an id at all — the call comes back `1000 InternalError`. The property stays `Int64` so
+/// that ``ImMessage/messageId`` goes straight in; what has to be a string is the JSON.
+///
+/// 消息 id 在线路上必须带引号：服务端 DTO 是 string，网关逐字段绑定、不走序列化器的数字处理，
+/// 给 JSON 数字会直接回 1000。属性仍是 Int64，好让 ImMessage.messageId 直接传进来。
+public struct ConversationMessageRequest: Encodable, Sendable, Hashable {
+    public var conversationId: String
+    public var messageId: Int64
+
+    public init(conversationId: String, messageId: Int64) {
+        self.conversationId = conversationId
+        self.messageId = messageId
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case conversationId, messageId
+    }
+
+    /// Written by hand for one field: `messageId` leaves quoted. See the type's documentation.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(conversationId, forKey: .conversationId)
+        try container.encode(String(messageId), forKey: .messageId)
+    }
+}
+
+/// `msg.receiptDetail` — who has read one message.
+///
+/// `messageId` leaves quoted, for the reason ``ConversationMessageRequest`` gives: the server's field
+/// is a `string`, and a JSON number there is refused with `1000`.
+public struct ReceiptDetailRequest: Encodable, Sendable, Hashable {
+    public var conversationId: String
+    public var messageId: Int64
+
+    public init(conversationId: String, messageId: Int64) {
+        self.conversationId = conversationId
+        self.messageId = messageId
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case conversationId, messageId
+    }
+
+    /// Written by hand for one field: `messageId` leaves quoted.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(conversationId, forKey: .conversationId)
+        try container.encode(String(messageId), forKey: .messageId)
+    }
+}
+
+/// `msg.favourites` — cursor paging over one of the caller's own lists.
+///
+/// The server reads `0` (or an absent limit) as 20 and caps a page at 100; 20 is sent explicitly so
+/// the default reads at the call site. A malformed `cursor` restarts at page one.
+public struct PageRequest: Encodable, Sendable, Hashable {
+    public var cursor: String?
+    public var limit: Int
+
+    public init(cursor: String? = nil, limit: Int = 20) {
+        self.cursor = cursor
+        self.limit = limit
+    }
+}
+
+/// `msg.search`.
+///
+/// `keyword` is required in practice — null or blank is `1001` — and one made only of punctuation
+/// or emoji returns an empty page rather than an error.
+///
+/// `contentTypes`, `senderId`, `startTime` and `endTime` are applied **after** the index has
+/// produced its page, inclusively and against the server's `createTime`. A narrow filter therefore
+/// produces short, even empty, pages with `hasMore` still true: page on ``Page/nextCursor``, never on
+/// `items.count`.
+///
+/// Without a `conversationId` only the caller's 200 most recently updated conversations are searched
+/// (`IM:Search:MaxConversationsPerQuery`); pass one to reach an older chat. A `conversationId` the
+/// caller cannot see is `1103` — a group they are not in included, where other calls say `1503`.
+///
+/// 过滤条件在索引出页之后才施加，短页乃至空页而 hasMore 为真是常态；不给 conversationId 时
+/// 只搜最近更新的 200 个会话。
+public struct SearchMessagesRequest: Encodable, Sendable, Hashable {
+    public var keyword: String
+    public var conversationId: String?
+
+    /// Sent as the integer codes the server's enum binds from. An unknown one is sent as it is.
+    public var contentTypes: [MessageContentType]?
+
+    public var senderId: String?
+
+    /// Unix ms, inclusive, against the server's `createTime`.
+    public var startTime: Int64?
+
+    /// Unix ms, inclusive, against the server's `createTime`.
+    public var endTime: Int64?
+
+    public var cursor: String?
+
+    /// `0` or less becomes 20; capped server-side at 100.
+    public var limit: Int
+
+    public init(
+        keyword: String,
+        conversationId: String? = nil,
+        contentTypes: [MessageContentType]? = nil,
+        senderId: String? = nil,
+        startTime: Int64? = nil,
+        endTime: Int64? = nil,
+        cursor: String? = nil,
+        limit: Int = 20
+    ) {
+        self.keyword = keyword
+        self.conversationId = conversationId
+        self.contentTypes = contentTypes
+        self.senderId = senderId
+        self.startTime = startTime
+        self.endTime = endTime
+        self.cursor = cursor
+        self.limit = limit
     }
 }
 
@@ -373,7 +634,7 @@ public struct ListConversationsRequest: Encodable, Sendable, Hashable {
     }
 }
 
-/// `conv.get`, `conv.delete`, `conv.clear`.
+/// `conv.get`, `conv.delete`, `conv.clear`, `msg.pins`.
 public struct ConversationIdRequest: Encodable, Sendable, Hashable {
     public var conversationId: String
 
@@ -405,6 +666,20 @@ public struct UpdateConversationSettingRequest: Encodable, Sendable, Hashable {
     public init(conversationId: String, setting: ConversationSetting?) {
         self.conversationId = conversationId
         self.setting = setting
+    }
+}
+
+/// `conv.markUnread`. `unread: false` clears the mark.
+///
+/// The default is the server's own — an absent `unread` means **true** — and it is sent explicitly
+/// so that the call site and the wire say the same thing.
+public struct MarkUnreadRequest: Encodable, Sendable, Hashable {
+    public var conversationId: String
+    public var unread: Bool
+
+    public init(conversationId: String, unread: Bool = true) {
+        self.conversationId = conversationId
+        self.unread = unread
     }
 }
 
@@ -465,6 +740,23 @@ public struct SubscribePresenceRequest: Encodable, Sendable, Hashable {
     public init(userIds: [String], ttlSeconds: Int = 600) {
         self.userIds = userIds
         self.ttlSeconds = ttlSeconds
+    }
+}
+
+/// `user.setStatus` — a free-text custom status such as `"in a meeting"`.
+///
+/// Trimmed server-side; longer than 64 characters is `1001`. **`nil` or blank clears it**, which is
+/// why the argument has no default: clearing should be written down at the call site as
+/// `SetStatusRequest(status: nil)`, not inherited from a missing argument.
+public struct SetStatusRequest: Encodable, Sendable, Hashable {
+    public var status: String?
+
+    public init(status: String?) {
+        self.status = status
+    }
+
+    public init(_ status: String?) {
+        self.status = status
     }
 }
 
@@ -634,6 +926,28 @@ public struct BlockRequest: Encodable, Sendable, Hashable {
     }
 }
 
+/// `friend.setRemark`. **The two optional fields do not mean the same thing when left `nil`** — a
+/// `nil` is omitted from the frame, and the server reads the two absences differently.
+///
+/// - `remark` `nil` or blank **clears** the remark. To change only the tags, send the current remark
+///   back with them. Longer than 64 characters is `1001`; it is not truncated. It has no default for
+///   that reason: a cleared remark should be something the call site says.
+/// - `tags` `nil` leaves the tags alone; an empty array clears them. More than 20, or any tag blank
+///   or longer than 32 characters, is `1001`.
+///
+/// remark 为空即清除（只改 tags 时要把当前 remark 一并带上）；tags 为 nil 不动、空数组清空。
+public struct SetRemarkRequest: Encodable, Sendable, Hashable {
+    public var userId: String
+    public var remark: String?
+    public var tags: [String]?
+
+    public init(userId: String, remark: String?, tags: [String]? = nil) {
+        self.userId = userId
+        self.remark = remark
+        self.tags = tags
+    }
+}
+
 // MARK: - group
 
 /// `group.info`, `group.dismiss`, `group.quit`.
@@ -649,7 +963,11 @@ public struct GroupIdRequest: Encodable, Sendable, Hashable {
     }
 }
 
-/// `group.memberList`.
+/// `group.memberList`, `group.applicationList`.
+///
+/// `groupId` is required by `group.memberList`. For `group.applicationList` an empty one means
+/// "every group I manage", which is what ``ImGroupNamespace/applicationList(_:)`` sends by default;
+/// there `limit` 1…200 is kept as sent and anything else — 0, negative or over 200 — becomes 50.
 public struct GroupCursorRequest: Encodable, Sendable, Hashable {
     public var groupId: String
     public var cursor: String?
@@ -769,6 +1087,142 @@ public struct JoinGroupRequest: Encodable, Sendable, Hashable {
     }
 }
 
+/// `group.transfer`. `newOwnerId` must already be a member (`1503` otherwise) and must not be the
+/// caller (`1001`). The outgoing owner becomes a plain **member**, not an admin.
+public struct TransferOwnerRequest: Encodable, Sendable, Hashable {
+    public var groupId: String
+    public var newOwnerId: String
+
+    public init(groupId: String, newOwnerId: String) {
+        self.groupId = groupId
+        self.newOwnerId = newOwnerId
+    }
+}
+
+/// `group.handleApplication`.
+///
+/// `accept` has no default here, although the server has one: an absent `accept` is read as
+/// **false**, which rejects the application. A decision that important should be written down at
+/// the call site rather than inherited from a missing field. `reason` is kept on a rejection as
+/// ``GroupApplication/handleReason``; nobody is notified of a rejection.
+public struct HandleApplicationRequest: Encodable, Sendable, Hashable {
+    public var groupId: String
+
+    /// The ``GroupApplication/applicantId`` of the row being decided.
+    public var applicantId: String
+
+    public var accept: Bool
+    public var reason: String?
+
+    public init(groupId: String, applicantId: String, accept: Bool, reason: String? = nil) {
+        self.groupId = groupId
+        self.applicantId = applicantId
+        self.accept = accept
+        self.reason = reason
+    }
+}
+
+/// `group.setRole`. Only ``GroupRole/member`` and ``GroupRole/admin`` are meaningful, and
+/// ``ImGroupNamespace/setRole(_:)`` refuses anything else before it is sent.
+///
+/// `role` has no default for the reason `accept` has none on ``HandleApplicationRequest``: the
+/// server reads an absent role as `member`, which **demotes**. ``GroupRole/owner`` is `1008` —
+/// ownership moves with `group.transfer`. And the server stores any other integer it is given: `0`
+/// escapes a group-wide mute (which only silences members), and `4` or more is treated as a manager
+/// that outranks the admins. That is why the method refuses them rather than trusting the server to.
+///
+/// role 不设默认值：服务端把缺省读成 member，等于降级。owner 会被拒（1008，要用 group.transfer）；
+/// 其他整数服务端照单全收——0 能逃过全员禁言，≥4 会比管理员还大——所以方法在发出前就拒掉它们。
+public struct SetRoleRequest: Encodable, Sendable, Hashable {
+    public var groupId: String
+    public var userId: String
+
+    /// Sent as its integer code (`1` member, `2` admin).
+    public var role: GroupRole
+
+    public init(groupId: String, userId: String, role: GroupRole) {
+        self.groupId = groupId
+        self.userId = userId
+        self.role = role
+    }
+}
+
+/// `group.mute` — the whole group. `mute: false` unmutes and ignores `untilMs`.
+///
+/// With `mute: true`, no `untilMs` is **indefinite**; a future one lasts until then; and **a past one
+/// is indefinite too, not an unmute** — the server keeps the mute and drops the end time. Compute
+/// `untilMs` from the server clock where you can, and in **milliseconds**: a seconds value is a
+/// moment in January 1970 and so mutes the group forever.
+///
+/// 过去的 untilMs 不是「解除」而是「无限期」；untilMs 是毫秒，填成秒就是 1970 年，同样是永久禁言。
+public struct MuteGroupRequest: Encodable, Sendable, Hashable {
+    public var groupId: String
+
+    /// The server's own default, sent explicitly.
+    public var mute: Bool
+
+    /// Unix ms.
+    public var untilMs: Int64?
+
+    public init(groupId: String, mute: Bool = true, untilMs: Int64? = nil) {
+        self.groupId = groupId
+        self.mute = mute
+        self.untilMs = untilMs
+    }
+}
+
+/// `group.muteMember` — one member.
+///
+/// **The opposite reading from ``MuteGroupRequest``:** a future `untilMs` mutes until then, and a
+/// `nil` or past one **unmutes**. There is no indefinite member mute; send a far-future timestamp for
+/// one.
+///
+/// 与 MuteGroupRequest 相反：nil 或过去的 untilMs 表示解除；没有「无限期」，要就给一个很远的时间。
+public struct MuteMemberRequest: Encodable, Sendable, Hashable {
+    public var groupId: String
+    public var userId: String
+
+    /// Unix ms.
+    public var untilMs: Int64?
+
+    public init(groupId: String, userId: String, untilMs: Int64?) {
+        self.groupId = groupId
+        self.userId = userId
+        self.untilMs = untilMs
+    }
+}
+
+/// `group.setNickname`. A `nil`, empty or own `userId` sets **the caller's** nickname, which any
+/// member may do; somebody else's needs owner or admin and outranking them.
+///
+/// `nickname` is trimmed; `nil` or blank clears it; past 64 characters it is **silently truncated**.
+public struct SetGroupNicknameRequest: Encodable, Sendable, Hashable {
+    public var groupId: String
+
+    /// `nil` means the caller.
+    public var userId: String?
+
+    public var nickname: String?
+
+    public init(groupId: String, userId: String? = nil, nickname: String?) {
+        self.groupId = groupId
+        self.userId = userId
+        self.nickname = nickname
+    }
+}
+
+/// `group.announcement`. `nil` or blank clears it — which is why the argument has no default.
+/// Trimmed, and past 4096 characters **silently truncated**.
+public struct AnnouncementRequest: Encodable, Sendable, Hashable {
+    public var groupId: String
+    public var announcement: String?
+
+    public init(groupId: String, announcement: String?) {
+        self.groupId = groupId
+        self.announcement = announcement
+    }
+}
+
 // MARK: - moderation
 
 /// `moderation.report` — one end user reporting another.
@@ -823,16 +1277,11 @@ public struct SubmitReportRequest: Encodable, Sendable, Hashable {
     ///
     /// The property stays `Int64` because that is what a message id is on this platform and what
     /// ``RecallMessageRequest`` and ``ReactRequest`` already take; what has to be a string is the
-    /// JSON. Message ids are snowflakes past 2^53 by a factor of 38, `SubmitReportRequest.MessageId`
-    /// carries `WriteAsString | AllowReadingFromString` on the server for exactly that reason, and a
-    /// quoted id is therefore the shape both ends already agree on.
+    /// JSON. Message ids are snowflakes past 2^53 by a factor of 38, and the server's
+    /// `SubmitReportRequest.MessageId` is a `string` (reading `"0"`, blank or absent as "the account"),
+    /// like the message id of every `msg.*` request this SDK sends.
     ///
-    /// The `msg.*` requests in this file still write theirs as JSON numbers, which is a defect and
-    /// not a convention worth copying: the server's own DTOs for `msg.recall`, `msg.edit`,
-    /// `msg.delete`, `msg.forward`, `msg.react` and `msg.receipt` take `string` now, and a JSON
-    /// number cannot be read into one at all. Repairing those changes their public field types and
-    /// belongs to one pass across all five SDKs — it is not a reason to write a new endpoint the
-    /// broken way.
+    /// The default `0` is sent as `"0"` rather than left out; the server reads the two the same way.
     ///
     /// The optionals keep `encodeIfPresent`, which is what the synthesised encoder would have done
     /// and what the gateway's "nulls are omitted when writing" policy expects.

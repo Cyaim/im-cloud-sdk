@@ -140,8 +140,8 @@ namespace Cyaim.Im.Tests
                 // with the difference. A client that has been offline for a week is behind by more
                 // messages than it can usefully receive at once.
                 var sync = harness.Socket.LastBody("conn.sync");
-                Assert.That(sync["convSeqs"]["c1"].AsLong(), Is.EqualTo(12));
-                Assert.That(sync["limit"].AsInt(), Is.EqualTo(200));
+                Assert.That(sync["convSeqs"]["c1"].WireLong(), Is.EqualTo(12));
+                Assert.That(sync["limit"].WireInt(), Is.EqualTo(200));
             }
         }
     }

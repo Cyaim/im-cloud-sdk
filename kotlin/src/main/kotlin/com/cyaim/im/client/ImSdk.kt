@@ -36,5 +36,5 @@ public object ImSdk {
      * Published because a customer choosing a platform on a feature matrix should be able to read
      * the matrix off the artifact instead of a README that may be a release behind.
      */
-    public val tiers: List<String> = listOf("T0", "T1", "T2")
+    public val tiers: List<String> = listOf("T0", "T1", "T2", "T3")
 }

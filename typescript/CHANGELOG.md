@@ -16,6 +16,19 @@ endpoints. `1.0.0` is reserved for T0 + T1 complete on all five SDKs.
 
 Implements [`sdk/CONTRACT.md`](../CONTRACT.md) contract version `1.0`.
 
+### Changed on the server (2026-09-21)
+
+- `moderation.report` `messageId` and `msg.translate` `messageIds` are strings on the server now
+  (they were `long` / `List<long>`, which refused the quoted ids SDKs send). The typed calls send
+  strings; a raw `invoke` that sends either as a JSON number is now refused with `status 1` /
+  `code 1000`. On `moderation.report`, absent, blank or `"0"` reports the account and any other
+  unreadable id is refused with 1001.
+- Nested request objects (`options`, `pushConfig`, `setting`, group updates) bind as the SDKs send
+  them since the same day; until then every nested option was dropped. Two of them are authority,
+  decided by the credential: from a client, a `msg.send` whose `options.pushConfig` has a non-empty
+  `title` or `body` is refused with 1103, and so is an image, voice, video or file message with
+  `persistent: false` or `onlineOnly: true` while the app moderates content. See CONTRACT.md §2.
+
 ### Fixed
 
 - **Cold-start data loss (CONTRACT §5.1).** Every message that arrived while the application was
@@ -40,9 +53,36 @@ Implements [`sdk/CONTRACT.md`](../CONTRACT.md) contract version `1.0`.
 - **64-bit values sent as JSON strings.** `NumberHandling.AllowReadingFromString` is set
   server-side, so `seq` can legitimately arrive as `"1234"`. Comparisons coerced and hid it;
   `seq + 1` did not, and produced a repair request for a range that does not exist.
+- **`GroupCursorRequest.limit` was documented as "1…100".** The server keeps 1–200 and turns
+  anything else — absent, 0, or over 200 — into 50, for `group.memberList` and
+  `group.applicationList` alike.
 
 ### Added
 
+- **Tier T3 typed whole — all twenty endpoints.** `im.msg.pin` `unpin` `pins` `favourite`
+  `unfavourite` `favourites` `burn` `search` `receiptDetail`, `im.conv.markUnread`,
+  `im.user.setStatus`, `im.friend.setRemark`, and `im.group.transfer` `applicationList`
+  `handleApplication` `setRole` `mute` `muteMember` `setNickname` `announcement`, with their request
+  and payload types (`ConversationMessageRequest`, `PageRequest`, `SearchMessagesRequest`,
+  `ReceiptDetailRequest`, `MessageReceipt`, `PinnedMessage`, `GroupApplication`, and one request type
+  per group verb). The typed surface is now 82 of 107 endpoints; the rest of T4 stays behind
+  `invoke()`.
+  - **Message ids are strings on both sides, and on these endpoints the server requires it:** the
+    request DTOs declare `messageId` as a C# `string`, and the socket binder answers a JSON number
+    with `1000`. The responses (`MessageReceipt`, `PinnedMessage`, `MessageBrief`, `ImMessage`) write
+    theirs with `WriteAsString`, whatever the inventory's `payloadTypes` says.
+  - **`SetRoleRequest.role` is `Member | Admin` by type.** The server refuses `Owner` (`1008`) but
+    stores any other integer, and `0` escapes a group-wide mute while `4` outranks every admin.
+  - `HandleApplicationRequest.accept` is required although the server defaults it: absent means
+    *reject*, which should never be what leaving a field out does.
+  - Doc comments carry what the signatures cannot: `msg.search` off by default (`1203`), gated by the
+    plan (`1204`) and rate limited (`1003`) **before** either gate; `msg.receiptDetail`'s
+    `totalCount` including the sender and the read having no size cap (the limit is on
+    `msg.receipt`); `group.mute` reading a past `untilMs` as *indefinite* while `group.muteMember`
+    reads it as *unmute*; `group.applicationList` returning every status, not only pending;
+    `friend.setRemark` clearing an omitted remark but keeping omitted tags.
+  - `test/t3.test.ts` pins every T3 request body on the wire — keys, values and JSON kind — and
+    every payload decode; `coverage.test.ts` now commits to T3 whole.
 - **The customer-service desk, typed (`im.desk`, tier T4).** All nine verbs — `request` `accept`
   `transfer` `close` `status` `queue` `rate` `canned` `suggest` — with `DeskSession` carrying every
   field the server returns today, `DeskSessionState` including `Bot`, the string-valued

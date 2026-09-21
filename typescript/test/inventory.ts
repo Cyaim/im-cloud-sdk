@@ -14,7 +14,19 @@ import { fileURLToPath } from 'node:url';
 export interface Inventory {
   contractVersion: string;
   tiers: Record<string, { targets: string[] }>;
-  endpoints: Array<{ target: string }>;
+  /** `requestType` names an entry of `payloadTypes`; null for an endpoint that takes no body. */
+  endpoints: Array<{ target: string; requestType?: string | null; tier?: string }>;
+
+  /**
+   * The server's request and payload types as **C# declares them** — `string`, `long?`,
+   * `List<string>`, an enum's name, another payload type's name. For a request that is exactly what
+   * the socket binder holds the body to: it does not go through the platform's JSON options, so a
+   * value of the wrong JSON kind is refused rather than coerced (`wire-kinds.test.ts`).
+   */
+  payloadTypes: Record<string, { properties: Array<{ name: string; type: string; nullable: boolean }> }>;
+
+  /** Bare C# enums, name → integer. On a request each one binds from a JSON integer and nothing else. */
+  payloadEnums: Record<string, Record<string, number>>;
 
   /**
    * The `change` values an `evt.desk` frame can carry, keyed by the server constant's name and in

@@ -9,7 +9,7 @@ import kotlinx.serialization.json.put
 
 /*
  * Payload models: the `data` half of an `ApiResult`, one Kotlin type per entry in
- * sdk/endpoint-inventory.json's `payloadTypes` that tiers T0–T2 reach.
+ * sdk/endpoint-inventory.json's `payloadTypes` that tiers T0–T3 reach.
  *
  * Two rules run through all of it, both from CONTRACT.md §4.5 and both learned the hard way:
  *
@@ -185,6 +185,49 @@ public data class MessageBrief(
 /** The name this type carried before it was aligned with the server DTO. */
 @Deprecated("Renamed to MessageBrief to match the server payload type", ReplaceWith("MessageBrief"))
 public typealias ConversationDigest = MessageBrief
+
+/**
+ * One entry on a conversation's pinned board, as `msg.pins` returns it.
+ *
+ * [messageId] arrives as a JSON string, like every message id the server writes, and decodes into
+ * the `Long` exactly — the lenient codec reads the digits, never a rounded double.
+ */
+@Serializable
+public data class PinnedMessage(
+    public val messageId: Long = 0,
+    public val seq: Long = 0,
+    /** Who pinned it. */
+    public val pinnedBy: String = "",
+    /** Unix ms, server clock. */
+    public val pinnedAt: Long = 0,
+    /**
+     * Built fresh when the board is read, so it reflects a recall that happened after the pin
+     * (`digest` "[Recalled]", `recalled = true`). Tokens such as "[Image]" are fixed wire values for
+     * the client to localise. `msg.pins` always fills it; nullable because the DTO allows it.
+     */
+    public val brief: MessageBrief? = null,
+)
+
+/**
+ * `msg.receiptDetail` — who has read one message.
+ *
+ * **[totalCount] includes the sender and [readUserIds] never does**, so "read by everyone" is
+ * `readCount == totalCount - 1`, not `readCount == totalCount`. [totalCount] is a snapshot taken at
+ * the last receipt, not a live member count.
+ *
+ * 发送者计入 totalCount 却不会出现在 readUserIds 里，「全员已读」是 readCount == totalCount - 1。
+ */
+@Serializable
+public data class MessageReceipt(
+    public val appId: String = "",
+    public val conversationId: String = "",
+    public val messageId: Long = 0,
+    public val readUserIds: List<String> = emptyList(),
+    public val readCount: Int = 0,
+    public val totalCount: Int = 0,
+    /** Unix ms. Equal to the message's `createTime` when nobody has read it yet. */
+    public val updatedAt: Long = 0,
+)
 
 // ------------------------------------------------------------------------- conversations
 
@@ -364,6 +407,33 @@ public data class GroupMember(
     public val joinTime: Long = 0,
     public val joinSource: String? = null,
     public val extensions: JsonObject? = null,
+)
+
+/**
+ * A request to join a group, as `group.applicationList` returns it.
+ *
+ * **Every status comes back, not only pending ones** — the server does not filter. For a "waiting
+ * for you" list, keep the rows whose [status] is [ApplicationStatus.Pending].
+ * The server never produces [ApplicationStatus.Expired] today.
+ *
+ * 服务端不按状态过滤，各种状态都会返回；「等你处理」要自己筛 Pending。
+ */
+@Serializable
+public data class GroupApplication(
+    public val appId: String = "",
+    public val groupId: String = "",
+    public val applicantId: String = "",
+    /** Set when an ordinary member invited [applicantId] into a group that needs approval. */
+    public val inviterId: String? = null,
+    public val reason: String? = null,
+    public val status: ApplicationStatus = ApplicationStatus.Pending,
+    /** Who accepted or rejected it. */
+    public val handlerId: String? = null,
+    public val handleReason: String? = null,
+    /** Unix ms. */
+    public val createdAt: Long = 0,
+    /** Unix ms; null while pending. */
+    public val handledAt: Long? = null,
 )
 
 // -------------------------------------------------------------------------------- media

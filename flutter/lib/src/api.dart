@@ -166,6 +166,152 @@ final class ImMsgApi extends _Namespace {
   /// `msg.receipt`. Per-message read acknowledgement.
   Future<void> receipt(ImReceiptRequest request, [ImCancelToken? cancel]) =>
       sendUnit('msg.receipt', request.toJson(), cancel);
+
+  // ---- T3: competitive parity
+  //
+  // Every message id below leaves as a **string**, and for these endpoints that is the server's
+  // requirement, not only this package's caution: the request DTOs declare `messageId` as C#
+  // `string`, and the socket binder refuses a JSON number for one with `1000`. See
+  // ImConversationMessageRequest.
+  // 下面每个消息 id 都以字符串出线：服务端 DTO 就是 string，给数字会被绑定器拒成 1000。
+
+  /// `msg.pin` (T3). Pins a message to the conversation's shared board — something everyone in the
+  /// conversation sees, as opposed to [favourite], which only the caller does.
+  ///
+  /// **Who may:** either side of a single chat; in a group, only the owner or an admin while the
+  /// deployment's `IM:Extras:GroupPinRequiresAdmin` is on, which is the default
+  /// ([ImErrorCode.noGroupPermission] otherwise). Chat rooms are
+  /// [ImErrorCode.unsupportedOperation]; a system or assistant conversation is
+  /// [ImErrorCode.forbidden] unless the caller has received something there.
+  ///
+  /// **Refusals:** [ImErrorCode.messageNotFound] for a message that is not there — including a
+  /// `messageId` the server cannot parse — and for a recalled one;
+  /// [ImErrorCode.unsupportedOperation] for an ephemeral message (sent with
+  /// [ImMessageOptions.expireIn]); [ImErrorCode.conflict] once the board holds
+  /// `IM:Extras:MaxPinsPerConversation` pins (20 by default) — unpin one first. Pinning what is
+  /// already pinned succeeds and announces nothing.
+  ///
+  /// On success everyone gets a notification message (`contentType` 9, `content.code` 1514,
+  /// `pinned: true`), which does not count as unread and raises no push. **Do not take the message
+  /// id from that notification**: its `content.messageId` is a bare JSON number, which on the web
+  /// has lost precision before this package sees it. Re-read [pins] instead.
+  /// 置顶成功会发一条 1514 通知，但它的 content.messageId 是裸数字、在 web 上已经丢了精度——请重新读 pins。
+  Future<void> pin(ImConversationMessageRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('msg.pin', request.toJson(), cancel);
+
+  /// `msg.unpin` (T3). Takes a message off the board. Same permission rules as [pin].
+  ///
+  /// **Succeeds silently when nothing was pinned** — including for a `messageId` the server cannot
+  /// parse — so it is safe to retry, and a success is not proof the id was right. The 1514
+  /// notification (`pinned: false`) goes out only when a pin was actually removed and the message
+  /// still exists.
+  Future<void> unpin(ImConversationMessageRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('msg.unpin', request.toJson(), cancel);
+
+  /// `msg.pins` (T3). The conversation's pinned board, newest pin first.
+  ///
+  /// **A plain list, not a page**: the board is capped (20 by default), so there is nothing to page
+  /// through, and it is empty when nothing is pinned. Any participant may read it; a group
+  /// non-member is [ImErrorCode.notGroupMember]. Pins whose message has since vanished are dropped
+  /// from the answer and cleaned up server-side.
+  Future<List<ImPinnedMessage>> pins(ImConversationIdRequest request, [ImCancelToken? cancel]) =>
+      decodeList('msg.pins', request.toJson(), cancel, ImPinnedMessage.fromJson);
+
+  /// `msg.favourite` (T3). Bookmarks a message for the caller alone. Private and silent: nobody
+  /// else is told.
+  ///
+  /// **Refusals:** [ImErrorCode.messageNotFound] for a message that is not there (including an
+  /// unparseable id); [ImErrorCode.unsupportedOperation] for an ephemeral message;
+  /// [ImErrorCode.conflict] once the caller holds `IM:Extras:MaxFavouritesPerUser` (5000 by
+  /// default) — counted *before* the write, so re-favouriting at the cap also fails. A recalled
+  /// message is **not** refused. Repeating it is safe, but it moves the favourite back to the top.
+  Future<void> favourite(ImConversationMessageRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('msg.favourite', request.toJson(), cancel);
+
+  /// `msg.unfavourite` (T3). Removes a bookmark.
+  ///
+  /// **Always succeeds** — nothing to remove, an unparseable id, a conversation the caller has since
+  /// left: all `0`. So it is safe to repeat, and a success proves nothing about the id.
+  Future<void> unfavourite(ImConversationMessageRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('msg.unfavourite', request.toJson(), cancel);
+
+  /// `msg.favourites` (T3). The caller's bookmarks across every conversation, newest favourite
+  /// first, as whole messages. The request is optional; without one the first page of 20 comes back.
+  ///
+  /// **Page until [ImPage.nextCursor] is null, not until a page comes back short**: favourites in
+  /// chats the caller can no longer read are hidden rather than returned, so a page can be short —
+  /// even empty — with more behind it. Recalled messages *are* listed, with
+  /// [ImMessage.recalled] set. The payload carries no favourite timestamp, and [ImPage.total] is
+  /// always null.
+  /// 翻到 nextCursor 为空为止，不要按「这页不满」停：读不到的会话里的收藏被隐藏，一页可以短甚至为空。
+  Future<ImPage<ImMessage>> favourites([
+    ImPageRequest request = const ImPageRequest(),
+    ImCancelToken? cancel,
+  ]) =>
+      decodePage('msg.favourites', request.toJson(), cancel, ImMessage.fromJson);
+
+  /// `msg.burn` (T3). Starts the countdown on a burn-after-reading message. **Call it when the
+  /// message is actually shown**; it is safe to call for every rendered message.
+  ///
+  /// Only messages sent with [ImMessageOptions.expireIn] above zero burn
+  /// ([ImErrorCode.unsupportedOperation] otherwise). The sender calling it on their own message
+  /// succeeds and starts nothing. The first *reader* moves the message's `expireAt` from
+  /// `createTime + expireIn` to `now + expireIn` — **conversation-wide**, so in a group the first
+  /// reader starts everyone's clock — and later calls succeed silently. A message nobody reads
+  /// still expires at `createTime + expireIn`.
+  ///
+  /// The only T3 message call that checks its id: a missing or unparseable `messageId` is
+  /// [ImErrorCode.invalidArgument]; a message that is not there is [ImErrorCode.messageNotFound].
+  /// Participants are told through `evt.messageUpdate` with `kind: "burn"` and the absolute
+  /// `expireAt` — read it with `im.events('evt.messageUpdate')`; that frame is not typed yet.
+  ///
+  /// **A courtesy between cooperating clients, not a defence.** The server stops serving the
+  /// message and tells clients to erase it; a recipient who already has the bytes can keep them.
+  /// 阅后即焚是协作客户端之间的礼貌，不是防御：已经拿到字节的接收方可以留存。
+  Future<void> burn(ImConversationMessageRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('msg.burn', request.toJson(), cancel);
+
+  /// `msg.search` (T3). Full-text search over what the caller can see, newest first. Recalled
+  /// messages and ones the caller deleted for themselves are excluded.
+  ///
+  /// **Off unless the tenant turned it on**, and gated twice: [ImErrorCode.featureNotEnabled] while
+  /// `EnableSearch` is off (the default, and forced off on end-to-end-encrypted apps), and
+  /// [ImErrorCode.planExpired] when the plan lacks the search add-on. Latch neither — a tenant can
+  /// change both at runtime (CONTRACT §7.4).
+  ///
+  /// **Rate limited per user, before either gate:** [ImErrorCode.rateLimited] past
+  /// `MaxSearchPerMinutePerUser` (30 by default) in a sliding minute, with no retry hint. Because
+  /// the limiter runs first, calls against a tenant with search off still spend the budget —
+  /// **debounce search-as-you-type**.
+  ///
+  /// A blank keyword is [ImErrorCode.invalidArgument]. The filters apply after the index page, so
+  /// short pages with [ImPage.hasMore] true are normal; page on [ImPage.nextCursor]. An index that
+  /// takes longer than five seconds comes back [ImErrorCode.internalError], not
+  /// [ImErrorCode.timeout] — it is retryable, and the SDK leaves the retry to you.
+  /// 默认关闭；限速在开关检查之前执行，所以对关闭搜索的租户调用也会消耗额度——输入联想要做防抖。
+  Future<ImPage<ImMessage>> search(ImSearchMessagesRequest request, [ImCancelToken? cancel]) =>
+      decodePage('msg.search', request.toJson(), cancel, ImMessage.fromJson);
+
+  /// `msg.receiptDetail` (T3). Who has read one message. Distinct from [receipt], which is how a
+  /// reader *reports* a read.
+  ///
+  /// Returns the stored receipt when there is one. Otherwise [ImErrorCode.messageNotFound] for a
+  /// message that is not there (including an unparseable id), [ImErrorCode.receiptDisabled] when it
+  /// was not sent with [ImMessageOptions.needReceipt], and an **empty receipt** — no readers,
+  /// `readCount` 0 — when nobody has read it yet. Access: [ImErrorCode.invalidArgument],
+  /// [ImErrorCode.forbidden], [ImErrorCode.notGroupMember].
+  ///
+  /// **This read has no cap and truncates nothing.** The group-size limit belongs to the *write*:
+  /// `msg.receipt` answers [ImErrorCode.receiptDisabled] in groups larger than the tenant's
+  /// `ReceiptGroupMemberLimit` (100 by default), so in such a group nobody's read is ever recorded
+  /// and this returns an empty — or frozen — receipt. Read [ImMessageReceipt.totalCount] with its
+  /// note: it includes the sender.
+  /// 这个读没有上限、不截断；群人数上限卡的是写入（msg.receipt），所以大群里这里读到的是空的或冻结的回执。
+  Future<ImMessageReceipt> receiptDetail(
+    ImReceiptDetailRequest request, [
+    ImCancelToken? cancel,
+  ]) =>
+      decodeOne('msg.receiptDetail', request.toJson(), cancel, ImMessageReceipt.fromJson);
 }
 
 // ---------------------------------------------------------------------------- conv
@@ -212,6 +358,19 @@ final class ImConvApi extends _Namespace {
   /// data and is a server-API operation, not a client one.
   Future<void> clear(ImConversationIdRequest request, [ImCancelToken? cancel]) =>
       sendUnit('conv.clear', request.toJson(), cancel);
+
+  /// `conv.markUnread` (T3). Marks a conversation unread by hand — the "remind me later" swipe — or
+  /// clears that mark with [ImMarkUnreadRequest.unread] false.
+  ///
+  /// The mark surfaces as [ImConversationView.manuallyUnread], and an `unreadCount` that would
+  /// otherwise be 0 displays as 1. It does **not** move `readSeq`, so the other side's read
+  /// receipts are unaffected; [read], [delete] and [clear] all clear it. Setting the value it
+  /// already has succeeds and sends no event; a change goes to the caller's other devices as
+  /// `evt.conversationUpdate` with kind `"unread"`. Access: [ImErrorCode.invalidArgument],
+  /// [ImErrorCode.forbidden], [ImErrorCode.notGroupMember].
+  /// 不移动 readSeq，对方的已读回执不受影响；conv.read / delete / clear 都会清掉这个标记。
+  Future<void> markUnread(ImMarkUnreadRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('conv.markUnread', request.toJson(), cancel);
 }
 
 // ---------------------------------------------------------------------------- user
@@ -255,6 +414,20 @@ final class ImUserApi extends _Namespace {
   /// `user.unsubscribePresence`.
   Future<void> unsubscribePresence(ImUserIdsRequest request, [ImCancelToken? cancel]) =>
       sendUnit('user.unsubscribePresence', request.toJson(), cancel);
+
+  /// `user.setStatus` (T3). Sets the caller's own status line; `const ImSetStatusRequest()` clears
+  /// it.
+  ///
+  /// **It expires after seven days, silently.** The server stores it with a TTL and nothing tells
+  /// the user it went, so an application that wants it to persist sets it again on login.
+  ///
+  /// More than 64 characters is [ImErrorCode.invalidArgument]; [ImErrorCode.serviceUnavailable]
+  /// when the presence store is down. Subscribers see it as [ImPresenceState.customStatus] on
+  /// `evt.presence`. Like [subscribePresence], this call does **not** check `EnablePresence` while
+  /// [presence] does, so a successful set does not mean anyone can read it.
+  /// 七天后静默过期：服务端带 TTL 存储、不会通知任何人。要长期保留，就在每次登录时重新设置。
+  Future<void> setStatus(ImSetStatusRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('user.setStatus', request.toJson(), cancel);
 }
 
 // ---------------------------------------------------------------------------- friend
@@ -300,11 +473,30 @@ final class ImFriendApi extends _Namespace {
   /// `friend.unblock`.
   Future<void> unblock(ImUserIdRequest request, [ImCancelToken? cancel]) =>
       sendUnit('friend.unblock', request.toJson(), cancel);
+
+  /// `friend.setRemark` (T3). Renames a contact and re-files their tags. Visible only to the
+  /// caller: the `evt.friend` frame (`action: "updated"`) goes to the caller's own devices and never
+  /// to the contact.
+  ///
+  /// **A null remark clears it; null tags keep them** — so to change only the tags, send the
+  /// current remark along. [ImErrorCode.invalidArgument] for a remark over 64 characters (refused,
+  /// not truncated), more than 20 tags, or a tag blank or over 32; [ImErrorCode.notFriend] when
+  /// they are not a contact.
+  /// remark 为空会清空备注，tags 为空则不动——只改标签时要把现有备注一起带上。
+  Future<void> setRemark(ImSetRemarkRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('friend.setRemark', request.toJson(), cancel);
 }
 
 // ---------------------------------------------------------------------------- group
 
-/// `group.*` — the ten calls that turn a 1:1 chat into a messenger.
+/// `group.*` — the ten calls that turn a 1:1 chat into a messenger (T2), and administration:
+/// ownership, roles, mutes, nicknames, announcements and join requests (T3).
+///
+/// Most of the administration calls are owner-or-admin ([ImErrorCode.noGroupPermission]
+/// otherwise); the group-level refusals are [ImErrorCode.groupNotFound],
+/// [ImErrorCode.groupDismissed] and [ImErrorCode.notGroupMember] (the caller or the target is not
+/// a member). Each method names what is specific to it. Every successful change is announced to
+/// the group as a notification message (`contentType` 9) carrying its own code in `content.code`.
 final class ImGroupApi extends _Namespace {
   const ImGroupApi(super.requester);
 
@@ -351,6 +543,106 @@ final class ImGroupApi extends _Namespace {
   /// application was filed, which is not a failure.
   Future<void> join(ImJoinGroupRequest request, [ImCancelToken? cancel]) =>
       sendUnit('group.join', request.toJson(), cancel);
+
+  // ---- T3: administration
+
+  /// `group.transfer` (T3). Hands the group to another member. **Owner only**
+  /// ([ImErrorCode.noGroupPermission]), and not repeatable: a retry after it succeeded is
+  /// [ImErrorCode.noGroupPermission] too, because the caller is no longer the owner.
+  ///
+  /// The outgoing owner becomes a plain **member**, not an admin — grant it back with [setRole] if
+  /// that is what you want. Transferring to yourself is [ImErrorCode.invalidArgument]; to a
+  /// non-member, [ImErrorCode.notGroupMember]. Announced as notification 1511.
+  /// 原群主降为普通成员而不是管理员；成功后重试会得到 1504，因为调用者已不再是群主。
+  Future<void> transfer(ImTransferOwnerRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('group.transfer', request.toJson(), cancel);
+
+  /// `group.applicationList` (T3). Join requests awaiting — and already given — an answer, newest
+  /// first.
+  ///
+  /// **The request is optional, and an empty `groupId` is meaningful**: without one it lists across
+  /// every group the caller manages (only the first 200 groups they have joined are looked at).
+  /// With a `groupId` the caller must be its owner or an admin
+  /// ([ImErrorCode.noGroupPermission]).
+  ///
+  /// **It returns every status, not only pending**: filter on
+  /// `status == ImApplicationStatus.pending` for a "waiting for you" list. A `limit` of 1–200 is
+  /// kept; anything else becomes 50.
+  /// 返回所有状态而不只是待处理的：「等你处理」要自己筛 pending。
+  Future<ImPage<ImGroupApplication>> applicationList([
+    ImGroupCursorRequest request = const ImGroupCursorRequest(groupId: ''),
+    ImCancelToken? cancel,
+  ]) =>
+      decodePage(
+        'group.applicationList',
+        request.toJson(),
+        cancel,
+        ImGroupApplication.fromJson,
+      );
+
+  /// `group.handleApplication` (T3). Accepts or rejects one join request. Owner or admin
+  /// ([ImErrorCode.noGroupPermission]).
+  ///
+  /// [ImErrorCode.applicationNotFound] when there is no such request, [ImErrorCode.conflict] when it
+  /// was already handled. A rejection is stored with its reason and **tells nobody**. An acceptance
+  /// adds the member and announces 1513 — unless the group is full ([ImErrorCode.groupFull]), in
+  /// which case the request stays pending.
+  Future<void> handleApplication(
+    ImHandleApplicationRequest request, [
+    ImCancelToken? cancel,
+  ]) =>
+      sendUnit('group.handleApplication', request.toJson(), cancel);
+
+  /// `group.setRole` (T3). Promotes a member to admin or demotes an admin. **Owner only**
+  /// ([ImErrorCode.noGroupPermission]).
+  ///
+  /// The role is asserted to be [ImGroupRole.member] or [ImGroupRole.admin] — see
+  /// [ImSetRoleRequest.role] for why. Ownership moves only with [transfer]; [ImGroupRole.owner]
+  /// here is [ImErrorCode.unsupportedOperation]. A non-member target is
+  /// [ImErrorCode.notGroupMember]; the owner as target — including the owner naming themselves — is
+  /// [ImErrorCode.cannotOperateOwner]. Setting the role somebody already has succeeds and announces
+  /// nothing; otherwise 1507 announces a promotion to admin and 1508 anything else.
+  Future<void> setRole(ImSetRoleRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('group.setRole', request.toJson(), cancel);
+
+  /// `group.mute` (T3). Mutes or unmutes the whole group. Owner or admin
+  /// ([ImErrorCode.noGroupPermission]); they can still send while it is on, and members get
+  /// [ImErrorCode.groupMuted].
+  ///
+  /// **A past `untilMs` means indefinitely, not "unmute"** — see [ImMuteGroupRequest.untilMs];
+  /// unmuting is `mute: false`. Every call writes and announces 1509, even when nothing changed.
+  /// 过去的 untilMs 是「无限期」而不是「解除」；解除请发 mute: false。
+  Future<void> mute(ImMuteGroupRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('group.mute', request.toJson(), cancel);
+
+  /// `group.muteMember` (T3). Mutes one member until a time, or unmutes them. Owner or admin
+  /// ([ImErrorCode.noGroupPermission]); an admin cannot mute another admin (the same code), nobody
+  /// can mute the owner ([ImErrorCode.cannotOperateOwner]), and muting yourself is
+  /// [ImErrorCode.unsupportedOperation].
+  ///
+  /// **No `untilMs`, or a past one, unmutes** — the opposite reading from [mute]. There is no
+  /// indefinite member mute; send a far-future time. The muted member's sends fail
+  /// [ImErrorCode.memberMuted]. Announced as 1510.
+  Future<void> muteMember(ImMuteMemberRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('group.muteMember', request.toJson(), cancel);
+
+  /// `group.setNickname` (T3). Sets somebody's nickname inside the group — the caller's own when
+  /// `userId` is null, which any member may do. Anybody else's needs owner or admin and outranking
+  /// them ([ImErrorCode.noGroupPermission] / [ImErrorCode.cannotOperateOwner]).
+  ///
+  /// Trimmed; blank clears it; **over 64 characters is truncated, not refused**. Announced as 1506
+  /// with `fields: ["Nickname"]` — capitalised, as the server writes it.
+  Future<void> setNickname(ImSetGroupNicknameRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('group.setNickname', request.toJson(), cancel);
+
+  /// `group.announcement` (T3). Replaces the group's announcement. Owner or admin
+  /// ([ImErrorCode.noGroupPermission]).
+  ///
+  /// Trimmed; null or blank clears it; **over 4096 characters is truncated, not refused**. Moves
+  /// [ImGroup.announcementUpdatedAt]. Every call announces 1512 carrying the text, even when nothing
+  /// changed.
+  Future<void> announcement(ImAnnouncementRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('group.announcement', request.toJson(), cancel);
 }
 
 // ---------------------------------------------------------------------------- media

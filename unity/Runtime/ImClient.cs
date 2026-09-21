@@ -737,10 +737,9 @@ namespace Cyaim.Im
         /// </remarks>
         /// <example>
         /// <code>
-        /// // group.transfer is tier 3 and not typed yet
-        /// await im.InvokeAsync("group.transfer", JsonValue.NewObject()
-        ///     .Set("groupId", groupId)
-        ///     .Set("newOwnerId", userId));
+        /// // msg.cancelScheduled is tier 4 and not typed yet
+        /// await im.InvokeAsync("msg.cancelScheduled", JsonValue.NewObject()
+        ///     .Set("scheduleId", scheduleId));
         /// </code>
         /// </example>
         public Task<JsonValue> InvokeAsync(

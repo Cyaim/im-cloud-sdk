@@ -23,17 +23,17 @@
       "serverTime": "long, unix ms",
       "data": "T|null"
     },
-    "jsonPolicy": "camelCase property names; nulls omitted on write; numbers may arrive as JSON strings; property matching is case-insensitive on read"
+    "jsonPolicy": "responses: camelCase names, nulls omitted, numbers may arrive as JSON strings (message ids always do), unknown fields ignored. requests: each field as the JSON kind of its C# type (enums as integers, message ids as digit strings, never a number read from a string); top-level keys match ignoring case, nested keys must be exact camelCase and an unmatched one is dropped. See CONTRACT.md section 2."
   },
   "totals": {
     "endpoints": 107,
     "controllers": 13,
     "implemented": {
-      "typescript": 62,
-      "kotlin": 53,
-      "swift": 53,
-      "flutter": 53,
-      "unity": 53
+      "typescript": 82,
+      "kotlin": 73,
+      "swift": 73,
+      "flutter": 73,
+      "unity": 73
     }
   },
   "tiers": {
@@ -141,11 +141,11 @@
       "rule": "Not needed to ship, needed to win. These are the rows a buyer ticks off against 融云 / 环信 / 网易云信 feature matrices. A tenant can live without each one individually; a buyer comparing tables cannot.",
       "endpoints": 20,
       "implemented": {
-        "typescript": 0,
-        "kotlin": 0,
-        "swift": 0,
-        "flutter": 0,
-        "unity": 0
+        "typescript": 20,
+        "kotlin": 20,
+        "swift": 20,
+        "flutter": 20,
+        "unity": 20
       },
       "targets": [
         "msg.burn",
@@ -313,11 +313,11 @@
       "tier": "T3",
       "note": "Burn-after-reading. Widely expected in the CN market this product competes in.",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -377,11 +377,11 @@
       "responseType": "PagedResult<Message>",
       "tier": "T3",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -393,11 +393,11 @@
       "responseType": null,
       "tier": "T3",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -409,11 +409,11 @@
       "responseType": null,
       "tier": "T3",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -425,11 +425,11 @@
       "responseType": "List<PinnedMessage>",
       "tier": "T3",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -441,11 +441,11 @@
       "responseType": null,
       "tier": "T3",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -457,11 +457,11 @@
       "responseType": null,
       "tier": "T3",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -509,11 +509,11 @@
       "featureFlag": "EnableSearch",
       "note": "Off by default (EnableSearch defaults false) and separately rate limited with 1003.",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -526,11 +526,11 @@
       "tier": "T3",
       "note": "Group read-by list; server caps it at App.Settings.ReceiptGroupMemberLimit.",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -710,11 +710,11 @@
       "responseType": null,
       "tier": "T3",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -806,11 +806,11 @@
       "responseType": null,
       "tier": "T3",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1345,11 +1345,11 @@
       "responseType": null,
       "tier": "T3",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1705,11 +1705,11 @@
       "responseType": null,
       "tier": "T3",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1721,11 +1721,11 @@
       "responseType": null,
       "tier": "T3",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1737,11 +1737,11 @@
       "responseType": null,
       "tier": "T3",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1753,11 +1753,11 @@
       "responseType": null,
       "tier": "T3",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1769,11 +1769,11 @@
       "responseType": null,
       "tier": "T3",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1785,11 +1785,11 @@
       "responseType": null,
       "tier": "T3",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1801,11 +1801,11 @@
       "responseType": "PagedResult<GroupApplication>",
       "tier": "T3",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1913,11 +1913,11 @@
       "responseType": null,
       "tier": "T3",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "typescript": true,
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -5015,8 +5015,8 @@
         },
         {
           "name": "messageId",
-          "type": "long",
-          "nullable": false
+          "type": "string?",
+          "nullable": true
         },
         {
           "name": "category",
@@ -5155,7 +5155,7 @@
         },
         {
           "name": "messageIds",
-          "type": "List<long>",
+          "type": "List<string>",
           "nullable": false
         },
         {

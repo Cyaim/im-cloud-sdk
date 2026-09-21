@@ -39,7 +39,7 @@ import kotlin.random.Random
 /**
  * The client applications actually use.
  *
- * Beyond wrapping the 51 typed endpoints of tiers T0–T2, this owns the one thing every correct IM
+ * Beyond wrapping the 73 typed endpoints of tiers T0–T3, this owns the one thing every correct IM
  * client must do and most hand-rolled ones do not: it keeps two cursors per conversation, notices
  * when an arriving message skips a number, and pulls the missing range before delivering.
  *
@@ -135,7 +135,10 @@ public class ImClient(
     /** `conn.*` — heartbeat, reauth, resume. Mostly driven for you. */
     public val conn: ConnApi = ConnApi(connection)
 
-    /** `msg.*` — send, sync, history, recall, edit, delete, forward, react, receipt, typing. */
+    /**
+     * `msg.*` — send, sync, history, recall, edit, delete, forward, react, receipt, typing; and pins,
+     * favourites, burn-after-reading, search and the read-by detail.
+     */
     public val msg: MsgApi = MsgApi(
         connection = connection,
         newClientMsgId = ::newClientMsgId,
@@ -161,7 +164,7 @@ public class ImClient(
     /** `friend.*` — contacts, requests, blocklist. */
     public val friend: FriendApi = FriendApi(connection)
 
-    /** `group.*` — the ten calls a group chat needs. */
+    /** `group.*` — the ten calls a group chat needs, and the eight that administer one. */
     public val group: GroupApi = GroupApi(connection)
 
     /** `media.*` — upload tickets and signed download links. */
@@ -435,16 +438,16 @@ public class ImClient(
             .map { frame -> ImJson.decodeFromJsonElement<T>(frame.body?.data ?: JsonObject(emptyMap())) }
 
     /**
-     * Escape hatch for any endpoint the typed surface does not cover yet — tiers T3 and T4 today.
+     * Escape hatch for any endpoint the typed surface does not cover yet — tier T4 today.
      *
      * It shares one code path with every typed method, so timeouts, cancellation, reauth and error
      * mapping behave identically. It deliberately does **not** participate in cursor logic:
      * `invoke("msg.sync", …)` returns messages and moves nothing.
      *
      * ```kotlin
-     * // group.setRole is tier T3 and not typed yet:
-     * im.invoke<Unit>("group.setRole", buildJsonObject {
-     *     put("groupId", groupId); put("userId", userId); put("role", GroupRole.Admin.code)
+     * // msg.cancelScheduled is tier T4 and not typed yet:
+     * im.invoke<Unit>("msg.cancelScheduled", buildJsonObject {
+     *     put("scheduleId", scheduleId)
      * })
      * ```
      */

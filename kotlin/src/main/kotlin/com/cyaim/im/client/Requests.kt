@@ -18,6 +18,19 @@ import kotlinx.serialization.json.encodeToJsonElement
  *
  * 每个端点一个请求对象，名字与服务端 DTO 一致。服务端加一个可选字段时，位置参数会同时
  * 打断五种语言的源码兼容性，请求对象则是纯增量。
+ *
+ * **Each field leaves as the JSON kind of the server property it binds to**, and that is a hard
+ * rule rather than a tidiness one. The socket binds a request body field by field with the C# type
+ * of each property and none of the serializer's number handling: a C# `string` refuses a JSON
+ * number, a `long` refuses a quoted one, an enum refuses its name, and each refusal is the whole
+ * call failing with `1000` before the endpoint runs. So a message id — a `string` on every request
+ * that carries one — is a `Long` here (it is what [ImMessage.messageId] holds) and is written with
+ * [LongAsStringSerializer]; list elements the same way. `RequestWireKindTest` checks every field of
+ * every typed endpoint against the server types in `endpoint-inventory.json`.
+ *
+ * 每个字段按它所绑定的服务端属性的 JSON 类型发出：socket 按 C# 类型逐字段绑定，不走序列化器的
+ * 数字处理——string 拒收数字，long 拒收带引号的数字，枚举拒收名字，拒收就是整次调用 1000。
+ * 所以消息 id 在这里是 Long（与 ImMessage.messageId 同型），线路上用 LongAsStringSerializer 写成字符串。
  */
 
 // ------------------------------------------------------------------------------ conn.*
@@ -64,7 +77,11 @@ public data class SendMessageRequest(
     public val conversationType: ConversationType? = null,
     public val mentionAll: Boolean = false,
     public val mentionedUserIds: List<String> = emptyList(),
+    /** Quoted on the wire: the server's field is a `string`. */
+    @Serializable(with = LongAsStringSerializer::class)
     public val quoteMessageId: Long? = null,
+    /** Quoted on the wire: the server's field is a `string`. */
+    @Serializable(with = LongAsStringSerializer::class)
     public val threadRootId: Long? = null,
     public val options: MessageOptions? = null,
     /** Client clock, unix ms. Advisory only: the server stamps `createTime` itself. */
@@ -97,18 +114,28 @@ public data class HistoryRequest(
     public val limit: Int = 20,
 )
 
-/** `msg.recall`. Admin recall is a server-API capability and is refused on this path. */
+/**
+ * `msg.recall`. Admin recall is a server-API capability and is refused on this path.
+ *
+ * [messageId] is quoted on the wire: the server's field is a `string`, and a JSON number there is
+ * refused with `1000` before the endpoint runs.
+ */
 @Serializable
 public data class RecallMessageRequest(
     public val conversationId: String,
+    @Serializable(with = LongAsStringSerializer::class)
     public val messageId: Long,
     public val reason: String? = null,
 )
 
-/** `msg.edit`. [content] replaces the old content wholesale; it is not a patch. */
+/**
+ * `msg.edit`. [content] replaces the old content wholesale; it is not a patch.
+ * [messageId] is quoted on the wire (the server's field is a `string`).
+ */
 @Serializable
 public data class EditMessageRequest(
     public val conversationId: String,
+    @Serializable(with = LongAsStringSerializer::class)
     public val messageId: Long,
     public val content: JsonObject,
 )
@@ -118,19 +145,24 @@ public data class EditMessageRequest(
  *
  * [forEveryone] is the difference between hiding a message from your own device and destroying
  * other people's copy of it, so it defaults to false and the server checks whether you may.
+ *
+ * Each of [messageIds] is quoted on the wire: the server's field is a `List<string>`.
  */
 @Serializable
 public data class DeleteMessagesRequest(
     public val conversationId: String,
-    public val messageIds: List<Long>,
+    public val messageIds: List<@Serializable(with = LongAsStringSerializer::class) Long>,
     public val forEveryone: Boolean = false,
 )
 
-/** `msg.forward`. One call per fan-out; the reply is one result per target conversation. */
+/**
+ * `msg.forward`. One call per fan-out; the reply is one result per target conversation.
+ * Each of [messageIds] is quoted on the wire (the server's field is a `List<string>`).
+ */
 @Serializable
 public data class ForwardMessagesRequest(
     public val sourceConversationId: String,
-    public val messageIds: List<Long>,
+    public val messageIds: List<@Serializable(with = LongAsStringSerializer::class) Long>,
     public val targetConversationIds: List<String>,
     /** True bundles them into one `Merged` message instead of forwarding each separately. */
     public val merge: Boolean = false,
@@ -139,20 +171,24 @@ public data class ForwardMessagesRequest(
     public val clientMsgId: String = "",
 )
 
-/** `msg.react`. [add] false removes the reaction. */
+/** `msg.react`. [add] false removes the reaction. [messageId] is quoted on the wire. */
 @Serializable
 public data class ReactRequest(
     public val conversationId: String,
+    @Serializable(with = LongAsStringSerializer::class)
     public val messageId: Long,
     public val emoji: String,
     public val add: Boolean = true,
 )
 
-/** `msg.receipt`. Per-message read acknowledgement, distinct from the conversation read cursor. */
+/**
+ * `msg.receipt`. Per-message read acknowledgement, distinct from the conversation read cursor.
+ * Each of [messageIds] is quoted on the wire (the server's field is a `List<string>`).
+ */
 @Serializable
 public data class ReceiptRequest(
     public val conversationId: String,
-    public val messageIds: List<Long>,
+    public val messageIds: List<@Serializable(with = LongAsStringSerializer::class) Long>,
 )
 
 /** `msg.typing`. Never stored, never counted, and dropped first when a connection is behind. */
@@ -160,6 +196,81 @@ public data class ReceiptRequest(
 public data class TypingRequest(
     public val conversationId: String,
     public val typing: Boolean = true,
+)
+
+/**
+ * `msg.pin`, `msg.unpin`, `msg.favourite`, `msg.unfavourite`, `msg.burn` — one message, named by
+ * its conversation and its id.
+ *
+ * **[messageId] leaves quoted, and here that is the server's requirement rather than only this
+ * SDK's caution.** The server's DTO declares it a `string`, and the socket binds request fields one
+ * by one without the serializer's number handling, so a JSON number in that position is not read
+ * as an id at all: the call comes back `1000 InternalError`. The field stays a `Long` so that
+ * [ImMessage.messageId] goes straight in; what has to be a string is the JSON, not the field — the
+ * same arrangement as [SubmitReportRequest.messageId].
+ *
+ * 消息 id 在线路上加引号，而这里不只是 SDK 的谨慎：服务端 DTO 就是 string，socket 逐字段绑定、
+ * 不走序列化器的数字处理，给数字会直接回 1000。字段仍是 Long，好让 ImMessage.messageId 直接传进来。
+ */
+@Serializable
+public data class ConversationMessageRequest(
+    public val conversationId: String,
+    @Serializable(with = LongAsStringSerializer::class)
+    public val messageId: Long,
+)
+
+/**
+ * `msg.receiptDetail`. Quoted on the wire for the reason [ConversationMessageRequest] gives: the
+ * server's field is a `string`, and a JSON number there is refused with `1000`.
+ */
+@Serializable
+public data class ReceiptDetailRequest(
+    public val conversationId: String,
+    @Serializable(with = LongAsStringSerializer::class)
+    public val messageId: Long,
+)
+
+/**
+ * `msg.favourites`. The server treats 0 (or an absent limit) as 20 and caps a page at 100; 20 is
+ * sent explicitly so the default reads at the call site. A malformed [cursor] restarts at page one.
+ */
+@Serializable
+public data class PageRequest(
+    public val cursor: String? = null,
+    public val limit: Int = 20,
+)
+
+/**
+ * `msg.search`.
+ *
+ * [keyword] is required in practice — null or blank is `1001` — and one made only of punctuation or
+ * emoji returns an empty page rather than an error.
+ *
+ * [contentTypes], [senderId], [startTime] and [endTime] are applied **after** the index has
+ * produced its page, inclusively and against the server's `createTime`. A narrow filter therefore
+ * produces short, even empty, pages with `hasMore = true`: keep paging on [Page.hasMore].
+ *
+ * Without a [conversationId] only the caller's 200 most recently updated conversations are
+ * searched (`IM:Search:MaxConversationsPerQuery`); pass one to reach an older chat. A
+ * [conversationId] the caller cannot see is `1103`, a group they are not in included.
+ *
+ * `msg.search` 的过滤条件是在索引出页之后才施加的，短页乃至空页而 hasMore 为真是常态；
+ * 不给 conversationId 时只搜最近更新的 200 个会话。
+ */
+@Serializable
+public data class SearchMessagesRequest(
+    public val keyword: String,
+    public val conversationId: String? = null,
+    /** Sent as the integer codes the server's enum binds from; an unknown one is kept as it is. */
+    public val contentTypes: List<MessageContentType>? = null,
+    public val senderId: String? = null,
+    /** Unix ms, inclusive, against the server's `createTime`. */
+    public val startTime: Long? = null,
+    /** Unix ms, inclusive, against the server's `createTime`. */
+    public val endTime: Long? = null,
+    public val cursor: String? = null,
+    /** 0 or less becomes 20; capped server-side at 100. */
+    public val limit: Int = 20,
 )
 
 // ------------------------------------------------------------------------------ conv.*
@@ -177,7 +288,7 @@ public data class ListConversationsRequest(
     public val limit: Int = 50,
 )
 
-/** `conv.get`, `conv.delete`, `conv.clear`. */
+/** `conv.get`, `conv.delete`, `conv.clear`, `msg.pins`. */
 @Serializable
 public data class ConversationIdRequest(
     public val conversationId: String,
@@ -195,6 +306,18 @@ public data class ReadRequest(
 public data class UpdateConversationSettingRequest(
     public val conversationId: String,
     public val setting: ConversationSetting? = null,
+)
+
+/**
+ * `conv.markUnread`. [unread] false clears the mark.
+ *
+ * The default is the server's own — an absent `unread` means **true** — and it is sent explicitly
+ * so that the call site and the wire say the same thing.
+ */
+@Serializable
+public data class MarkUnreadRequest(
+    public val conversationId: String,
+    public val unread: Boolean = true,
 )
 
 // ------------------------------------------------------------------------------ user.*
@@ -240,6 +363,15 @@ public data class SubscribePresenceRequest(
     public val ttlSeconds: Int = 600,
 )
 
+/**
+ * `user.setStatus`. A free-text custom status, trimmed server-side; longer than 64 characters is
+ * `1001`. **Null or blank clears it**, so `SetStatusRequest()` is the "clear my status" call.
+ */
+@Serializable
+public data class SetStatusRequest(
+    public val status: String? = null,
+)
+
 // ---------------------------------------------------------------------------- friend.*
 
 /** `friend.list`, `friend.blockList`, `group.joined`. Clamped server-side to 200. */
@@ -283,6 +415,24 @@ public data class FriendRequestListRequest(
 public data class BlockRequest(
     public val userId: String,
     public val reason: String? = null,
+)
+
+/**
+ * `friend.setRemark`. **The two optional fields do not mean the same thing when left null** (a null
+ * is omitted from the frame, and the server reads the two absences differently).
+ *
+ * - [remark] null or blank **clears** the remark. To change only the tags, send the current remark
+ *   back with them. Longer than 64 characters is `1001`; it is not truncated.
+ * - [tags] null leaves the tags alone; an empty list clears them. More than 20, or any tag blank or
+ *   longer than 32 characters, is `1001`.
+ *
+ * remark 为空即清除（只改 tags 时要把当前 remark 一并带上）；tags 为 null 不动、空列表清空。
+ */
+@Serializable
+public data class SetRemarkRequest(
+    public val userId: String,
+    public val remark: String? = null,
+    public val tags: List<String>? = null,
 )
 
 // ----------------------------------------------------------------------------- group.*
@@ -331,12 +481,17 @@ public data class UpdateGroupCommand(
     public val update: UpdateGroupRequest? = null,
 )
 
-/** `group.memberList`, `group.applicationList`. Always paged: a super group holds 100 000 members. */
+/**
+ * `group.memberList`, `group.applicationList`. Always paged: a super group holds 100 000 members.
+ *
+ * [groupId] is required by `group.memberList`. For `group.applicationList` an empty one means
+ * "every group I manage", which is why [GroupApi.applicationList] defaults to `""`.
+ */
 @Serializable
 public data class GroupCursorRequest(
     public val groupId: String,
     public val cursor: String? = null,
-    /** Clamped server-side to 100. */
+    /** 1…200 is kept as sent; anything else — 0, negative or over 200 — becomes 50 server-side. */
     public val limit: Int = 50,
 )
 
@@ -358,6 +513,110 @@ public data class GroupMembersRequest(
 public data class JoinGroupRequest(
     public val groupId: String,
     public val reason: String? = null,
+)
+
+/**
+ * `group.transfer`. [newOwnerId] must already be a member (`1503` otherwise) and must not be you
+ * (`1001`). The outgoing owner becomes a plain **member**, not an admin.
+ */
+@Serializable
+public data class TransferOwnerRequest(
+    public val groupId: String,
+    public val newOwnerId: String,
+)
+
+/**
+ * `group.handleApplication`.
+ *
+ * [accept] has no default here, although the server has one: an absent `accept` is read as
+ * **false**, which rejects the application. A decision that important should be written down at
+ * the call site rather than inherited from a missing field.
+ * [reason] is kept on a rejection as `handleReason`; nobody is notified of a rejection.
+ */
+@Serializable
+public data class HandleApplicationRequest(
+    public val groupId: String,
+    public val applicantId: String,
+    public val accept: Boolean,
+    public val reason: String? = null,
+)
+
+/**
+ * `group.setRole`. Only [GroupRole.Member] and [GroupRole.Admin] are meaningful, and
+ * [GroupApi.setRole] refuses anything else before it is sent.
+ *
+ * [role] has no default for the reason [HandleApplicationRequest.accept] has none: the server reads
+ * an absent role as `Member`, which **demotes**. [GroupRole.Owner] is `1008` — ownership moves with
+ * `group.transfer`. And the server stores any other integer it is given: `0` escapes a group-wide
+ * mute (which only silences `Member`), and `4` or more is treated as a manager that outranks the
+ * admins. That is why the method refuses them rather than trusting the server to.
+ *
+ * role 不设默认值：服务端把缺省读成 Member，等于降级。Owner 会被拒（1008，要用 group.transfer）；
+ * 其他整数服务端照单全收——0 能逃过全员禁言，≥4 会比管理员还大——所以方法在发出前就拒掉它们。
+ */
+@Serializable
+public data class SetRoleRequest(
+    public val groupId: String,
+    public val userId: String,
+    public val role: GroupRole,
+)
+
+/**
+ * `group.mute` — the whole group. [mute] false unmutes and ignores [untilMs].
+ *
+ * With [mute] true: no [untilMs] is **indefinite**; a future one lasts until then; and **a past one
+ * is indefinite too, not an unmute** — the server keeps the mute and drops the end time. Compute
+ * [untilMs] from the server clock where you can, in **milliseconds**: a seconds value is a moment in
+ * January 1970 and so mutes the group forever.
+ *
+ * 过去的 untilMs 不是「解除」而是「无限期」；untilMs 是毫秒，填成秒就是 1970 年，同样是永久禁言。
+ */
+@Serializable
+public data class MuteGroupRequest(
+    public val groupId: String,
+    /** The server's own default, sent explicitly. */
+    public val mute: Boolean = true,
+    /** Unix ms. */
+    public val untilMs: Long? = null,
+)
+
+/**
+ * `group.muteMember` — one member.
+ *
+ * **The opposite reading from [MuteGroupRequest]:** a future [untilMs] mutes until then, and a null
+ * or past one **unmutes**. There is no indefinite member mute; send a far-future timestamp for one.
+ *
+ * 与 MuteGroupRequest 相反：null 或过去的 untilMs 表示解除；没有「无限期」，要就给一个很远的时间。
+ */
+@Serializable
+public data class MuteMemberRequest(
+    public val groupId: String,
+    public val userId: String,
+    /** Unix ms. */
+    public val untilMs: Long? = null,
+)
+
+/**
+ * `group.setNickname`. Null, empty or your own [userId] sets **your** nickname, which any member may
+ * do; somebody else's needs owner or admin and outranking them.
+ *
+ * [nickname] is trimmed; null or blank clears it; past 64 characters it is **silently truncated**.
+ */
+@Serializable
+public data class SetGroupNicknameRequest(
+    public val groupId: String,
+    public val userId: String? = null,
+    public val nickname: String? = null,
+)
+
+/**
+ * `group.announcement`. Null or blank clears it. Trimmed, and past 4096 characters **silently
+ * truncated**.
+ */
+@Serializable
+public data class AnnouncementRequest(
+    public val groupId: String,
+    public val announcement: String? = null,
 )
 
 // ----------------------------------------------------------------------------- media.*
@@ -476,14 +735,14 @@ public data class SubmitReportRequest(
     /**
      * The message being reported. Zero reports the account rather than one message.
      *
-     * **Quoted on the wire.** Message ids are snowflakes around 2^58 — 38 times past the largest
-     * integer a JavaScript client holds exactly — so the platform writes every one of them as a
-     * string and reads both forms back (CONTRACT.md §4.5). A JVM `Long` holds the value exactly,
-     * which is why the type here is still a number; what has to be a string is the JSON, not the
-     * field.
-     * 线路上加引号：消息 id 是雪花值，约 2^58，超出 JS 能精确表示的整数 38 倍，
-     * 平台一律以字符串写出、两种形态都能读回。JVM 的 Long 本身放得下，
-     * 所以这里的类型仍是数字——必须是字符串的是 JSON，不是字段。
+     * **Quoted on the wire.** The server's `SubmitReportRequest.MessageId` is a string (since
+     * 2026-09-21): absent, blank or `"0"` reports the account, digits name that message, and
+     * anything else is refused with 1001. A JSON number is refused with 1000 — the socket binder
+     * does not read a string field from a number (CONTRACT.md §2). A JVM `Long` holds the value
+     * exactly, which is why the type here is still a number; what has to be a string is the JSON,
+     * not the field, and the default 0 goes out as `"0"`, the account.
+     * 线路上加引号：服务端这个字段是字符串——缺省、空白或 "0" 表示举报账号，纯数字是那条消息，其余回 1001；
+     * 发 JSON 数字会被绑定器拒成 1000。JVM 的 Long 放得下，所以类型仍是数字，必须是字符串的是 JSON。
      */
     @Serializable(with = LongAsStringSerializer::class)
     public val messageId: Long = 0,

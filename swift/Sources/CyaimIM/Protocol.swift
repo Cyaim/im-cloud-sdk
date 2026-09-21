@@ -447,6 +447,11 @@ extension ImFrame {
     /// `DecodingError` nobody can act on.
     public func requireData<T: Decodable>(as type: T.Type = T.self) throws -> T {
         guard let payload = body?.data, !payload.isNull else {
+            // An acknowledgement carries no `data` at all — the gateway omits nulls when writing —
+            // and ``EmptyBody`` is the documented answer type for one through `invoke`. Asking for
+            // it is asking for "it succeeded", which a reply that got this far already says.
+            if let acknowledged = EmptyBody() as? T { return acknowledged }
+
             throw ImError(
                 code: .internalError,
                 message: "\(target) returned no payload",

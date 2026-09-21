@@ -159,14 +159,14 @@ namespace Cyaim.Im.Tests
 
                 ImTestHarness.Forget(harness.Client.SendTextAsync(ImRecipient.User("bob"), "one"));
                 harness.Pump();
-                var first = harness.Socket.LastBody("msg.send")["clientMsgId"].AsString();
+                var first = harness.Socket.LastBody("msg.send")["clientMsgId"].WireString();
 
                 harness.Socket.Reply("msg.send", SendResult("c1", 1, first));
                 harness.Pump();
 
                 ImTestHarness.Forget(harness.Client.SendTextAsync(ImRecipient.User("bob"), "two"));
                 harness.Pump();
-                var second = harness.Socket.LastBody("msg.send")["clientMsgId"].AsString();
+                var second = harness.Socket.LastBody("msg.send")["clientMsgId"].WireString();
 
                 // (appId, conversationId, senderId, clientMsgId) is unique server-side, so this is
                 // what makes a retry after a timeout return the first result instead of posting
@@ -195,7 +195,7 @@ namespace Cyaim.Im.Tests
 
                 harness.Pump();
 
-                Assert.That(harness.Socket.LastBody("msg.send")["clientMsgId"].AsString(),
+                Assert.That(harness.Socket.LastBody("msg.send")["clientMsgId"].WireString(),
                     Is.EqualTo("quest-complete-4711"));
             }
         }
@@ -218,12 +218,12 @@ namespace Cyaim.Im.Tests
                 harness.Pump();
 
                 var body = harness.Socket.LastBody("msg.send");
-                Assert.That(body["groupId"].AsString(), Is.EqualTo("guild-7"));
+                Assert.That(body["groupId"].WireString(), Is.EqualTo("guild-7"));
                 Assert.That(body.Has("receiverId"), Is.False);
-                Assert.That(body["contentType"].AsInt(), Is.EqualTo((int)ImMessageContentType.Image));
-                Assert.That(body["content"]["url"].AsString(), Is.EqualTo("objects/abc"));
-                Assert.That(body["mentionAll"].AsBool(), Is.True);
-                Assert.That(body["sendTime"].AsLong(), Is.GreaterThan(0));
+                Assert.That(body["contentType"].WireInt(), Is.EqualTo((int)ImMessageContentType.Image));
+                Assert.That(body["content"]["url"].WireString(), Is.EqualTo("objects/abc"));
+                Assert.That(body["mentionAll"].WireBool(), Is.True);
+                Assert.That(body["sendTime"].WireLong(), Is.GreaterThan(0));
             }
         }
 

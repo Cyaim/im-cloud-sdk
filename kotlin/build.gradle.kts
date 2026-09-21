@@ -142,6 +142,16 @@ tasks.test {
     testLogging {
         events("passed", "failed", "skipped")
     }
+    // Several tests judge this SDK against ../endpoint-inventory.json (RequestWireKindTest checks every
+    // request field's JSON kind against the server types in it). It lives outside this project, so
+    // without this line a regenerated inventory with unchanged sources is answered from the build
+    // cache — the verdict for the old inventory, replayed. IM_ENDPOINT_INVENTORY points the tests at
+    // another copy, and that copy is then the input.
+    // 清单在本工程之外；不声明为输入，重新生成清单而源码未变时，build cache 会重放旧清单下的结论。
+    inputs.files(
+        providers.environmentVariable("IM_ENDPOINT_INVENTORY")
+            .orElse(file("../endpoint-inventory.json").path),
+    ).withPropertyName("endpointInventory").withPathSensitivity(PathSensitivity.NONE)
 }
 
 publishing {
@@ -158,7 +168,7 @@ publishing {
                 description.set(
                     "Kotlin/Android client SDK for Cyaim IM Cloud: multiplexed WebSocket, " +
                         "full-jitter reconnect, kick-aware close handling, durable two-cursor " +
-                        "cold-start repair, and typed coverage of contract tiers T0-T2.",
+                        "cold-start repair, and typed coverage of contract tiers T0-T3.",
                 )
                 url.set(PROJECT_URL)
                 inceptionYear.set("2026")

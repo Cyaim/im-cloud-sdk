@@ -872,12 +872,16 @@ public actor ImClient {
     /// an endpoint the next SDK release will type:
     ///
     /// ```swift
-    /// // msg.pin is tier 3 and not yet typed here.
-    /// try await im.invoke("msg.pin", body: [
-    ///     "conversationId": .string(conversationId),
-    ///     "messageId": .int(messageId),
-    /// ], as: EmptyBody.self)
+    /// // msg.cancelScheduled is tier 4 and not yet typed here.
+    /// try await im.invoke("msg.cancelScheduled", body: [
+    ///     "scheduleId": .string(scheduleId),
+    /// ] as [String: JSONValue], as: EmptyBody.self)
     /// ```
+    ///
+    /// `EmptyBody` is the answer type for an endpoint that acknowledges without a payload, which is
+    /// most write endpoints. Give each body field the JSON type the server's request DTO declares —
+    /// the gateway binds field by field without converting, so a mismatch is refused with `1000`.
+    /// The `msg.*` endpoints declare message ids as `string`: `.string(String(messageId))`.
     ///
     /// It shares one code path with every typed method, so timeouts, cancellation and error mapping
     /// behave identically. It never participates in cursor logic: `invoke("msg.sync", …)` returns

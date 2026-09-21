@@ -69,15 +69,48 @@ class FakeSocket implements ImSocket {
     if (!_incoming.isClosed) await _incoming.close();
   }
 
-  /// The most recent request the client sent, decoded.
+  /// The most recent request the client sent, decoded with [decodeWire].
   Map<String, dynamic>? get lastRequest =>
-      sent.isEmpty ? null : jsonDecode(sent.last) as Map<String, dynamic>;
+      sent.isEmpty ? null : decodeWire(sent.last) as Map<String, dynamic>;
 
-  /// Every request sent on this socket, decoded, in order.
+  /// Every request sent on this socket, decoded with [decodeWire], in order.
   List<Map<String, dynamic>> get allRequests => <Map<String, dynamic>>[
-        for (final String payload in sent) jsonDecode(payload) as Map<String, dynamic>,
+        for (final String payload in sent) decodeWire(payload) as Map<String, dynamic>,
       ];
 }
+
+/// A JSON number written with a fraction or an exponent (`2.0`, `1e3`), kept apart from an integer.
+///
+/// **Why the fake decodes into this instead of a `double`.** In Dart `2 == 2.0` is true, so a body
+/// decoded plainly lets `expect(body, {'role': 2})` pass a frame that says `"role":2.0` — and the
+/// server's socket binder refuses exactly that: it reads an `int` or `long` property with
+/// `JsonNode.GetValue<T>()`, which throws on a number with a fraction, and the caller gets status 1 /
+/// code 1000 with nothing to say which field. Strings, bools and integers were already told apart by
+/// `==`; this was the one JSON kind every body assertion in the suite was blind to.
+///
+/// 服务端套接字绑定器对 int/long 属性只收整数，`2.0` 会被拒成 1000；而 Dart 里 `2 == 2.0`，
+/// 按普通方式解码的请求体让所有断言都看不出这一种 JSON 类型差别。
+final class WireFloat {
+  const WireFloat(this.value);
+
+  final double value;
+
+  @override
+  bool operator ==(Object other) => other is WireFloat && other.value == value;
+
+  @override
+  int get hashCode => Object.hash(WireFloat, value);
+
+  @override
+  String toString() => '$value (a JSON float)';
+}
+
+/// Decodes a frame the client wrote, keeping every JSON kind distinguishable under `==`: a number
+/// with a fraction or exponent becomes a [WireFloat], never a `double` that equals an `int`.
+Object? decodeWire(String payload) => jsonDecode(
+      payload,
+      reviver: (Object? key, Object? value) => value is double ? WireFloat(value) : value,
+    );
 
 /// Hands out sockets in order and records how many were asked for.
 class FakeTransport {
@@ -187,7 +220,9 @@ class FakeGateway {
   void openLatest() => sockets.last.open();
 
   void _onSend(FakeSocket source, String payload) {
-    final Map<String, dynamic> frame = jsonDecode(payload) as Map<String, dynamic>;
+    // decodeWire, not jsonDecode: `body` is what every body assertion reads, and it must not let
+    // `2.0` compare equal to `2`.
+    final Map<String, dynamic> frame = decodeWire(payload) as Map<String, dynamic>;
     final FakeRequest request = FakeRequest(
       frame['id'] as String,
       frame['target'] as String,

@@ -185,39 +185,68 @@ refusing it would turn the platform's own retention into a way to escape moderat
 
 ## The typed surface
 
-112 flat methods on one object is not an API, it is a scroll bar. The surface is grouped into
+107 flat methods on one object is not an API, it is a scroll bar. The surface is grouped into
 namespaces named exactly for the endpoint prefix, and every method is named for the method half of
 its target — so if you know the endpoint you know the call, in this SDK and in the other four.
 
 | | endpoints |
 |---|---|
 | `im.Conn` | `HeartbeatAsync` `ReauthAsync` `SyncAsync` |
-| `im.Msg` | `SendAsync` `SyncAsync` `HistoryAsync` `RecallAsync` `DeleteAsync` `TypingAsync` `EditAsync` `ForwardAsync` `ReactAsync` `ReceiptAsync` |
-| `im.Conv` | `ListAsync` `GetAsync` `ReadAsync` `UnreadTotalAsync` `SettingAsync` `DeleteAsync` `ClearAsync` |
-| `im.User` | `MeAsync` `ProfileAsync` `BatchProfileAsync` `UpdateProfileAsync` `PresenceAsync` `SubscribePresenceAsync` `UnsubscribePresenceAsync` |
-| `im.Friend` | `ListAsync` `AddAsync` `HandleRequestAsync` `RequestListAsync` `DeleteAsync` `BlockListAsync` `BlockAsync` `UnblockAsync` |
-| `im.Group` | `CreateAsync` `InfoAsync` `UpdateAsync` `DismissAsync` `MemberListAsync` `JoinedAsync` `InviteAsync` `KickAsync` `QuitAsync` `JoinAsync` |
+| `im.Msg` | `SendAsync` `SyncAsync` `HistoryAsync` `RecallAsync` `DeleteAsync` `TypingAsync` `EditAsync` `ForwardAsync` `ReactAsync` `ReceiptAsync` · `PinAsync` `UnpinAsync` `PinsAsync` `FavouriteAsync` `UnfavouriteAsync` `FavouritesAsync` `BurnAsync` `SearchAsync` `ReceiptDetailAsync` |
+| `im.Conv` | `ListAsync` `GetAsync` `ReadAsync` `UnreadTotalAsync` `SettingAsync` `DeleteAsync` `ClearAsync` · `MarkUnreadAsync` |
+| `im.User` | `MeAsync` `ProfileAsync` `BatchProfileAsync` `UpdateProfileAsync` `PresenceAsync` `SubscribePresenceAsync` `UnsubscribePresenceAsync` · `SetStatusAsync` |
+| `im.Friend` | `ListAsync` `AddAsync` `HandleRequestAsync` `RequestListAsync` `DeleteAsync` `BlockListAsync` `BlockAsync` `UnblockAsync` · `SetRemarkAsync` |
+| `im.Group` | `CreateAsync` `InfoAsync` `UpdateAsync` `DismissAsync` `MemberListAsync` `JoinedAsync` `InviteAsync` `KickAsync` `QuitAsync` `JoinAsync` · `TransferAsync` `ApplicationListAsync` `HandleApplicationAsync` `SetRoleAsync` `MuteAsync` `MuteMemberAsync` `SetNicknameAsync` `AnnouncementAsync` |
 | `im.Media` | `UploadTicketAsync` `DownloadUrlAsync` |
 | `im.Push` | `SetToken` `RegisterAsync` `UnregisterAsync` `ClickedAsync` |
 | `im.Moderation` | `ReportAsync` |
+| `im.Diag` | `LogRequestsAsync` `LogUploadedAsync` — the client drives both; ordinary games never call them |
 
-That is tiers **T0**, **T1** and **T2** of `sdk/CONTRACT.md` — 51 of the server's 112 endpoints: the
-session floor, everything a two-person chat app needs to launch, and the contacts, blocking, groups,
-presence and reporting that turn it into a messenger a store will accept.
+That is tiers **T0**, **T1**, **T2** and **T3** of `sdk/CONTRACT.md` — 73 of the server's 107
+endpoints: the session floor, everything a two-person chat app needs to launch, the contacts,
+blocking, groups, presence and reporting that turn it into a messenger a store will accept, and the
+competitive-parity tier on top — pins, favourites, search, read-receipt detail, burn-after-reading
+and group administration. The names after the `·` are T3.
 
 Every method takes exactly one request object, because with positional parameters the server adding
 one optional field is a source-breaking change in five languages at once. Convenience overloads
 exist where a request has at most two required scalars — `im.Conv.ReadAsync(id, seq)` is fine.
 
-Everything else — group administration, pins, favourites, search, calls, E2EE, live rooms, the
-service desk, AI streaming, scheduling, conversation folders — is reachable today through the escape
-hatch, which shares one code path with the typed surface and is not going away:
+### Tier T3 — what the signatures do not say
+
+Every T3 method carries its full list of refusals in its doc comment. These are the ones that bite:
+
+- **Message ids leave as strings, and the server insists.** The T3 request bodies declare
+  `messageId` as a string server-side, and the socket refuses a JSON number for one with an opaque
+  `1000` rather than a `1001` naming the field. Convert an `ImMessage.MessageId` with
+  `ToString(CultureInfo.InvariantCulture)`. An id that is not the digits of a positive integer
+  throws `ArgumentException` before anything is sent, because `msg.unpin` and `msg.unfavourite`
+  answer success for an id the server cannot read.
+- **`msg.search` is off unless the tenant turned it on** (`1203`), needs the search add-on (`1204`),
+  and is rate limited per user (`1003`, 30 a minute by default) **before** either check — so calls
+  against a tenant with search off still spend the budget. Debounce search-as-you-type.
+- **`msg.receiptDetail`'s `TotalCount` includes the sender**; `ReadUserIds` never does. Fully read is
+  `ReadCount == TotalCount - 1`. The read itself has no size cap: in groups above the tenant's
+  receipt limit it is `msg.receipt` that refuses, so nothing is recorded to read.
+- **`group.mute` with an `UntilMs` in the past mutes indefinitely**, while `group.muteMember` with one
+  in the past unmutes. `Mute` and `conv.markUnread`'s `Unread` both default to `true`, and this
+  package always sends them.
+- **`group.setRole` accepts `Member` or `Admin` and throws on anything else.** The server refuses
+  `Owner` but stores any other integer, and `0` or `4` are privilege bugs rather than roles.
+- **`group.handleApplication` throws when `Accept` is left null**: the server reads a missing
+  `accept` as a rejection, and a handled application cannot be handled again.
+- **`group.applicationList` returns every status**, not only pending — filter on `Status` yourself.
+  Called with no request it lists across every group you manage.
+- **`friend.setRemark` without `Remark` clears the remark**, while leaving `Tags` null keeps them.
+
+Everything else — calls, E2EE, live rooms, the service desk, AI streaming, scheduling, conversation
+folders: the 34 endpoints of T4 — is reachable today through the escape hatch, which shares one code
+path with the typed surface and is not going away:
 
 ```csharp
-// group.transfer is tier 3 and not typed yet
-var group = await im.InvokeAsync<ImGroup>("group.transfer", JsonValue.NewObject()
-    .Set("groupId", groupId)
-    .Set("newOwnerId", userId));
+// msg.cancelScheduled is tier 4 and not typed yet
+await im.InvokeAsync("msg.cancelScheduled", JsonValue.NewObject()
+    .Set("scheduleId", scheduleId));
 ```
 
 `InvokeAsync` never touches a cursor: `InvokeAsync("msg.sync", …)` returns messages and moves
@@ -405,7 +434,11 @@ and no real network: the full-jitter distribution is asserted decile by decile (
 it), every terminal and recoverable kick reason is checked against what the connection then does,
 every typed method is asserted against the endpoint name it must put on the wire, and the cursor
 suite asserts the cold-start, paging and adoption rules that the rest of this README describes —
-including a test that fails if a restored cursor is not reported.
+including a test that fails if a restored cursor is not reported. The T3 tests also pin the JSON
+*kind* of every request member, because a member of the wrong kind is what the server's socket
+binder turns into an unexplained `1000`, and one of them drives all twenty T3 methods and compares
+the targets that reach the wire with the T3 list in `endpoint-inventory.json`, so "T3 is complete"
+is something the suite can fail on.
 
 ## Notes
 

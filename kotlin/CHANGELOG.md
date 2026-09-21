@@ -13,6 +13,19 @@ published as `ImSdk.contractVersion`.
 First published release. The version is deliberately below 1.0.0: `1.0.0` is reserved for contract
 tiers T0 and T1 complete on **all five** SDKs. Nothing before this was ever published.
 
+### Changed on the server (2026-09-21)
+
+- `moderation.report` `messageId` and `msg.translate` `messageIds` are strings on the server now
+  (they were `long` / `List<long>`, which refused the quoted ids SDKs send). The typed calls send
+  strings; a raw `invoke` that sends either as a JSON number is now refused with `status 1` /
+  `code 1000`. On `moderation.report`, absent, blank or `"0"` reports the account and any other
+  unreadable id is refused with 1001.
+- Nested request objects (`options`, `pushConfig`, `setting`, group updates) bind as the SDKs send
+  them since the same day; until then every nested option was dropped. Two of them are authority,
+  decided by the credential: from a client, a `msg.send` whose `options.pushConfig` has a non-empty
+  `title` or `body` is refused with 1103, and so is an image, voice, video or file message with
+  `persistent: false` or `onlineOnly: true` while the app moderates content. See CONTRACT.md §2.
+
 ### Fixed
 
 - **Cold-start data loss (CONTRACT.md §5).** The client re-baselined onto the server's newest `seq`
@@ -50,6 +63,16 @@ tiers T0 and T1 complete on **all five** SDKs. Nothing before this was ever publ
   message. Requests in flight when a socket drops now fail `1004 Timeout` rather than `1005`,
   because 1005 would claim the call never reached the server and the SDK does not know that.
 
+- **Recall, edit, delete, react, forward and receipts were refused on every call.** Their message
+  ids left as JSON numbers, while the server declares those fields strings and the socket binder
+  refuses a number there with `1000` before the endpoint runs. `msg.send` had the same fault on
+  `quoteMessageId` and `threadRootId`, so a reply or a thread message failed outright. The fields
+  stay `Long` (what `ImMessage.messageId` holds) and are now written with `LongAsStringSerializer`,
+  list elements included; an absent quote or thread id still stays off the frame. Nothing in the
+  suite asserted these bodies, and the shared test accessors read `7` and `"7"` as the same value;
+  they now check the JSON kind first. `RequestWireKindTest` checks every field of every typed request
+  (51 request types, 187 fields) against the server types in `endpoint-inventory.json`.
+
 ### Added
 
 - **`logStore` and the device log (ADR-003).** `im.diag`, an `ImLogStore` option with
@@ -69,6 +92,30 @@ tiers T0 and T1 complete on **all five** SDKs. Nothing before this was ever publ
 - **Typed coverage of contract tiers T0, T1 and T2** — 51 endpoints, grouped into namespaces named
   for the target prefix: `im.conn`, `im.msg`, `im.conv`, `im.user`, `im.friend`, `im.group`,
   `im.media`, `im.push`, `im.moderation`. Previously 11 endpoints were reachable and 9 were typed.
+
+- **Typed coverage of contract tier T3, all twenty endpoints** — `ImSdk.tiers` now reads
+  `T0`–`T3`, and the typed surface is 73 of the server's 107 endpoints.
+  - `im.msg`: `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search`
+    `receiptDetail`; `im.conv.markUnread`; `im.user.setStatus`; `im.friend.setRemark`;
+    `im.group`: `transfer` `applicationList` `handleApplication` `setRole` `mute` `muteMember`
+    `setNickname` `announcement`.
+  - New request types `ConversationMessageRequest`, `ReceiptDetailRequest`, `PageRequest`,
+    `SearchMessagesRequest`, `MarkUnreadRequest`, `SetStatusRequest`, `SetRemarkRequest`,
+    `TransferOwnerRequest`, `HandleApplicationRequest`, `SetRoleRequest`, `MuteGroupRequest`,
+    `MuteMemberRequest`, `SetGroupNicknameRequest`, `AnnouncementRequest`; payloads
+    `PinnedMessage`, `MessageReceipt`, `GroupApplication`. `ConversationIdRequest` and
+    `GroupCursorRequest` are reused.
+  - **Message ids in these requests leave quoted.** The server declares them strings and the socket
+    refuses a JSON number with `1000`, so `ConversationMessageRequest.messageId` and
+    `ReceiptDetailRequest.messageId` are `Long` fields written as strings, as
+    `SubmitReportRequest.messageId` already was.
+  - `group.setRole` throws `IllegalArgumentException` for any role but `Member` or `Admin` before
+    sending: the server refuses `Owner` but stores any other integer, and `0` escapes a group-wide
+    mute while `4` outranks the admins.
+  - `group.applicationList()` with no argument sends an empty `groupId`, which the server reads as
+    "every group I manage".
+  - `CompetitiveParityTest` drives all twenty against the inventory's T3 list and pins every request
+    body on the wire — key set and JSON type — and every payload decode.
 
 - **`conn.reauth`.** A token expiring mid-session is now a round trip on the existing socket rather
   than a full reconnect, and the call that hit `1101` is retried once.
@@ -118,6 +165,6 @@ tiers T0 and T1 complete on **all five** SDKs. Nothing before this was ever publ
 
 ### Known gaps
 
-- Tiers T3 (group administration, pins, favourites, search) and T4 (calls, E2EE keys, chat rooms,
-  service desk, streaming, scheduling, folders) are not typed. Reach them through
-  `im.invoke<T>(target, body)`, which shares one code path with every typed method.
+- Tier T4 (E2EE keys, chat rooms, service desk, streaming, scheduling, folders, translation) is not
+  typed. Reach it through `im.invoke<T>(target, body)`, which shares one code path with every typed
+  method.

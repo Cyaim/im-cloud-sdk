@@ -3,15 +3,16 @@ import Testing
 
 @testable import CyaimIM
 
-/// The typed surface for tiers 0, 1 and 2, from `sdk/CONTRACT.md` §3 and §4.
+/// The typed surface for tiers 0 to 3, from `sdk/CONTRACT.md` §3 and §4.
 ///
 /// The point of these is coverage rather than behaviour: a customer choosing a platform reads a
 /// feature matrix, and "typed on Swift, `invoke()` on Swift" is the row that loses the deal. So the
-/// central test walks every endpoint in the three tiers and asserts that a typed method exists, is
-/// named for the endpoint, and puts the endpoint's own name on the wire.
+/// central tests walk every endpoint in the four tiers and assert that a typed method exists, is
+/// named for the endpoint, and puts the endpoint's own name on the wire. What tier 3 puts *in* the
+/// frame is `CompetitiveParityTests`' business.
 ///
 /// 这一组测的是覆盖面而不是行为：客户按功能矩阵选平台，"这个端点在 Swift 上只能 invoke"就是丢单的那一行。
-@Suite("Typed surface (T0, T1, T2)")
+@Suite("Typed surface (T0, T1, T2, T3)")
 struct TypedSurfaceTests {
 
     // MARK: - Canned payloads
@@ -136,7 +137,50 @@ struct TypedSurfaceTests {
         return .object(body)
     }
 
-    /// Replies to every T0–T2 endpoint with a payload of the right shape.
+    /// One entry of `msg.pins`, with the message id quoted the way the server writes it.
+    private static func pinnedMessage() -> JSONValue {
+        .object([
+            "messageId": .string("360306324097966080"),
+            "seq": .int(42),
+            "pinnedBy": .string("alice"),
+            "pinnedAt": .int(1_700_000_000_000),
+            "brief": .object([
+                "messageId": .string("360306324097966080"),
+                "seq": .int(42),
+                "senderId": .string("bob"),
+                "contentType": .int(2),
+                "digest": .string("[Image]"),
+                "createTime": .int(1_699_999_999_000),
+                "recalled": .bool(false),
+            ]),
+        ])
+    }
+
+    private static func messageReceipt() -> JSONValue {
+        .object([
+            "appId": .string("app-test"),
+            "conversationId": .string("g_ops"),
+            "messageId": .string("360306324097966080"),
+            "readUserIds": .array([.string("bob"), .string("carol")]),
+            "readCount": .int(2),
+            "totalCount": .int(8),
+            "updatedAt": .int(1_700_000_000_500),
+        ])
+    }
+
+    private static func groupApplication() -> JSONValue {
+        .object([
+            "appId": .string("app-test"),
+            "groupId": .string("g-1"),
+            "applicantId": .string("dave"),
+            "inviterId": .string("bob"),
+            "reason": .string("on-call rotation"),
+            "status": .int(0),
+            "createdAt": .int(1_700_000_000_000),
+        ])
+    }
+
+    /// Replies to every T0–T3 endpoint with a payload of the right shape.
     private static func fullGateway() -> MockGateway {
         MockGateway(responder: { request, channel in
             switch request.target {
@@ -188,11 +232,46 @@ struct TypedSurfaceTests {
             case "moderation.report":
                 channel.reply(to: request, data: reportReceipt())
 
+            // T3 — the five that answer with a payload. `msg.pins` is a plain array, not a page.
+            case "msg.pins":
+                channel.reply(to: request, data: .array([pinnedMessage()]))
+            case "msg.favourites", "msg.search":
+                channel.reply(to: request, data: page([messagePayload(conversationId: "s_alice_bob", seq: 7)]))
+            case "msg.receiptDetail":
+                channel.reply(to: request, data: messageReceipt())
+            case "group.applicationList":
+                channel.reply(to: request, data: page([groupApplication()]))
+
             default:
                 // Every remaining endpoint in these tiers returns ApiResult with no payload.
                 channel.reply(to: request, data: .null)
             }
         })
+    }
+
+    /// The targets `sdk/endpoint-inventory.json` puts in one tier, read rather than listed, so the
+    /// hand-written set below is checked against the generator instead of against itself.
+    private static func inventoryTargets(tier: String, from here: String = #filePath) throws -> Set<String> {
+        struct Inventory: Decodable {
+            struct Tier: Decodable {
+                let targets: [String]
+            }
+
+            let tiers: [String: Tier]
+        }
+
+        var directory = URL(fileURLWithPath: here).deletingLastPathComponent()
+        for _ in 0 ..< 8 {
+            let candidate = directory.appendingPathComponent("endpoint-inventory.json")
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                let inventory = try JSONDecoder().decode(Inventory.self, from: Data(contentsOf: candidate))
+                return Set(inventory.tiers[tier]?.targets ?? [])
+            }
+            directory = directory.deletingLastPathComponent()
+        }
+
+        Issue.record("could not locate sdk/endpoint-inventory.json from \(here)")
+        return []
     }
 
     // MARK: - Coverage
@@ -301,6 +380,68 @@ struct TypedSurfaceTests {
         ]
 
         #expect(expected.count == 51, "T0 (3) + T1 (18) + T2 (30)")
+
+        let seen = Set(channel.requests.map(\.target))
+        #expect(expected.subtracting(seen).isEmpty, "untyped: \(expected.subtracting(seen).sorted())")
+
+        await client.disconnect()
+    }
+
+    @Test("every endpoint in T3 has a typed method that names it")
+    func competitiveParityEndpointsAreAllTyped() async throws {
+        let gateway = Self.fullGateway()
+        let client = ImClient(options: makeOptions(connector: gateway))
+        try await client.connect()
+        let channel = try #require(gateway.lastChannel)
+
+        let snowflake: Int64 = 360_306_324_097_966_080
+
+        // T3 — competitive parity. Every call below has to come back without throwing: the fake
+        // answers each payload endpoint with the shape the server writes, and each of the others
+        // with the payload-less acknowledgement the server writes for it.
+        try await client.msg.pin(ConversationMessageRequest(conversationId: "g_ops", messageId: snowflake))
+        try await client.msg.unpin(ConversationMessageRequest(conversationId: "g_ops", messageId: snowflake))
+        let pins = try await client.msg.pins(ConversationIdRequest("g_ops"))
+        try await client.msg.favourite(ConversationMessageRequest(conversationId: "g_ops", messageId: snowflake))
+        try await client.msg.unfavourite(ConversationMessageRequest(conversationId: "g_ops", messageId: snowflake))
+        let favourites = try await client.msg.favourites()
+        try await client.msg.burn(ConversationMessageRequest(conversationId: "s_alice_bob", messageId: snowflake))
+        let found = try await client.msg.search(SearchMessagesRequest(keyword: "invoice"))
+        let receipt = try await client.msg.receiptDetail(ReceiptDetailRequest(conversationId: "g_ops", messageId: snowflake))
+        try await client.conv.markUnread(MarkUnreadRequest(conversationId: "s_alice_bob"))
+        try await client.user.setStatus(SetStatusRequest("in a meeting"))
+        try await client.friend.setRemark(SetRemarkRequest(userId: "bob", remark: "Bob from ops"))
+        try await client.group.transfer(TransferOwnerRequest(groupId: "g-1", newOwnerId: "bob"))
+        let applications = try await client.group.applicationList()
+        try await client.group.handleApplication(HandleApplicationRequest(groupId: "g-1", applicantId: "dave", accept: true))
+        try await client.group.setRole(SetRoleRequest(groupId: "g-1", userId: "bob", role: .admin))
+        try await client.group.mute(MuteGroupRequest(groupId: "g-1"))
+        try await client.group.muteMember(MuteMemberRequest(groupId: "g-1", userId: "bob", untilMs: 1_758_499_200_000))
+        try await client.group.setNickname(SetGroupNicknameRequest(groupId: "g-1", nickname: "Al"))
+        try await client.group.announcement(AnnouncementRequest(groupId: "g-1", announcement: "Standup at ten"))
+
+        #expect(pins.count == 1)
+        #expect(favourites.items.count == 1)
+        #expect(found.items.count == 1)
+        #expect(receipt.messageId == snowflake)
+        #expect(applications.items.count == 1)
+
+        let expected: Set<String> = [
+            "msg.pin", "msg.unpin", "msg.pins", "msg.favourite", "msg.unfavourite", "msg.favourites",
+            "msg.burn", "msg.search", "msg.receiptDetail",
+            "conv.markUnread",
+            "user.setStatus",
+            "friend.setRemark",
+            "group.transfer", "group.applicationList", "group.handleApplication", "group.setRole",
+            "group.mute", "group.muteMember", "group.setNickname", "group.announcement",
+        ]
+
+        #expect(expected.count == 20, "T3 (20)")
+
+        // The list above is written by hand, so it is checked against the generator: a tier that
+        // grows on the server must turn this red rather than leave the new endpoint untested.
+        let inventory = try Self.inventoryTargets(tier: "T3")
+        #expect(expected == inventory, "T3 in the inventory: \(inventory.sorted())")
 
         let seen = Set(channel.requests.map(\.target))
         #expect(expected.subtracting(seen).isEmpty, "untyped: \(expected.subtracting(seen).sorted())")

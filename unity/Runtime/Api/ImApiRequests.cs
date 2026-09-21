@@ -398,6 +398,202 @@ namespace Cyaim.Im
         }
     }
 
+    /// <summary>
+    /// Body of <c>msg.pin</c>, <c>msg.unpin</c>, <c>msg.favourite</c>, <c>msg.unfavourite</c> and
+    /// <c>msg.burn</c>: one message, addressed the only way a message can be — by its conversation
+    /// and its id together.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="MessageId"/> is a <c>string</c> and must stay one. The server declares this member
+    /// as a string, and the gateway's socket binder refuses a JSON number for a string member
+    /// outright: the call comes back <c>1000 InternalError</c> rather than a <c>1001</c> naming the
+    /// field. The snowflake ids are also far past 2^53, which a number would not survive on any
+    /// route that passes through a browser. An <see cref="ImMessage.MessageId"/> converts with
+    /// <c>messageId.ToString(CultureInfo.InvariantCulture)</c>.
+    /// messageId 必须是字符串：服务端这个字段就是 string，套接字绑定器收到数字会直接回 1000。
+    /// </para>
+    /// <para>
+    /// An empty or unparseable id is refused here before it is sent, because the server does not
+    /// refuse it everywhere: <c>msg.unpin</c> and <c>msg.unfavourite</c> answer <c>0</c> for an id
+    /// they cannot read, which is a success that did nothing.
+    /// </para>
+    /// </remarks>
+    public sealed class ImConversationMessageRequest : IImRequest
+    {
+        /// <summary>Conversation the message is in.</summary>
+        public string ConversationId { get; set; }
+
+        /// <summary>Which message, as the decimal string of its id.</summary>
+        public string MessageId { get; set; }
+
+        /// <inheritdoc cref="ImConversationMessageRequest"/>
+        public ImConversationMessageRequest()
+        {
+        }
+
+        /// <inheritdoc cref="ImConversationMessageRequest"/>
+        public ImConversationMessageRequest(string conversationId, string messageId)
+        {
+            ConversationId = conversationId;
+            MessageId = messageId;
+        }
+
+        /// <inheritdoc/>
+        public JsonValue ToJson()
+        {
+            return JsonValue.NewObject()
+                .Set("conversationId", ConversationId)
+                .Set("messageId", MessageId);
+        }
+    }
+
+    /// <summary>Body of <c>msg.favourites</c>: cursor paging over one of the caller's own lists.</summary>
+    public sealed class ImPageRequest : IImRequest
+    {
+        /// <summary>Paging cursor from the previous page's <c>nextCursor</c>. A malformed one restarts at page one.</summary>
+        public string Cursor { get; set; }
+
+        /// <summary>
+        /// Rows per page. 0 or less becomes the server's default of 20; anything above the
+        /// deployment's cap (100 unless the operator changed it) is cut to the cap.
+        /// </summary>
+        public int Limit { get; set; }
+
+        /// <inheritdoc cref="ImPageRequest"/>
+        public ImPageRequest()
+        {
+            Limit = 20;
+        }
+
+        /// <inheritdoc/>
+        public JsonValue ToJson()
+        {
+            return JsonValue.NewObject()
+                .Set("cursor", Cursor)
+                .Set("limit", (long)Limit);
+        }
+    }
+
+    /// <summary>Body of <c>msg.search</c>. Only <see cref="Keyword"/> is required.</summary>
+    /// <remarks>
+    /// <see cref="ContentTypes"/>, <see cref="SenderId"/>, <see cref="StartTime"/> and
+    /// <see cref="EndTime"/> are applied <i>after</i> the index page is cut, so a filtered search
+    /// returns short — even empty — pages with <c>hasMore</c> set. Keep paging on the cursor.
+    /// </remarks>
+    public sealed class ImSearchMessagesRequest : IImRequest
+    {
+        /// <summary>
+        /// What to look for. Required: null or blank throws <see cref="System.ArgumentException"/>
+        /// before anything is sent — the server would refuse it with
+        /// <see cref="ImErrorCode.InvalidArgument"/>, but only after charging the call to the user's
+        /// search rate limit. A keyword made only of punctuation or emoji returns an empty page
+        /// rather than an error.
+        /// </summary>
+        public string Keyword { get; set; }
+
+        /// <summary>
+        /// Search one conversation. Null searches only the caller's 200 most recently active
+        /// conversations, so an older chat is reachable only by naming it here. A conversation the
+        /// caller cannot see is refused with <see cref="ImErrorCode.Forbidden"/> — in a group too,
+        /// not <see cref="ImErrorCode.NotGroupMember"/>.
+        /// </summary>
+        public string ConversationId { get; set; }
+
+        /// <summary>Only these content types. Null or empty means all of them.</summary>
+        public List<ImMessageContentType> ContentTypes { get; set; }
+
+        /// <summary>Only messages from this user.</summary>
+        public string SenderId { get; set; }
+
+        /// <summary>Inclusive lower bound on the server's <c>createTime</c>, unix ms.</summary>
+        public long? StartTime { get; set; }
+
+        /// <summary>Inclusive upper bound on the server's <c>createTime</c>, unix ms.</summary>
+        public long? EndTime { get; set; }
+
+        /// <summary>Paging cursor from the previous page.</summary>
+        public string Cursor { get; set; }
+
+        /// <summary>Rows per page. 0 or less becomes 20; above 100 is cut to 100.</summary>
+        public int Limit { get; set; }
+
+        /// <inheritdoc cref="ImSearchMessagesRequest"/>
+        public ImSearchMessagesRequest()
+        {
+            Limit = 20;
+        }
+
+        /// <inheritdoc cref="ImSearchMessagesRequest"/>
+        public ImSearchMessagesRequest(string keyword)
+            : this()
+        {
+            Keyword = keyword;
+        }
+
+        /// <inheritdoc/>
+        public JsonValue ToJson()
+        {
+            var body = JsonValue.NewObject()
+                .Set("keyword", Keyword)
+                .Set("conversationId", ConversationId);
+
+            if (ContentTypes != null && ContentTypes.Count > 0)
+            {
+                // Integers, never names: the socket binder refuses "Image" for an enum member.
+                var types = JsonValue.NewArray();
+                foreach (var type in ContentTypes)
+                {
+                    types.Add(JsonValue.Of((long)type));
+                }
+
+                body.Set("contentTypes", types);
+            }
+
+            return body
+                .Set("senderId", SenderId)
+                .Set("startTime", StartTime)
+                .Set("endTime", EndTime)
+                .Set("cursor", Cursor)
+                .Set("limit", (long)Limit);
+        }
+    }
+
+    /// <summary>Body of <c>msg.receiptDetail</c>.</summary>
+    /// <remarks>
+    /// <see cref="MessageId"/> is a string for the reason given on
+    /// <see cref="ImConversationMessageRequest"/>: the server declares it as one and refuses a JSON
+    /// number with <c>1000</c>.
+    /// </remarks>
+    public sealed class ImReceiptDetailRequest : IImRequest
+    {
+        /// <summary>Conversation the message is in.</summary>
+        public string ConversationId { get; set; }
+
+        /// <summary>Which message, as the decimal string of its id.</summary>
+        public string MessageId { get; set; }
+
+        /// <inheritdoc cref="ImReceiptDetailRequest"/>
+        public ImReceiptDetailRequest()
+        {
+        }
+
+        /// <inheritdoc cref="ImReceiptDetailRequest"/>
+        public ImReceiptDetailRequest(string conversationId, string messageId)
+        {
+            ConversationId = conversationId;
+            MessageId = messageId;
+        }
+
+        /// <inheritdoc/>
+        public JsonValue ToJson()
+        {
+            return JsonValue.NewObject()
+                .Set("conversationId", ConversationId)
+                .Set("messageId", MessageId);
+        }
+    }
+
     // ------------------------------------------------------------------------ conv
 
     /// <summary>Body of <c>conv.list</c>.</summary>
@@ -428,7 +624,7 @@ namespace Cyaim.Im
         }
     }
 
-    /// <summary>Body of <c>conv.get</c>, <c>conv.delete</c> and <c>conv.clear</c>.</summary>
+    /// <summary>Body of <c>conv.get</c>, <c>conv.delete</c>, <c>conv.clear</c> and <c>msg.pins</c>.</summary>
     public sealed class ImConversationIdRequest : IImRequest
     {
         /// <summary>Which conversation.</summary>
@@ -546,6 +742,42 @@ namespace Cyaim.Im
             return JsonValue.NewObject()
                 .Set("conversationId", ConversationId)
                 .Set("setting", Setting != null ? Setting.ToJson() : JsonValue.NewObject());
+        }
+    }
+
+    /// <summary>Body of <c>conv.markUnread</c>.</summary>
+    /// <remarks>
+    /// <see cref="Unread"/> starts out true and is always written. That matters because the
+    /// server's own default is also true: a client that left the member out to mean "clear it"
+    /// would light the badge it meant to put out.
+    /// </remarks>
+    public sealed class ImMarkUnreadRequest : IImRequest
+    {
+        /// <summary>Which conversation.</summary>
+        public string ConversationId { get; set; }
+
+        /// <summary>True marks the conversation unread by hand; false clears the mark.</summary>
+        public bool Unread { get; set; }
+
+        /// <inheritdoc cref="ImMarkUnreadRequest"/>
+        public ImMarkUnreadRequest()
+        {
+            Unread = true;
+        }
+
+        /// <inheritdoc cref="ImMarkUnreadRequest"/>
+        public ImMarkUnreadRequest(string conversationId, bool unread = true)
+        {
+            ConversationId = conversationId;
+            Unread = unread;
+        }
+
+        /// <inheritdoc/>
+        public JsonValue ToJson()
+        {
+            return JsonValue.NewObject()
+                .Set("conversationId", ConversationId)
+                .Set("unread", Unread);
         }
     }
 
@@ -667,6 +899,33 @@ namespace Cyaim.Im
             return JsonValue.NewObject()
                 .Set("userIds", JsonValue.ArrayOf(UserIds))
                 .Set("ttlSeconds", (long)TtlSeconds);
+        }
+    }
+
+    /// <summary>Body of <c>user.setStatus</c>. The whole body is optional; an empty one clears the status.</summary>
+    public sealed class ImSetStatusRequest : IImRequest
+    {
+        /// <summary>
+        /// Free-text status, trimmed server-side and at most 64 characters (longer is refused with
+        /// <see cref="ImErrorCode.InvalidArgument"/>, not truncated). Null or blank clears it.
+        /// </summary>
+        public string Status { get; set; }
+
+        /// <inheritdoc cref="ImSetStatusRequest"/>
+        public ImSetStatusRequest()
+        {
+        }
+
+        /// <inheritdoc cref="ImSetStatusRequest"/>
+        public ImSetStatusRequest(string status)
+        {
+            Status = status;
+        }
+
+        /// <inheritdoc/>
+        public JsonValue ToJson()
+        {
+            return JsonValue.NewObject().Set("status", Status);
         }
     }
 
@@ -936,6 +1195,59 @@ namespace Cyaim.Im
         }
     }
 
+    /// <summary>Body of <c>friend.setRemark</c>.</summary>
+    /// <remarks>
+    /// The two optional members mean different things when left out, and that is the server's rule
+    /// rather than this SDK's: a missing <see cref="Remark"/> <b>clears</b> the remark, while a
+    /// missing <see cref="Tags"/> leaves the tags alone. To change only the tags, send the current
+    /// remark back with them.
+    /// 两个可选字段缺省含义不同：不带 remark 会清空备注，不带 tags 则保持标签不变。
+    /// </remarks>
+    public sealed class ImSetRemarkRequest : IImRequest
+    {
+        /// <summary>Which contact. Must already be a friend, or the call fails with <see cref="ImErrorCode.NotFriend"/>.</summary>
+        public string UserId { get; set; }
+
+        /// <summary>
+        /// Private name for the contact, at most 64 characters (longer is refused, not truncated).
+        /// Null or blank clears it.
+        /// </summary>
+        public string Remark { get; set; }
+
+        /// <summary>
+        /// Grouping tags: at most 20, each non-blank and at most 32 characters. Null leaves the
+        /// current tags untouched; an empty list clears them.
+        /// </summary>
+        public List<string> Tags { get; set; }
+
+        /// <inheritdoc cref="ImSetRemarkRequest"/>
+        public ImSetRemarkRequest()
+        {
+        }
+
+        /// <inheritdoc cref="ImSetRemarkRequest"/>
+        public ImSetRemarkRequest(string userId, string remark)
+        {
+            UserId = userId;
+            Remark = remark;
+        }
+
+        /// <inheritdoc/>
+        public JsonValue ToJson()
+        {
+            var body = JsonValue.NewObject()
+                .Set("userId", UserId)
+                .Set("remark", Remark);
+
+            if (Tags != null)
+            {
+                body.Set("tags", JsonValue.ArrayOf(Tags));
+            }
+
+            return body;
+        }
+    }
+
     // ----------------------------------------------------------------------- group
 
     /// <summary>Body of <c>group.create</c>.</summary>
@@ -1147,14 +1459,17 @@ namespace Cyaim.Im
         }
     }
 
-    /// <summary>Body of <c>group.memberList</c>.</summary>
+    /// <summary>Body of <c>group.memberList</c> and <c>group.applicationList</c>.</summary>
     /// <remarks>
     /// Always paged, never "give me everyone": a super group holds a hundred thousand members and
     /// materialising that into one frame is a self-inflicted outage.
     /// </remarks>
     public sealed class ImGroupCursorRequest : IImRequest
     {
-        /// <summary>Which group.</summary>
+        /// <summary>
+        /// Which group. Required for <c>group.memberList</c>. For <c>group.applicationList</c>,
+        /// null lists applications across every group the caller manages.
+        /// </summary>
         public string GroupId { get; set; }
 
         /// <summary>Paging cursor from the previous page.</summary>
@@ -1213,6 +1528,298 @@ namespace Cyaim.Im
             return JsonValue.NewObject()
                 .Set("groupId", GroupId)
                 .Set("reason", Reason);
+        }
+    }
+
+    /// <summary>Body of <c>group.transfer</c>.</summary>
+    public sealed class ImTransferOwnerRequest : IImRequest
+    {
+        /// <summary>Which group.</summary>
+        public string GroupId { get; set; }
+
+        /// <summary>The member who becomes owner. Must already be in the group, and must not be the caller.</summary>
+        public string NewOwnerId { get; set; }
+
+        /// <inheritdoc cref="ImTransferOwnerRequest"/>
+        public ImTransferOwnerRequest()
+        {
+        }
+
+        /// <inheritdoc cref="ImTransferOwnerRequest"/>
+        public ImTransferOwnerRequest(string groupId, string newOwnerId)
+        {
+            GroupId = groupId;
+            NewOwnerId = newOwnerId;
+        }
+
+        /// <inheritdoc/>
+        public JsonValue ToJson()
+        {
+            return JsonValue.NewObject()
+                .Set("groupId", GroupId)
+                .Set("newOwnerId", NewOwnerId);
+        }
+    }
+
+    /// <summary>Body of <c>group.handleApplication</c>.</summary>
+    /// <remarks>
+    /// <see cref="Accept"/> is nullable on purpose, and leaving it null is refused before anything is
+    /// sent. The server reads an absent <c>accept</c> as <b>reject</b>, and a handled application
+    /// cannot be handled again — so an initializer that forgot the member would turn away the player
+    /// it meant to let in, with no way back.
+    /// accept 必须显式给出：服务端把缺省当作「拒绝」，而处理过的申请不能再处理。
+    /// </remarks>
+    public sealed class ImHandleApplicationRequest : IImRequest
+    {
+        /// <summary>Which group.</summary>
+        public string GroupId { get; set; }
+
+        /// <summary>Who applied — <see cref="ImGroupApplication.ApplicantId"/>.</summary>
+        public string ApplicantId { get; set; }
+
+        /// <summary>True admits the applicant; false rejects. Required.</summary>
+        public bool? Accept { get; set; }
+
+        /// <summary>Reason recorded with the decision.</summary>
+        public string Reason { get; set; }
+
+        /// <inheritdoc cref="ImHandleApplicationRequest"/>
+        public ImHandleApplicationRequest()
+        {
+        }
+
+        /// <inheritdoc cref="ImHandleApplicationRequest"/>
+        public ImHandleApplicationRequest(string groupId, string applicantId, bool accept, string reason = null)
+        {
+            GroupId = groupId;
+            ApplicantId = applicantId;
+            Accept = accept;
+            Reason = reason;
+        }
+
+        /// <inheritdoc/>
+        public JsonValue ToJson()
+        {
+            var body = JsonValue.NewObject()
+                .Set("groupId", GroupId)
+                .Set("applicantId", ApplicantId);
+
+            if (Accept.HasValue)
+            {
+                body.Set("accept", Accept.Value);
+            }
+
+            return body.Set("reason", Reason);
+        }
+    }
+
+    /// <summary>Body of <c>group.setRole</c>.</summary>
+    /// <remarks>
+    /// Only <see cref="ImGroupRole.Member"/> and <see cref="ImGroupRole.Admin"/> are accepted, and
+    /// anything else is refused before it is sent. <see cref="ImGroupRole.Owner"/> is
+    /// <c>group.transfer</c>'s job and the server refuses it; but the server stores any
+    /// <i>other</i> integer it is given, and those are not roles but privilege bugs — 0 escapes a
+    /// group-wide mute, 4 and above outrank every admin.
+    /// 只接受 Member / Admin：Owner 要走 group.transfer；其余整数服务端会照存，而那是提权缺陷。
+    /// </remarks>
+    public sealed class ImSetRoleRequest : IImRequest
+    {
+        /// <summary>Which group.</summary>
+        public string GroupId { get; set; }
+
+        /// <summary>Whose role changes.</summary>
+        public string UserId { get; set; }
+
+        /// <summary><see cref="ImGroupRole.Member"/> or <see cref="ImGroupRole.Admin"/>. Required.</summary>
+        public ImGroupRole Role { get; set; }
+
+        /// <inheritdoc cref="ImSetRoleRequest"/>
+        public ImSetRoleRequest()
+        {
+        }
+
+        /// <inheritdoc cref="ImSetRoleRequest"/>
+        public ImSetRoleRequest(string groupId, string userId, ImGroupRole role)
+        {
+            GroupId = groupId;
+            UserId = userId;
+            Role = role;
+        }
+
+        /// <inheritdoc/>
+        public JsonValue ToJson()
+        {
+            // An integer, never a name: the socket binder refuses "Admin" for an enum member.
+            return JsonValue.NewObject()
+                .Set("groupId", GroupId)
+                .Set("userId", UserId)
+                .Set("role", (long)Role);
+        }
+    }
+
+    /// <summary>Body of <c>group.mute</c>: the group-wide mute.</summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="Mute"/> starts out true and is always written, because the server's own default is
+    /// also true — leaving it out to mean "unmute" would mute. Send <c>Mute = false</c> to lift it;
+    /// <see cref="UntilMs"/> is then ignored.
+    /// </para>
+    /// <para>
+    /// <b>An <see cref="UntilMs"/> in the past mutes indefinitely</b> — the server drops the end time
+    /// rather than treating it as an unmute. Null means indefinitely on purpose; a deadline must be
+    /// in the future by the server's clock, so derive it from a server time
+    /// (<see cref="ImHeartbeatResult.ServerTime"/>) rather than from the device, whose clock is wrong
+    /// on some fraction of every player base.
+    /// 过去的 untilMs 会变成「无限期禁言」，截止时间请按服务端时钟计算。
+    /// </para>
+    /// </remarks>
+    public sealed class ImMuteGroupRequest : IImRequest
+    {
+        /// <summary>Which group.</summary>
+        public string GroupId { get; set; }
+
+        /// <summary>True mutes everyone but the owner and admins; false lifts the mute.</summary>
+        public bool Mute { get; set; }
+
+        /// <summary>Unix ms the mute lifts. Null mutes until someone unmutes.</summary>
+        public long? UntilMs { get; set; }
+
+        /// <inheritdoc cref="ImMuteGroupRequest"/>
+        public ImMuteGroupRequest()
+        {
+            Mute = true;
+        }
+
+        /// <inheritdoc cref="ImMuteGroupRequest"/>
+        public ImMuteGroupRequest(string groupId, bool mute = true, long? untilMs = null)
+        {
+            GroupId = groupId;
+            Mute = mute;
+            UntilMs = untilMs;
+        }
+
+        /// <inheritdoc/>
+        public JsonValue ToJson()
+        {
+            return JsonValue.NewObject()
+                .Set("groupId", GroupId)
+                .Set("mute", Mute)
+                .Set("untilMs", UntilMs);
+        }
+    }
+
+    /// <summary>Body of <c>group.muteMember</c>: one member's mute.</summary>
+    /// <remarks>
+    /// The opposite rule to <see cref="ImMuteGroupRequest"/>, and easy to get backwards: here a null
+    /// or past <see cref="UntilMs"/> <b>unmutes</b>. There is no indefinite member mute; send a
+    /// far-future time instead.
+    /// 与群禁言相反：这里 untilMs 为空或已过去表示「解除禁言」。
+    /// </remarks>
+    public sealed class ImMuteMemberRequest : IImRequest
+    {
+        /// <summary>Which group.</summary>
+        public string GroupId { get; set; }
+
+        /// <summary>Which member.</summary>
+        public string UserId { get; set; }
+
+        /// <summary>Unix ms the mute lifts. Null or past lifts it now.</summary>
+        public long? UntilMs { get; set; }
+
+        /// <inheritdoc cref="ImMuteMemberRequest"/>
+        public ImMuteMemberRequest()
+        {
+        }
+
+        /// <inheritdoc cref="ImMuteMemberRequest"/>
+        public ImMuteMemberRequest(string groupId, string userId, long? untilMs)
+        {
+            GroupId = groupId;
+            UserId = userId;
+            UntilMs = untilMs;
+        }
+
+        /// <inheritdoc/>
+        public JsonValue ToJson()
+        {
+            return JsonValue.NewObject()
+                .Set("groupId", GroupId)
+                .Set("userId", UserId)
+                .Set("untilMs", UntilMs);
+        }
+    }
+
+    /// <summary>Body of <c>group.setNickname</c>: a per-group display name.</summary>
+    public sealed class ImSetGroupNicknameRequest : IImRequest
+    {
+        /// <summary>Which group.</summary>
+        public string GroupId { get; set; }
+
+        /// <summary>
+        /// Whose nickname. Null, empty or the caller's own id sets the caller's, which any member may
+        /// do. Anyone else's needs owner or admin and a higher rank than theirs.
+        /// </summary>
+        public string UserId { get; set; }
+
+        /// <summary>
+        /// The nickname, trimmed server-side. Null or blank clears it; beyond 64 characters it is
+        /// <b>silently truncated</b> rather than refused.
+        /// </summary>
+        public string Nickname { get; set; }
+
+        /// <inheritdoc cref="ImSetGroupNicknameRequest"/>
+        public ImSetGroupNicknameRequest()
+        {
+        }
+
+        /// <inheritdoc cref="ImSetGroupNicknameRequest"/>
+        public ImSetGroupNicknameRequest(string groupId, string nickname, string userId = null)
+        {
+            GroupId = groupId;
+            Nickname = nickname;
+            UserId = userId;
+        }
+
+        /// <inheritdoc/>
+        public JsonValue ToJson()
+        {
+            return JsonValue.NewObject()
+                .Set("groupId", GroupId)
+                .Set("userId", UserId)
+                .Set("nickname", Nickname);
+        }
+    }
+
+    /// <summary>Body of <c>group.announcement</c>.</summary>
+    public sealed class ImAnnouncementRequest : IImRequest
+    {
+        /// <summary>Which group.</summary>
+        public string GroupId { get; set; }
+
+        /// <summary>
+        /// The announcement, trimmed server-side. Null or blank clears it; beyond 4096 characters it
+        /// is <b>silently truncated</b> rather than refused.
+        /// </summary>
+        public string Announcement { get; set; }
+
+        /// <inheritdoc cref="ImAnnouncementRequest"/>
+        public ImAnnouncementRequest()
+        {
+        }
+
+        /// <inheritdoc cref="ImAnnouncementRequest"/>
+        public ImAnnouncementRequest(string groupId, string announcement)
+        {
+            GroupId = groupId;
+            Announcement = announcement;
+        }
+
+        /// <inheritdoc/>
+        public JsonValue ToJson()
+        {
+            return JsonValue.NewObject()
+                .Set("groupId", GroupId)
+                .Set("announcement", Announcement);
         }
     }
 
@@ -1289,12 +1896,13 @@ namespace Cyaim.Im
                 .Set("targetUserId", TargetUserId)
                 .Set("conversationId", ConversationId)
 
-                // Blank means absent, not "". The server reads this member as a number written as a
-                // string, so an empty one fails to parse there and answers 1000 InternalError on a
-                // field nobody filled in — and an empty box is how a report screen spells "no
-                // particular message".
-                // 空串按缺省处理：服务端把它当「写成字符串的数字」解析，"" 在那边解析失败，
-                // 会让一个本就没填的可选字段回一个 1000。
+                // Blank means absent, not "". The server reads this member as a string: absent,
+                // blank or "0" reports the account, digits name that message, anything else is
+                // refused with 1001. Omitting it says "the account" in the one spelling every
+                // server version has read that way — and an empty box is how a report screen
+                // spells "no particular message".
+                // 空串按缺省处理：服务端这个字段是字符串，缺省、空白或 "0" 都表示举报账号，其余非数字回 1001；
+                // 省略是每个服务端版本都读作「举报账号」的写法。
                 .Set("messageId", string.IsNullOrEmpty(MessageId) ? null : MessageId)
                 .Set("category", Category)
                 .Set("note", Note);
@@ -1304,10 +1912,6 @@ namespace Cyaim.Im
     /// <summary>Array builders the request bodies share.</summary>
     internal static class ImJsonArrays
     {
-        /// <summary>
-        /// Builds a JSON array of 64-bit integers. Written out rather than routed through a double,
-        /// because a snowflake <c>messageId</c> past 2^53 does not survive the round trip.
-        /// </summary>
         /// <summary>
         /// Builds a JSON array of message ids, which travel as strings.
         /// </summary>
@@ -1331,6 +1935,11 @@ namespace Cyaim.Im
             return array;
         }
 
+        /// <summary>
+        /// Builds a JSON array of 64-bit integers, written out rather than routed through a double.
+        /// Only for members the server declares numeric: a message id is a string on the wire, and
+        /// the socket binder refuses a number in a <c>List&lt;string&gt;</c>.
+        /// </summary>
         internal static JsonValue OfLongs(IEnumerable<long> values)
         {
             var array = JsonValue.NewArray();

@@ -283,18 +283,29 @@ and a bug report mentioning `msg.forward` can be grepped for.
 | Namespace | Endpoints |
 |---|---|
 | `im.conn` | `heartbeat` `reauth` `sync` |
-| `im.msg` | `send` `sync` `history` `recall` `delete` `edit` `forward` `react` `receipt` `typing` |
-| `im.conv` | `list` `get` `read` `unreadTotal` `setting` `delete` `clear` |
-| `im.user` | `me` `profile` `batchProfile` `updateProfile` `presence` `subscribePresence` `unsubscribePresence` |
+| `im.msg` | `send` `sync` `history` `recall` `delete` `edit` `forward` `react` `receipt` `typing` · `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search` `receiptDetail` |
+| `im.conv` | `list` `get` `read` `unreadTotal` `setting` `delete` `clear` · `markUnread` |
+| `im.user` | `me` `profile` `batchProfile` `updateProfile` `presence` `subscribePresence` `unsubscribePresence` · `setStatus` |
 | `im.media` | `uploadTicket` `downloadUrl` |
 | `im.push` | `register` `unregister` `clicked` |
-| `im.friend` | `list` `add` `handleRequest` `requestList` `delete` `blockList` `block` `unblock` |
-| `im.group` | `create` `info` `update` `dismiss` `memberList` `joined` `invite` `kick` `quit` `join` |
+| `im.friend` | `list` `add` `handleRequest` `requestList` `delete` `blockList` `block` `unblock` · `setRemark` |
+| `im.group` | `create` `info` `update` `dismiss` `memberList` `joined` `invite` `kick` `quit` `join` · `transfer` `applicationList` `handleApplication` `setRole` `mute` `muteMember` `setNickname` `announcement` |
 | `im.moderation` | `report` |
+| `im.diag` | `logRequests` `logUploaded` — driven by `ImClient` itself; apps do not call these |
 
-That is tiers 0, 1 and 2 of the client contract — 51 endpoints — typed end to end. Tier 3
-(group administration, pins, favourites, search) and tier 4 (calls, E2EE, live rooms, service desk,
-AI streaming) go through `invoke` until they are typed.
+That is tiers 0 to 3 of the client contract — 73 endpoints — typed end to end; the names after the
+`·` are tier 3. The 34 endpoints of tier 4 (live rooms, service desk, the E2EE key directory, AI
+streaming and translation, scheduling, conversation folders) go through `invoke` until they are
+typed.
+
+Three tier-3 behaviours are worth knowing before the first call. `im.msg.search` is **off by
+default** (the tenant's `EnableSearch`, `1203`) and rate limited per user *before* that check
+(`1003`), so debounce search-as-you-type. `im.group.setRole` sends only `.member` or `.admin` and
+throws before writing a frame for anything else, because the server stores any other number it is
+given. And every request that names a message — `ConversationMessageRequest`,
+`ReceiptDetailRequest`, recall, edit, delete, forward, react, receipt, and a send's
+`quoteMessageId` / `threadRootId` — takes the `Int64` from `ImMessage.messageId` but puts it on the
+wire as a quoted string: the server's field is a `string`, and a JSON number there is refused.
 
 Every method takes exactly one request object, named for the server DTO, because a server that adds
 one optional field should be an additive change rather than a source break. Convenience overloads
@@ -347,12 +358,17 @@ supported route rather than a workaround. It shares one code path with every typ
 timeouts, cancellation and error mapping behave identically — and it never touches a cursor.
 
 ```swift
-// msg.pin is tier 3 and not yet typed here.
-try await im.invoke("msg.pin", body: [
-    "conversationId": .string(conversationId),
-    "messageId": .int(messageId),
+// msg.cancelScheduled is tier 4 and not yet typed here.
+try await im.invoke("msg.cancelScheduled", body: [
+    "scheduleId": .string(scheduleId),
 ] as [String: JSONValue], as: EmptyBody.self)
 ```
+
+`EmptyBody` is the answer type for an endpoint that acknowledges without a payload. In a hand-built
+body, give each field the JSON type the server's request DTO declares: the gateway binds field by
+field without converting, so a mismatch is refused with `1000`. The `msg.*` endpoints declare their
+message ids as `string` — put one in as `.string(String(messageId))` — while times and counts are
+numbers.
 
 ## Errors
 

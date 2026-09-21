@@ -49,7 +49,7 @@ namespace Cyaim.Im.Tests
 
                 var sync = harness.LastResume;
                 Assert.That(sync, Is.Not.Null, "a connect must resume");
-                Assert.That(sync["convSeqs"]["c1"].AsLong(), Is.EqualTo(100),
+                Assert.That(sync["convSeqs"]["c1"].WireLong(), Is.EqualTo(100),
                     "the position the last run committed has to be the position reported");
 
                 harness.AnswerResume(ImFrames.ResumePage(
@@ -58,8 +58,8 @@ namespace Cyaim.Im.Tests
 
                 var repair = harness.Socket.LastBody("msg.sync");
                 Assert.That(repair, Is.Not.Null, "the four messages that arrived while we were shut have to be asked for");
-                Assert.That(repair["fromSeq"].AsLong(), Is.EqualTo(101));
-                Assert.That(repair["toSeq"].AsLong(), Is.EqualTo(104));
+                Assert.That(repair["fromSeq"].WireLong(), Is.EqualTo(101));
+                Assert.That(repair["toSeq"].WireLong(), Is.EqualTo(104));
 
                 harness.Socket.Reply("msg.sync", ImFrames.SyncPage("c1", false, 104, 101, 102, 103, 104));
                 harness.Pump();
@@ -129,7 +129,7 @@ namespace Cyaim.Im.Tests
                 harness.Connect();
 
                 Assert.That(harness.Client.CursorScopeRejected, Is.False);
-                Assert.That(harness.LastResume["convSeqs"]["c1"].AsLong(), Is.EqualTo(100));
+                Assert.That(harness.LastResume["convSeqs"]["c1"].WireLong(), Is.EqualTo(100));
             }
         }
 
@@ -214,7 +214,7 @@ namespace Cyaim.Im.Tests
                     nextCursor: "p3"));
                 harness.Pump();
 
-                Assert.That(harness.LastResume["cursor"].AsString(), Is.EqualTo("p3"),
+                Assert.That(harness.LastResume["cursor"].WireString(), Is.EqualTo("p3"),
                     "each page has to be asked for with the cursor the last one handed back");
 
                 harness.Socket.Reply("conn.sync", ImFrames.ResumePage(
@@ -300,7 +300,7 @@ namespace Cyaim.Im.Tests
             {
                 harness.Connect(answerResume: false);
 
-                Assert.That(harness.LastResume["limit"].AsInt(), Is.EqualTo(200));
+                Assert.That(harness.LastResume["limit"].WireInt(), Is.EqualTo(200));
 
                 harness.Socket.Reply("conn.sync", ImFrames.ResumePage(
                     JsonValue.NewArray().Add(ImFrames.Conversation("c1", 5, Newest)),
@@ -337,7 +337,7 @@ namespace Cyaim.Im.Tests
 
                 Assert.That(harness.Client.DeliveredSeqOf("c1"), Is.EqualTo(4),
                     "the delivered cursor rewinds to what was actually stored");
-                Assert.That(harness.LastResume["convSeqs"]["c1"].AsLong(), Is.EqualTo(4));
+                Assert.That(harness.LastResume["convSeqs"]["c1"].WireLong(), Is.EqualTo(4));
 
                 harness.AnswerResume(ImFrames.ResumePage(
                     JsonValue.NewArray().Add(ImFrames.Conversation("c1", 5, Newest)),
@@ -380,8 +380,8 @@ namespace Cyaim.Im.Tests
 
                 var repair = harness.Socket.LastBody("msg.sync");
                 Assert.That(repair, Is.Not.Null, "adopting 6 here would drop 1 through 6 without a word");
-                Assert.That(repair["fromSeq"].AsLong(), Is.EqualTo(1));
-                Assert.That(repair["toSeq"].AsLong(), Is.EqualTo(6));
+                Assert.That(repair["fromSeq"].WireLong(), Is.EqualTo(1));
+                Assert.That(repair["toSeq"].WireLong(), Is.EqualTo(6));
             }
         }
 
@@ -516,7 +516,7 @@ namespace Cyaim.Im.Tests
                 harness.PushMessage("c1", 1);
                 harness.PushMessage("c1", 1202);
 
-                Assert.That(harness.Socket.LastBody("msg.sync")["limit"].AsInt(), Is.EqualTo(500),
+                Assert.That(harness.Socket.LastBody("msg.sync")["limit"].WireInt(), Is.EqualTo(500),
                     "the server clamps to 500, so asking for 1201 would silently get 500");
 
                 harness.Socket.Reply("msg.sync", ImFrames.SyncPage("c1", true, 1202, 2, 3));
@@ -555,7 +555,7 @@ namespace Cyaim.Im.Tests
                 harness.Pump();
 
                 Assert.That(harness.Socket.CountOf("msg.sync"), Is.EqualTo(2), "an empty page is not an answer");
-                Assert.That(harness.Socket.LastBody("msg.sync")["fromSeq"].AsLong(), Is.EqualTo(502),
+                Assert.That(harness.Socket.LastBody("msg.sync")["fromSeq"].WireLong(), Is.EqualTo(502),
                     "the next window starts past the one just read, not at the end of the conversation");
             }
         }
@@ -614,7 +614,7 @@ namespace Cyaim.Im.Tests
 
                 Assert.That(store.StoredSeq("c1"), Is.EqualTo(2),
                     "whatever the debounce is holding has to be on disk before the server is asked what we missed");
-                Assert.That(harness.LastResume["convSeqs"]["c1"].AsLong(), Is.EqualTo(2));
+                Assert.That(harness.LastResume["convSeqs"]["c1"].WireLong(), Is.EqualTo(2));
             }
         }
 

@@ -497,8 +497,8 @@ export class ImClient {
    * returns messages and moves nothing.
    *
    * ```ts
-   * // group.setRole is T3 and not typed yet:
-   * await im.invoke<void>('group.setRole', { groupId, userId, role: 2 });
+   * // msg.cancelScheduled is T4 and not typed yet:
+   * await im.invoke<void>('msg.cancelScheduled', { scheduleId });
    * ```
    */
   invoke<T>(target: string, body?: unknown, options?: ImRequestOptions): Promise<T> {

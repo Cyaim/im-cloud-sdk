@@ -166,21 +166,22 @@ peer will never send.
 
 ## The typed surface
 
-51 endpoints — contract tiers T0, T1 and T2 — grouped into namespaces named for the target prefix,
-so a reader who knows the endpoint name knows the call without a lookup table. `msg.recall` is
-`im.msg.recall`; there are no synonyms.
+73 endpoints — contract tiers T0, T1, T2 and T3 in full — grouped into namespaces named for the
+target prefix, so a reader who knows the endpoint name knows the call without a lookup table.
+`msg.recall` is `im.msg.recall`; there are no synonyms. The names after the `·` are T3.
 
 | Namespace | Endpoints |
 |---|---|
 | `im.conn` | `heartbeat` `reauth` `sync` |
-| `im.msg` | `send` `sync` `history` `recall` `edit` `delete` `forward` `react` `receipt` `typing` |
-| `im.conv` | `list` `get` `read` `setting` `delete` `clear` `unreadTotal` |
-| `im.user` | `me` `profile` `batchProfile` `updateProfile` `presence` `subscribePresence` `unsubscribePresence` |
-| `im.friend` | `list` `add` `handleRequest` `requestList` `delete` `block` `unblock` `blockList` |
-| `im.group` | `create` `info` `update` `dismiss` `memberList` `joined` `invite` `kick` `quit` `join` |
+| `im.msg` | `send` `sync` `history` `recall` `edit` `delete` `forward` `react` `receipt` `typing` · `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search` `receiptDetail` |
+| `im.conv` | `list` `get` `read` `setting` `delete` `clear` `unreadTotal` · `markUnread` |
+| `im.user` | `me` `profile` `batchProfile` `updateProfile` `presence` `subscribePresence` `unsubscribePresence` · `setStatus` |
+| `im.friend` | `list` `add` `handleRequest` `requestList` `delete` `block` `unblock` `blockList` · `setRemark` |
+| `im.group` | `create` `info` `update` `dismiss` `memberList` `joined` `invite` `kick` `quit` `join` · `transfer` `applicationList` `handleApplication` `setRole` `mute` `muteMember` `setNickname` `announcement` |
 | `im.media` | `uploadTicket` `downloadUrl` |
 | `im.push` | `register` `unregister` `clicked` |
 | `im.moderation` | `report` |
+| `im.diag` | `logRequests` `logUploaded` — the client drives both; ordinary applications never call them |
 
 Every method takes exactly one request object, named for the server DTO. That is not a style
 preference: with positional parameters, the server adding one optional field is a source-breaking
@@ -191,16 +192,41 @@ Returns are the `data` payload, unwrapped — never an envelope. A non-zero code
 endpoints return `Page<T>`, which keeps `nextCursor`/`hasMore`/`total`: **page on `hasMore`, never
 on `items.size`**, because the server computes its cursor before filtering rows you cannot see.
 
+### Tier T3 — what the signatures do not say
+
+Every T3 method carries its full list of refusals in its KDoc. These are the ones that bite:
+
+- **Message ids leave quoted, and the server insists.** Every request DTO that carries a message id
+  (T1–T3 alike: recall, edit, delete, react, forward, receipts, a reply's `quoteMessageId`, pins,
+  favourites, reports) declares it a string, and the socket refuses a JSON number for one with an
+  opaque `1000` rather than a `1001` naming the field. The field is still a `Long` here —
+  `ImMessage.messageId` goes straight in — and every request type writes it as a string.
+- **`msg.search` is off unless the tenant turned it on** (`1203` — do not latch it), needs the search
+  add-on (`1204`), and is rate limited per user (`1003`, 30 a minute by default) **before** either
+  check, so calls against a tenant with search off still spend the budget. Debounce
+  search-as-you-type.
+- **`msg.receiptDetail`'s `totalCount` includes the sender**; `readUserIds` never does. Fully read is
+  `readCount == totalCount - 1`. The read itself has no size cap: in groups above the tenant's
+  receipt limit it is `msg.receipt` that refuses, so there is nothing recorded to read.
+- **`group.mute` with an `untilMs` in the past mutes indefinitely**, while `group.muteMember` with one
+  in the past unmutes. `mute` and `conv.markUnread`'s `unread` both default to `true`, and the SDK
+  sends that default explicitly.
+- **`group.setRole` sends `GroupRole.Member` or `GroupRole.Admin` only**, and throws
+  `IllegalArgumentException` for anything else before a frame is written: the server refuses
+  `Owner` but stores any other integer, and `0` or `4` are privilege bugs rather than roles.
+- **`group.applicationList` returns every status**, not only pending — filter on `status` yourself.
+  Called with no argument it lists across every group you manage.
+- **`friend.setRemark` without `remark` clears the remark**, while leaving `tags` null keeps them.
+
 ### Anything not yet typed
 
-Tiers T3 and T4 — group administration, pins, favourites, search, calls, E2EE, chat rooms, service
-desk, streaming — go through the escape hatch, which shares one code path with the typed methods:
+Tier T4 — E2EE keys, chat rooms, the service desk, streaming, scheduling, folders, translation —
+goes through the escape hatch, which shares one code path with the typed methods:
 
 ```kotlin
-im.invoke<Unit>("group.setRole", buildJsonObject {
-    put("groupId", groupId)
-    put("userId", userId)
-    put("role", GroupRole.Admin.code)
+// msg.cancelScheduled is tier T4 and not typed yet:
+im.invoke<Unit>("msg.cancelScheduled", buildJsonObject {
+    put("scheduleId", scheduleId)
 })
 ```
 
@@ -406,7 +432,7 @@ Java 11 or newer to consume, Java 17 or newer to build.
 > restores `test-results/` alongside the task outcome. The report proves a test task *once*
 > succeeded, not that it succeeded here. Only re-running does.
 >
-> **本机跑通的 88 条就是用上面这条命令跑出来的。** 不带那两个参数，`./gradlew test` 会执行
+> **本机跑通的 112 条就是用上面这条命令跑出来的。** 不带那两个参数，`./gradlew test` 会执行
 > **零个测试**并打印 `BUILD SUCCESSFUL`；连"数 XML 报告里的用例数"这个断言也拦不住它，
 > 因为构建缓存会把 `test-results/` 一起恢复——那份报告证明的是"某一次成功过"，不是"这一次"。
 

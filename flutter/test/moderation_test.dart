@@ -66,9 +66,10 @@ void main() {
     });
 
     test('a report about the account names no message', () async {
-      // Zero — an absent field — is how the server hears "this is about the account, not one
-      // message". An empty string is not: `messageId` is a number over there and `""` fails to
-      // bind, which is what a report screen with nothing selected would otherwise send.
+      // An absent field is how the server hears "this is about the account, not one message".
+      // Blank and "0" read the same on the current server, but an older one took a number and
+      // failed to bind `""`, which is what a report screen with nothing selected would otherwise
+      // send — so the SDK omits it.
       final FakeGateway gateway = FakeGateway();
       final ImClient client = await connectedClient(gateway);
 

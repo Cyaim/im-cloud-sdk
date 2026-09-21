@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using Cyaim.Im.Json;
 
 namespace Cyaim.Im
@@ -331,20 +332,7 @@ namespace Cyaim.Im
             UpdatedAt = json["updatedAt"].AsLong();
             Extensions = json["extensions"];
 
-            var last = json["lastMessage"];
-            if (last.IsObject)
-            {
-                LastMessage = new ImConversationPreview
-                {
-                    MessageId = last["messageId"].AsLong(),
-                    Seq = last["seq"].AsLong(),
-                    SenderId = last["senderId"].AsString(string.Empty),
-                    ContentType = (ImMessageContentType)last["contentType"].AsInt(),
-                    Digest = last["digest"].AsString(string.Empty),
-                    CreateTime = last["createTime"].AsLong(),
-                    Recalled = last["recalled"].AsBool(),
-                };
-            }
+            LastMessage = ImConversationPreview.Read(json["lastMessage"]);
 
             var peer = json["peer"];
             if (peer.IsObject)
@@ -360,7 +348,10 @@ namespace Cyaim.Im
         }
     }
 
-    /// <summary>The one-line summary shown in a conversation list.</summary>
+    /// <summary>
+    /// The one-line summary of a message: a conversation's <c>lastMessage</c>, and a pin's
+    /// <see cref="ImPinnedMessage.Brief"/>. The server calls this shape <c>MessageBrief</c>.
+    /// </summary>
     public sealed class ImConversationPreview
     {
         /// <summary>Id of the previewed message.</summary>
@@ -383,6 +374,26 @@ namespace Cyaim.Im
 
         /// <summary>True when the previewed message was recalled.</summary>
         public bool Recalled { get; internal set; }
+
+        /// <summary>Maps a brief out of a payload, or returns null when the member is absent or not an object.</summary>
+        internal static ImConversationPreview Read(JsonValue json)
+        {
+            if (json == null || !json.IsObject)
+            {
+                return null;
+            }
+
+            return new ImConversationPreview
+            {
+                MessageId = json["messageId"].AsLong(),
+                Seq = json["seq"].AsLong(),
+                SenderId = json["senderId"].AsString(string.Empty),
+                ContentType = (ImMessageContentType)json["contentType"].AsInt(),
+                Digest = json["digest"].AsString(string.Empty),
+                CreateTime = json["createTime"].AsLong(),
+                Recalled = json["recalled"].AsBool(),
+            };
+        }
     }
 
     /// <summary>One page of a cursor-paginated list. Every list endpoint returns this shape.</summary>
@@ -542,7 +553,14 @@ namespace Cyaim.Im
         /// <summary>Mention everyone in the group.</summary>
         public bool MentionAll { get; set; }
 
-        /// <summary>Message being quoted, if any.</summary>
+        /// <summary>Message being quoted, if any — an <see cref="ImMessage.MessageId"/> as it is.</summary>
+        /// <remarks>
+        /// A <c>long</c> here so it takes a message id unconverted, and written to the body as the
+        /// decimal string of that id: the server's member is a <c>string?</c>, and the gateway's socket
+        /// binder refuses a JSON number for a string member, so a numeric one made every quoting send
+        /// come back <c>1000 InternalError</c>.
+        /// 这里是 long，线路上写成十进制字符串：服务端字段是 string?，数字会被套接字绑定器以 1000 拒绝。
+        /// </remarks>
         public long? QuoteMessageId { get; set; }
 
         /// <summary>Per-message delivery switches: offline push, unread counting, persistence.</summary>
@@ -577,7 +595,10 @@ namespace Cyaim.Im
                 body.Set("mentionedUserIds", JsonValue.ArrayOf(MentionedUserIds));
             }
 
-            body.Set("quoteMessageId", QuoteMessageId);
+            if (QuoteMessageId.HasValue)
+            {
+                body.Set("quoteMessageId", QuoteMessageId.Value.ToString(CultureInfo.InvariantCulture));
+            }
 
             if (Options != null)
             {

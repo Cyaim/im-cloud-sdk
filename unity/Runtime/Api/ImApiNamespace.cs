@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Cyaim.Im.Json;
@@ -90,6 +91,30 @@ namespace Cyaim.Im
             if (string.IsNullOrEmpty(value))
             {
                 throw new ArgumentException(name + " is required", name);
+            }
+        }
+
+        /// <summary>
+        /// Throws unless a message id is the decimal string of a positive 64-bit integer — the one
+        /// shape the server can read.
+        /// </summary>
+        /// <remarks>
+        /// The server's own parse is just as strict (no sign, no whitespace, no separators) but does
+        /// not fail: an id it cannot read becomes 0, and on some endpoints — <c>msg.unpin</c>,
+        /// <c>msg.unfavourite</c> — 0 is answered with success. A call that reports success and did
+        /// nothing is worse than an exception at the call site, so the check runs here.
+        /// 服务端读不出的 id 会变成 0，而有的端点对 0 回成功——一次「成功但什么都没做」，所以在这里先拦。
+        /// </remarks>
+        protected static void RequireMessageId(string value, string name)
+        {
+            long parsed;
+            if (string.IsNullOrEmpty(value) ||
+                !long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out parsed) ||
+                parsed <= 0)
+            {
+                throw new ArgumentException(
+                    name + " must be a message id: the decimal digits of a positive 64-bit integer",
+                    name);
             }
         }
 

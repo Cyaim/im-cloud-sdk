@@ -64,4 +64,23 @@ public class ConvApi internal constructor(private val connection: ImConnection) 
 
     /** Badge count across every conversation. `Long`, because the server returns one. */
     public suspend fun unreadTotal(): Long = connection.request("conv.unreadTotal")
+
+    /**
+     * Marks a conversation unread by hand — or, with `unread = false`, clears that mark.
+     *
+     * It does **not** move the read cursor, so the other side's receipts are untouched. It shows up
+     * as [ConversationView.manuallyUnread], and the server reports `unreadCount` as 1 where it would
+     * otherwise be 0. [read], [delete] and [clear] all clear it. Setting the value it already has
+     * succeeds and sends nothing; a change reaches the caller's own devices as
+     * `evt.conversationUpdate` with kind `"unread"`. Access errors are `1001`, `1103` and `1503`.
+     *
+     * 只是一个标记，不动 readSeq，对方的已读回执不受影响；conv.read / delete / clear 都会清掉它。
+     */
+    public suspend fun markUnread(request: MarkUnreadRequest) {
+        connection.execute("conv.markUnread", request.asBody())
+    }
+
+    /** [markUnread] for the two-field case. */
+    public suspend fun markUnread(conversationId: String, unread: Boolean = true): Unit =
+        markUnread(MarkUnreadRequest(conversationId, unread))
 }

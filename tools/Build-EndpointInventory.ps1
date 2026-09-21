@@ -517,7 +517,7 @@ $document = [ordered]@{
         request       = [ordered]@{ id = 'string, unique per connection'; target = 'string'; body = 'object|null' }
         response      = [ordered]@{ id = 'string, echoes the request'; target = 'string'; status = 'int: 0 routed, 1 endpoint threw, 2 endpoint not found'; msg = 'string|null'; requestTime = 'long ticks'; completeTime = 'long ticks'; body = 'ApiResult' }
         apiResult     = [ordered]@{ code = 'int, see errorCodes'; message = 'string|null'; traceId = 'string|null'; serverTime = 'long, unix ms'; data = 'T|null' }
-        jsonPolicy    = 'camelCase property names; nulls omitted on write; numbers may arrive as JSON strings; property matching is case-insensitive on read'
+        jsonPolicy    = 'responses: camelCase names, nulls omitted, numbers may arrive as JSON strings (message ids always do), unknown fields ignored. requests: each field as the JSON kind of its C# type (enums as integers, message ids as digit strings, never a number read from a string); top-level keys match ignoring case, nested keys must be exact camelCase and an unmatched one is dropped. See CONTRACT.md section 2.'
     }
     totals        = [ordered]@{
         endpoints   = $endpoints.Count

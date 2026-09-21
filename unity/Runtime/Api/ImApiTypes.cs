@@ -739,6 +739,161 @@ namespace Cyaim.Im
         }
     }
 
+    /// <summary>One row of a conversation's pin board, as <c>msg.pins</c> returns it.</summary>
+    /// <remarks>
+    /// <see cref="Brief"/> is built fresh on every read, so a pin on a message recalled since shows
+    /// the server's <c>[Recalled]</c> digest with <see cref="ImConversationPreview.Recalled"/> set.
+    /// Digest tokens such as <c>[Image]</c> are fixed wire values for the client to localise.
+    /// </remarks>
+    public sealed class ImPinnedMessage : IImJsonPayload
+    {
+        /// <summary>
+        /// The pinned message's id. The server sends it quoted and it is read here without passing
+        /// through a double, so every digit of the snowflake survives.
+        /// </summary>
+        public long MessageId { get; internal set; }
+
+        /// <summary>Its position in the conversation.</summary>
+        public long Seq { get; internal set; }
+
+        /// <summary>Who pinned it.</summary>
+        public string PinnedBy { get; internal set; }
+
+        /// <summary>When, unix ms.</summary>
+        public long PinnedAt { get; internal set; }
+
+        /// <summary>Digest of the message, for rendering the board without loading history. Null when absent.</summary>
+        public ImConversationPreview Brief { get; internal set; }
+
+        /// <inheritdoc/>
+        public void ReadFrom(JsonValue json)
+        {
+            MessageId = json["messageId"].AsLong();
+            Seq = json["seq"].AsLong();
+            PinnedBy = json["pinnedBy"].AsString(string.Empty);
+            PinnedAt = json["pinnedAt"].AsLong();
+            Brief = ImConversationPreview.Read(json["brief"]);
+        }
+
+        /// <summary>Maps a pin out of a payload.</summary>
+        public static ImPinnedMessage FromJson(JsonValue json)
+        {
+            return ImPayload.Read<ImPinnedMessage>(json);
+        }
+    }
+
+    /// <summary>Who has read one message, as <c>msg.receiptDetail</c> returns it.</summary>
+    /// <remarks>
+    /// <b><see cref="TotalCount"/> includes the sender; <see cref="ReadUserIds"/> never does.</b> So
+    /// "read by everyone" is <c>ReadCount == TotalCount - 1</c>, not <c>ReadCount == TotalCount</c>.
+    /// <see cref="TotalCount"/> is a snapshot taken at the last receipt, not a live member count.
+    /// totalCount 含发送者，readUserIds 不含：全员已读是 readCount == totalCount - 1。
+    /// </remarks>
+    public sealed class ImMessageReceipt : IImJsonPayload
+    {
+        /// <summary>Tenant id.</summary>
+        public string AppId { get; internal set; }
+
+        /// <summary>Conversation the message is in.</summary>
+        public string ConversationId { get; internal set; }
+
+        /// <summary>The message's id. Sent quoted; read here without passing through a double.</summary>
+        public long MessageId { get; internal set; }
+
+        /// <summary>Who has read it, never including the sender. Never null.</summary>
+        public List<string> ReadUserIds { get; internal set; }
+
+        /// <summary>How many have read it.</summary>
+        public int ReadCount { get; internal set; }
+
+        /// <summary>Participants at the last receipt, <b>including the sender</b>.</summary>
+        public int TotalCount { get; internal set; }
+
+        /// <summary>Last change, unix ms. Equal to the message's create time while nobody has read it.</summary>
+        public long UpdatedAt { get; internal set; }
+
+        /// <inheritdoc/>
+        public void ReadFrom(JsonValue json)
+        {
+            AppId = json["appId"].AsString(string.Empty);
+            ConversationId = json["conversationId"].AsString(string.Empty);
+            MessageId = json["messageId"].AsLong();
+            ReadUserIds = json["readUserIds"].AsStringList();
+            ReadCount = json["readCount"].AsInt();
+            TotalCount = json["totalCount"].AsInt();
+            UpdatedAt = json["updatedAt"].AsLong();
+        }
+
+        /// <summary>Maps a receipt out of a payload.</summary>
+        public static ImMessageReceipt FromJson(JsonValue json)
+        {
+            return ImPayload.Read<ImMessageReceipt>(json);
+        }
+    }
+
+    /// <summary>A request to join a group, or an invitation that needs approval.</summary>
+    /// <remarks>
+    /// <c>group.applicationList</c> returns these in <b>every</b> status — handled ones included,
+    /// not only <see cref="ImApplicationStatus.Pending"/>. Filter on <see cref="Status"/> to build
+    /// an inbox.
+    /// </remarks>
+    public sealed class ImGroupApplication : IImJsonPayload
+    {
+        /// <summary>Tenant id.</summary>
+        public string AppId { get; internal set; }
+
+        /// <summary>The group applied to.</summary>
+        public string GroupId { get; internal set; }
+
+        /// <summary>The user who wants in.</summary>
+        public string ApplicantId { get; internal set; }
+
+        /// <summary>
+        /// Set when an ordinary member invited the applicant into a group that needs approval;
+        /// null when the applicant asked for themselves.
+        /// </summary>
+        public string InviterId { get; internal set; }
+
+        /// <summary>What the applicant wrote, or null.</summary>
+        public string Reason { get; internal set; }
+
+        /// <summary>Pending, accepted or rejected. <see cref="ImApplicationStatus.Expired"/> is declared but never produced today.</summary>
+        public ImApplicationStatus Status { get; internal set; }
+
+        /// <summary>The owner or admin who decided, or null while pending.</summary>
+        public string HandlerId { get; internal set; }
+
+        /// <summary>Reason recorded with the decision, or null.</summary>
+        public string HandleReason { get; internal set; }
+
+        /// <summary>When it was raised, unix ms.</summary>
+        public long CreatedAt { get; internal set; }
+
+        /// <summary>When it was decided, unix ms, or null while pending.</summary>
+        public long? HandledAt { get; internal set; }
+
+        /// <inheritdoc/>
+        public void ReadFrom(JsonValue json)
+        {
+            AppId = json["appId"].AsString(string.Empty);
+            GroupId = json["groupId"].AsString(string.Empty);
+            ApplicantId = json["applicantId"].AsString(string.Empty);
+            InviterId = json["inviterId"].AsString();
+            Reason = json["reason"].AsString();
+            Status = (ImApplicationStatus)json["status"].AsInt();
+            HandlerId = json["handlerId"].AsString();
+            HandleReason = json["handleReason"].AsString();
+            CreatedAt = json["createdAt"].AsLong();
+            HandledAt = ImPayload.OptionalLong(json, "handledAt");
+        }
+
+        /// <summary>Maps an application out of a payload.</summary>
+        public static ImGroupApplication FromJson(JsonValue json)
+        {
+            return ImPayload.Read<ImGroupApplication>(json);
+        }
+    }
+
     /// <summary>Decoding helpers shared by the payload types and by <c>InvokeAsync&lt;T&gt;</c>.</summary>
     public static class ImPayload
     {
