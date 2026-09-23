@@ -105,11 +105,42 @@ namespace Cyaim.Im.Tests
             Assert.That(plain.Has("quoteMessageId"), Is.False, "a member left null is not a member set to null");
         }
 
+        /// <summary>
+        /// A reply into a thread names its root as the decimal string of the root's
+        /// <see cref="ImMessage.MessageId"/>, and declares the conversation's kind as its integer.
+        /// Left unset, neither key is on the wire.
+        /// </summary>
+        /// <remarks>
+        /// Until 2026-09-23 <see cref="ImSendRequest"/> had neither member, so a Unity client could
+        /// read <see cref="ImMessage.ThreadRootId"/> but not reply into the thread it names; the other
+        /// four SDKs could. Unset must stay absent: the server stores <c>threadRootId</c> as given,
+        /// and refuses a declared <c>conversationType</c> that disagrees with the address.
+        /// 线程回复：threadRootId 以十进制字符串发送（服务端是 string?），conversationType 以整数发送；
+        /// 不设置时两个键都不出现——服务端会拒绝与地址不符的会话类型声明。
+        /// </remarks>
+        [Test]
+        public void A_thread_reply_names_its_root_as_a_string_and_unset_members_stay_off_the_wire()
+        {
+            var request = ImTestHarness.TextMessage(ImRecipient.Group("guild-7"), "in thread");
+            request.ThreadRootId = QuotedValue;
+            request.ConversationType = ImConversationType.Group;
+
+            var body = Sent(_harness.Client.Msg.SendAsync(request));
+
+            Assert.That(body["threadRootId"].WireString(), Is.EqualTo(Quoted),
+                "the server's SendMessageRequest.ThreadRootId is a string?; a JSON number there is 1000");
+            Assert.That(body["conversationType"].WireInt(), Is.EqualTo(2), "Group is 2 on the server's ConversationType");
+
+            var plain = Sent(_harness.Client.Msg.SendAsync(
+                ImTestHarness.TextMessage(ImRecipient.Group("guild-7"), "not in thread")));
+            Assert.That(plain.Has("threadRootId"), Is.False, "a member left null is not a member set to null");
+            Assert.That(plain.Has("conversationType"), Is.False, "a member left null is not a member set to null");
+        }
+
         /// <summary>Every member a fully populated send can carry, each in the server's kind.</summary>
         /// <remarks>
-        /// The key set is exact, so it also records what this SDK does not send:
-        /// <c>threadRootId</c> and <c>conversationType</c> have no member on
-        /// <see cref="ImSendRequest"/>.
+        /// The key set is exact, so a member added to <see cref="ImSendRequest"/> without a key here,
+        /// or a key the SDK starts sending unasked, goes red.
         /// </remarks>
         [Test]
         public void Every_member_of_a_fully_populated_send_has_the_servers_kind()
@@ -123,13 +154,16 @@ namespace Cyaim.Im.Tests
                 MentionedUserIds = new[] { "carol", "dave" },
                 MentionAll = true,
                 QuoteMessageId = QuotedValue,
+                ThreadRootId = QuotedValue,
+                ConversationType = ImConversationType.Single,
                 Options = JsonValue.NewObject().Set("needReceipt", true),
                 Extensions = JsonValue.NewObject().Set("quest", "q7"),
             }));
 
             AssertKeys(body,
                 "receiverId", "contentType", "content", "clientMsgId", "sendTime",
-                "mentionAll", "mentionedUserIds", "quoteMessageId", "options", "extensions");
+                "mentionAll", "mentionedUserIds", "quoteMessageId", "threadRootId", "conversationType",
+                "options", "extensions");
 
             Assert.That(body["receiverId"].WireString(), Is.EqualTo("bob"));
             Assert.That(body["contentType"].WireInt(), Is.EqualTo(2), "an enum member takes its integer; the binder refuses the name");
@@ -139,6 +173,9 @@ namespace Cyaim.Im.Tests
             Assert.That(body["mentionAll"].WireBool(), Is.True);
             Assert.That(body["mentionedUserIds"].WireStrings(), Is.EqualTo(new[] { "carol", "dave" }));
             Assert.That(body["quoteMessageId"].WireString(), Is.EqualTo(Quoted));
+            Assert.That(body["threadRootId"].WireString(), Is.EqualTo(Quoted),
+                "the server's SendMessageRequest.ThreadRootId is a string?; a JSON number there is 1000");
+            Assert.That(body["conversationType"].WireInt(), Is.EqualTo(1), "an enum member takes its integer; the binder refuses the name");
             Assert.That(body["options"].Kind, Is.EqualTo(JsonKind.Object));
             Assert.That(body["extensions"].Kind, Is.EqualTo(JsonKind.Object));
         }

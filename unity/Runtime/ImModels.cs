@@ -563,6 +563,32 @@ namespace Cyaim.Im
         /// </remarks>
         public long? QuoteMessageId { get; set; }
 
+        /// <summary>
+        /// Root of the thread this message replies into, if any — the root's
+        /// <see cref="ImMessage.MessageId"/> as it is, the same value <see cref="ImMessage.ThreadRootId"/>
+        /// reads back on every reply.
+        /// </summary>
+        /// <remarks>
+        /// Written to the body as the decimal string of that id, like <see cref="QuoteMessageId"/>: the
+        /// server's member is a <c>string?</c>, and the socket binder refuses a JSON number there with
+        /// <c>1000</c>. Left null, the message is not a thread reply and the key is not sent.
+        /// 线程回复的根消息 id；与 QuoteMessageId 一样按十进制字符串发送。不设置则不是线程回复。
+        /// </remarks>
+        public long? ThreadRootId { get; set; }
+
+        /// <summary>
+        /// The kind of conversation the <see cref="Recipient"/> addresses, declared by the caller. Optional.
+        /// </summary>
+        /// <remarks>
+        /// An assertion, not addressing: the recipient alone decides where the message goes. When set,
+        /// the server refuses the send if the address names another kind — <c>Single</c> for
+        /// <see cref="ImRecipient.User"/>, <c>Group</c> for <see cref="ImRecipient.Group"/>, and for
+        /// <see cref="ImRecipient.Conversation"/> the kind its id's prefix names (<c>s_</c>, <c>g_</c>,
+        /// <c>r_</c>, <c>sys_</c>). Sent as its integer; left null, the key is not sent.
+        /// 调用方声明的会话类型，只做断言：与收件地址所指的会话类型不符时服务端拒绝发送。
+        /// </remarks>
+        public ImConversationType? ConversationType { get; set; }
+
         /// <summary>Per-message delivery switches: offline push, unread counting, persistence.</summary>
         public JsonValue Options { get; set; }
 
@@ -598,6 +624,16 @@ namespace Cyaim.Im
             if (QuoteMessageId.HasValue)
             {
                 body.Set("quoteMessageId", QuoteMessageId.Value.ToString(CultureInfo.InvariantCulture));
+            }
+
+            if (ThreadRootId.HasValue)
+            {
+                body.Set("threadRootId", ThreadRootId.Value.ToString(CultureInfo.InvariantCulture));
+            }
+
+            if (ConversationType.HasValue)
+            {
+                body.Set("conversationType", (long)ConversationType.Value);
             }
 
             if (Options != null)

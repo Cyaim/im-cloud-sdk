@@ -8,14 +8,18 @@ to ask which platform.
 
 ## [Unreleased]
 
-### Known gaps
+### Added
 
-- **No thread replies.** `ImSendRequest` has no `ThreadRootId` and no `ConversationType`, so this
-  SDK cannot send a reply into a thread (it reads `ImMessage.ThreadRootId` on what it receives, but
-  cannot write one) and cannot state a conversation type explicitly. The other four client SDKs
-  send both. The missing `conversationType` is minor (the server only uses it to refuse a type that
-  disagrees with the address); the missing `threadRootId` is a missing feature. Both are declared
-  as omissions in `wire-samples/unity.json`.
+- **Thread replies.** `ImSendRequest.ThreadRootId` (`long?`) sends a message as a reply into the
+  thread rooted at that message id — the same value `ImMessage.ThreadRootId` reads back. It goes on
+  the wire as the decimal string of the id, like `QuoteMessageId`, because the server's member is a
+  `string?`. Until now this SDK could read a thread reply but not send one; the other four client
+  SDKs could.
+- `ImSendRequest.ConversationType` (`ImConversationType?`) declares the kind of conversation the
+  recipient names. It is an assertion, not addressing: the server refuses the send when it
+  disagrees with the address. Both members are left off the wire when null.
+- `wire-samples/unity.json` now declares only `RecallMessageRequest.asAdmin` omitted, the same as
+  every other client SDK; the platform's `SdkWireSampleBindingTests` holds that parity.
 
 ### Changed on the server (2026-09-21)
 

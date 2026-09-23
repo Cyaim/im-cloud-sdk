@@ -114,12 +114,6 @@ namespace Cyaim.Im.Tests
             new KeyValuePair<string, string>(
                 "RecallMessageRequest.asAdmin",
                 "MsgController.Recall forces it false for every socket call; recalling as an admin is a server-API capability, so ImRecallMessageRequest has no member for it"),
-            new KeyValuePair<string, string>(
-                "SendMessageRequest.conversationType",
-                "ImSendRequest has no member for it (ImModels.cs): the recipient's mode (User / Group / Conversation) is the only addressing this SDK sends"),
-            new KeyValuePair<string, string>(
-                "SendMessageRequest.threadRootId",
-                "ImSendRequest has no member for it (ImModels.cs): this SDK cannot reply in a thread"),
         };
 
         private sealed class Row
@@ -193,11 +187,19 @@ namespace Cyaim.Im.Tests
                 .Set("moderationBypass", true);
         }
 
-        private static ImSendRequest FullSend(ImRecipient recipient, string clientMsgId)
+        /// <summary>
+        /// A send with every member set. <paramref name="type"/> is the kind the recipient names, so
+        /// the declaration is one the server would also accept: <c>Single</c> for a user,
+        /// <c>Group</c> for a group, and <c>Single</c> for <c>c_wire</c>, whose id has no
+        /// <c>g_</c> / <c>r_</c> / <c>sys_</c> prefix.
+        /// </summary>
+        private static ImSendRequest FullSend(ImRecipient recipient, ImConversationType type, string clientMsgId)
         {
             return new ImSendRequest
             {
                 Recipient = recipient,
+                ConversationType = type,
+                ThreadRootId = BigValue,
                 ContentType = ImMessageContentType.Image,
                 Content = JsonValue.NewObject().Set("objectKey", "demo/alice/a.png").Set("width", 640L),
                 ClientMsgId = clientMsgId,
@@ -230,9 +232,9 @@ namespace Cyaim.Im.Tests
                 })),
 
                 // ------------------------------------------------------------------- msg
-                R("msg.send", "Msg.SendAsync(ImRecipient.User), every member", c => c.Msg.SendAsync(FullSend(ImRecipient.User("bob"), "cm-1"))),
-                R("msg.send", "Msg.SendAsync(ImRecipient.Group), every member", c => c.Msg.SendAsync(FullSend(ImRecipient.Group("team"), "cm-2"))),
-                R("msg.send", "Msg.SendAsync(ImRecipient.Conversation), every member", c => c.Msg.SendAsync(FullSend(ImRecipient.Conversation("c_wire"), "cm-3"))),
+                R("msg.send", "Msg.SendAsync(ImRecipient.User), every member", c => c.Msg.SendAsync(FullSend(ImRecipient.User("bob"), ImConversationType.Single, "cm-1"))),
+                R("msg.send", "Msg.SendAsync(ImRecipient.Group), every member", c => c.Msg.SendAsync(FullSend(ImRecipient.Group("team"), ImConversationType.Group, "cm-2"))),
+                R("msg.send", "Msg.SendAsync(ImRecipient.Conversation), every member", c => c.Msg.SendAsync(FullSend(ImRecipient.Conversation("c_wire"), ImConversationType.Single, "cm-3"))),
                 Generated("msg.send", "Msg.SendAsync, defaults filled in", c => c.Msg.SendAsync(new ImSendRequest
                 {
                     Recipient = ImRecipient.User("bob"),
@@ -496,7 +498,7 @@ namespace Cyaim.Im.Tests
                 R("user.setStatus", "User.SetStatusAsync()", c => c.User.SetStatusAsync()),
 
                 // ------------------------------------------- frozen [Obsolete] aliases
-                R("msg.send", "ImClient.SendAsync [Obsolete]", c => c.SendAsync(FullSend(ImRecipient.Conversation("c_wire"), "cm-4"))),
+                R("msg.send", "ImClient.SendAsync [Obsolete]", c => c.SendAsync(FullSend(ImRecipient.Conversation("c_wire"), ImConversationType.Single, "cm-4"))),
                 Generated("msg.send", "ImClient.SendTextAsync [Obsolete]", c => c.SendTextAsync(ImRecipient.User("bob"), "hi")),
                 R("msg.history", "ImClient.HistoryAsync [Obsolete]", c => c.HistoryAsync("c_wire", 9, 30)),
                 R("msg.recall", "ImClient.RecallAsync(string, long) [Obsolete]", c => c.RecallAsync("c_wire", BigValue, "typo")),
