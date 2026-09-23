@@ -287,6 +287,43 @@ jobs:
         working-directory: swift
         run: swift build --build-tests
 
+      # The suite runs in record mode here: WireSampleRecorderTests writes wire-samples/swift.json
+      # from what every request type encodes to, and the next step fails when that differs from the
+      # committed file (or when there is no committed file yet). The recording is judged against the
+      # server's real socket binder by the platform repository's SdkWireSampleBindingTests, and this
+      # job is the only place it can be produced: no machine that repository runs on has a Swift
+      # toolchain. So the first recording is this job's artifact, committed as it is, never a file
+      # derived by hand.
+      # 这里以录制模式跑：WireSampleRecorderTests 把每个请求类型编码出的请求体写进
+      # wire-samples/swift.json，下一步在它与已提交的文件不同（或根本还没提交）时失败。
+      # 平台仓库用服务端真实的绑定器判这份录制，而能产出它的只有这个 job——
+      # 平台仓库那边没有任何一台机器有 Swift 工具链。所以第一份录制就是本 job 的产物，原样提交，不许手推。
       - name: Test
         working-directory: swift
+        env:
+          IM_RECORD_WIRE_SAMPLES: '1'
         run: swift test
+
+      - name: Wire samples match the committed recording
+        run: |
+          set -euo pipefail
+          if [ ! -f wire-samples/swift.json ]; then
+            echo "::error::swift test wrote no wire-samples/swift.json; WireSampleRecorderTests did not run"
+            exit 1
+          fi
+          changes=$(git status --porcelain -- wire-samples/swift.json)
+          if [ -n "$changes" ]; then
+            echo "$changes"
+            git --no-pager diff -- wire-samples/swift.json || true
+            echo "::error::wire-samples/swift.json is not what this commit's request types encode to, or it was never committed. Download this run's swift-wire-samples artifact, commit it unchanged as wire-samples/swift.json, and let the platform repository judge it."
+            exit 1
+          fi
+
+      - name: Upload Swift wire samples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-wire-samples
+          path: wire-samples/swift.json
+          if-no-files-found: error
+          overwrite: true

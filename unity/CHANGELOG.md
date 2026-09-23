@@ -8,6 +8,15 @@ to ask which platform.
 
 ## [Unreleased]
 
+### Known gaps
+
+- **No thread replies.** `ImSendRequest` has no `ThreadRootId` and no `ConversationType`, so this
+  SDK cannot send a reply into a thread (it reads `ImMessage.ThreadRootId` on what it receives, but
+  cannot write one) and cannot state a conversation type explicitly. The other four client SDKs
+  send both. The missing `conversationType` is minor (the server only uses it to refuse a type that
+  disagrees with the address); the missing `threadRootId` is a missing feature. Both are declared
+  as omissions in `wire-samples/unity.json`.
+
 ### Changed on the server (2026-09-21)
 
 - `moderation.report` `messageId` and `msg.translate` `messageIds` are strings on the server now
