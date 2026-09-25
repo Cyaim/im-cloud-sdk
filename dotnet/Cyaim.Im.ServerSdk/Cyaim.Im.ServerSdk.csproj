@@ -32,11 +32,14 @@
          catalogue generator and SdkVersionLockstepTests read it from. -->
     <Version>0.9.0</Version>
 
-    <!-- sdk/** is Apache-2.0 (CONTRACT.md §9.2). An SPDX expression rather than PackageLicenseFile:
-         this directory has no LICENSE of its own, so the file route would mean packing a second copy
-         of the 11KB text that can drift from SDK/LICENSE, while nuget.org renders the expression as a
-         structured licence. Measured before this line existed: the produced .nupkg carried no licence
-         at all — not the element, not the file — even though SDK/LICENSE sits two directories up. -->
+    <!-- sdk/** is Apache-2.0 (CONTRACT.md §9.2). The SPDX expression is what nuget.org renders as a
+         structured licence; the text itself is packed by the <None Include="../LICENSE"> item below.
+         Both are needed: Apache-2.0 §4(a) asks that a redistribution carry a copy of the licence, and
+         the expression alone packs none — measured: the 0.9.0 .nupkg of 2026-09-14 held 3 dlls,
+         3 xml files and README.md, and no LICENSE. PackageLicenseFile is not the way to add it: it and
+         PackageLicenseExpression are mutually exclusive (NU5033), so the text rides as a plain packed
+         item. dotnet/LICENSE is a byte-for-byte copy of SDK/LICENSE; SdkPublishedMetadataTests in
+         im-cloud fails if any per-package copy drifts from the root one. -->
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <Copyright>Copyright (c) 2026 Cyaim Studio</Copyright>
 
@@ -58,6 +61,9 @@
          package root so nuget.org has a front page. Pack="true" is the half that actually copies it.
          打包根目录，PackagePath 必须与 PackageReadmeFile 的文件名一致。 -->
     <None Include="../README.md" Pack="true" PackagePath="\" />
+    <!-- The licence text, at the package root. NuGet reads an extensionless PackagePath as a folder,
+         so the path is empty and the file keeps its own name, LICENSE. -->
+    <None Include="../LICENSE" Pack="true" PackagePath="" />
   </ItemGroup>
 
 </Project>

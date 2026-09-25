@@ -118,6 +118,15 @@ Two rules with sharp edges:
   clean it up, with `DELETE /v1/users/{userId}/push-tokens/{deviceId}`. Without that, the user keeps
   getting notifications on a handset that is gone.
 
+**Notification text is set by your server, not by this SDK.** A message sent from here whose
+`options.pushConfig` has a non-empty `title` or `body` is refused with `1103` (`ImErrorCode.Forbidden`). That text
+would replace the notification template that names the sender, and moderation never reads it.
+Leave both empty and the recipient's notification is built from the message itself; `sound`,
+`channelId`, `badgeCount` and `payload` stay open to clients. For custom text ("your order has
+shipped"), send the message from your backend through `/v1` or the server SDK, which may set them.
+The same rule, also `1103`, refuses an image, voice, video or file message with `persistent: false`
+or `onlineOnly: true` while the app moderates content. See CONTRACT.md §2.
+
 ## What this SDK does that a hand-rolled client usually does not
 
 **Survives a cold start without losing messages.** See above. This is the one that is invisible when

@@ -157,6 +157,16 @@ It never throws and is never retried, so there is nothing to await and nothing t
 arguments at all the server credits this device's newest notification, which is the right answer for
 a tap that opened the game without naming a message.
 
+**Notification text is set by your server, not by this SDK.** A message sent from here whose
+`Options` carries a `pushConfig` with a non-empty `title` or `body` is refused with `1103`
+(`ImErrorCode.Forbidden`). That text would replace the notification template that names the sender,
+and moderation never reads it.
+Leave both empty and the recipient's notification is built from the message itself; `sound`,
+`channelId`, `badgeCount` and `payload` stay open to clients. For custom text ("your order has
+shipped"), send the message from your backend through `/v1` or the server SDK, which may set them.
+The same rule, also `1103`, refuses an image, voice, video or file message with `persistent: false`
+or `onlineOnly: true` while the app moderates content. See CONTRACT.md §2.
+
 ## Reporting a player
 
 App-store review treats blocking and reporting as two separate mandatory items for anything carrying

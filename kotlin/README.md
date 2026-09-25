@@ -338,6 +338,15 @@ scope stays cancelled.
 If a client dies without unregistering — force quit, crash, uninstall — only your backend can clean
 up: `DELETE /v1/users/{userId}/push-tokens/{deviceId}`. Ship that call, or ship the bug.
 
+**Notification text is set by your server, not by this SDK.** A message sent from here whose
+`options.pushConfig` has a non-empty `title` or `body` is refused with `1103` (`ImErrorCode.Forbidden`). That text
+would replace the notification template that names the sender, and moderation never reads it.
+Leave both empty and the recipient's notification is built from the message itself; `sound`,
+`channelId`, `badgeCount` and `payload` stay open to clients. For custom text ("your order has
+shipped"), send the message from your backend through `/v1` or the server SDK, which may set them.
+The same rule, also `1103`, refuses an image, voice, video or file message with `persistent: false`
+or `onlineOnly: true` while the app moderates content. See CONTRACT.md §2.
+
 ## Android
 
 **Doze and App Standby will kill the socket, and that is fine.** Once the screen has been off and

@@ -1038,12 +1038,20 @@ registry is serving.
 > `sdk/flutter/LICENSE`, `sdk/unity/LICENSE.md`. `sdk/flutter/pubspec.yaml` omits `license:` by
 > pub.dev convention, which reads the LICENSE file instead.
 >
-> What genuinely remains is one per-package check: `sdk/kotlin` declares Apache-2.0 through its POM
-> but carries no licence text inside the published artifact. Confirm that before the first Maven
-> Central push.
+> The per-package check this note used to leave open is **closed for all six packages**
+> (2026-09-25). Kotlin: since SDK `cf1b3f7` `build.gradle.kts` packs `LICENSE` into `META-INF/` of
+> the main, sources and javadoc jars and fails the build if any of the three lacks it (measured: an
+> 11543-byte `META-INF/LICENSE` in each, byte-identical to the root `LICENSE`). .NET: the csproj
+> keeps `PackageLicenseExpression` and now also packs `dotnet/LICENSE` at the package root — until
+> 2026-09-25 the nupkg carried the SPDX id and not one byte of the text. `kotlin/` and `dotnet/`
+> now hold their own copies like the other four, and im-cloud's `SdkPublishedMetadataTests` fails if
+> any of the six per-package copies differs from the root `LICENSE` byte for byte.
 >
 > 早先一版在这里写「sdk/LICENSE 缺失、三个清单仍写 MIT 并与根 LICENSE 冲突」——**两条都不属实**。
-> 真正剩下的只有一项逐包核对：Kotlin 通过 POM 声明授权，但产物里没有授权文本。
+> 之后留下的那项逐包核对已于 2026-09-25 关闭：Kotlin 的三个 jar 自 `cf1b3f7` 起就带
+> `META-INF/LICENSE`（构建自己断言）；.NET 包此前只有 SPDX 表达式、没有授权文本，现在把
+> `dotnet/LICENSE` 打进包根。六份逐包副本与根 `LICENSE` 逐字节相同，由 im-cloud 的
+> `SdkPublishedMetadataTests` 断言。
 
 The recommendation, as written and as implemented — **two licenses, because this repository holds
 two different things**:

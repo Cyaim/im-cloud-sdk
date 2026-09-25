@@ -1,6 +1,6 @@
 # 五端 SDK 各自的套件。
 #
-# 这个仓库是 SDK 的权威副本，im-cloud 以子模块的形式把它挂在  下。分工是这样的：
+# 这个仓库是 SDK 的权威副本，im-cloud 以子模块的形式把它挂在 SDK/ 下。分工是这样的：
 #
 #   这里跑         每个 SDK 自己的行为——退避、重连、补洞、请求管线。
 #                  这五个 job 是 main 的必需检查。
@@ -12,7 +12,7 @@
 # 等于没加。所以两边缺一不可——这里绿了只说明每个 SDK 自己自洽。
 #
 # The five SDK suites. This repository is the SDK's source of truth; im-cloud vendors it back as a
-# submodule at . What runs here is each SDK's own behaviour, and these five jobs are required
+# submodule at SDK/. What runs here is each SDK's own behaviour, and these five jobs are required
 # checks on main. The cross-repository half — the endpoint-inventory and catalogue generators, which
 # read the server's source, and PushTargetParityTests, which compares all five SDK tables against
 # the server's PushTarget — stays in im-cloud, because the server is not here.
@@ -29,10 +29,32 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # The release pipeline (not yet committed; im-cloud Docs/drafts/sdk-release.yml.draft) runs these
+  # five suites on the commit it publishes with `uses: ./.github/workflows/ci.yml` rather than a copy
+  # — a copy drifts, and a drifted copy of a required check is a green light that checks nothing.
+  # Adding this trigger changes nothing for the three above (`on:` is a union). When called,
+  # `github.event_name` is the CALLER's event, never `workflow_call`.
+  # 发布流水线用 `uses:` 调这五个套件而不是抄一份。加这个触发器对上面三个零影响；被调用时
+  # github.event_name 是调用方的事件名。
+  workflow_call:
+    inputs:
+      concurrency_key:
+        description: 'Set by a caller so its run of these suites does not share a concurrency group with plain CI. Leave unset for normal CI.'
+        type: string
+        required: false
+        default: ''
 
 concurrency:
-  group: sdk-${{ github.ref }}
-  cancel-in-progress: true
+  # A called workflow sees the caller's `github.ref`, so without the key a release rehearsal on main
+  # would share a cancel-in-progress group with a plain push to main — and the run that gets
+  # cancelled would be the whole release. When not called, inputs.concurrency_key is null (falsy),
+  # so `||` takes github.workflow and the group is fixed per ref, as before.
+  # 被调工作流看到的是调用方的 github.ref；不带这个键，main 上的一次发布演练会和普通推送同组互相取消。
+  group: sdk-${{ inputs.concurrency_key || github.workflow }}-${{ github.ref }}
+  # null == '' coerces both sides to 0, so plain CI keeps cancel-in-progress: true; a caller's run
+  # (which passes a key unique to itself) is never cancelled half-way.
+  # 普通 CI 下恒为 true；被调用时恒为 false——一次跑到一半被取消的发布正是要避免的。
+  cancel-in-progress: ${{ inputs.concurrency_key == '' }}
 
 permissions:
   contents: read

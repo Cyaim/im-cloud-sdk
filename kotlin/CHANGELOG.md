@@ -25,6 +25,9 @@ tiers T0 and T1 complete on **all five** SDKs. Nothing before this was ever publ
   decided by the credential: from a client, a `msg.send` whose `options.pushConfig` has a non-empty
   `title` or `body` is refused with 1103, and so is an image, voice, video or file message with
   `persistent: false` or `onlineOnly: true` while the app moderates content. See CONTRACT.md §2.
+- Since 2026-09-25 both refusals also apply when a client opens a stream (`msg.streamBegin`, through
+  `invoke`), with the same 1103 and wording, instead of only when it commits; and the README's
+  "Offline push" section now says it where push is wired.
 
 ### Fixed
 
