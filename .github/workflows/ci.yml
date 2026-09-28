@@ -21,6 +21,15 @@
 # repository macOS minutes are free, so the reason that split existed in im-cloud is gone.
 # Swift 与其余四个并列，不再单独按路径过滤：公开仓库的 macOS 分钟免费，
 # 当初在 im-cloud 里把它拆出去的理由在这里不成立。
+#
+# Runners and actions are pinned (2026-09-28): `ubuntu-24.04` and `macos-26` rather than the
+# `-latest` labels (`ubuntu-latest` moves to Ubuntu 26 from 2026-10-19; `macos-latest` already
+# resolves to macos-26 with Swift 6.3), and each action at the major that runs on Node 24 —
+# checkout v5, setup-node v5, setup-java v5, setup-dotnet v5, cache v5, upload-artifact v6;
+# setup-dart v1 already does. These five jobs are required checks: a label that moves under them
+# turns main red on a commit that changed nothing, so moving one is a commit of its own.
+# runner 与 action 都钉住：ubuntu-24.04、macos-26，而不是会自己移动的 -latest；每个 action 用跑在 Node 24 上的主版本。
+# 这五个 job 是必需检查：标签在它们底下一动，main 就会在一个什么都没改的提交上变红——要换，单独提交一次。
 
 name: SDKs
 
@@ -63,13 +72,13 @@ jobs:
 
   typescript:
     name: TypeScript SDK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: npm
@@ -135,17 +144,17 @@ jobs:
 
   kotlin:
     name: Kotlin SDK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # JDK 17 to run Gradle; the library itself targets JVM 11 (build.gradle.kts explains why),
       # and that target is enforced by the compiler, not by the JDK the build happens to run on.
       # 用 JDK 17 跑 Gradle；库本身的目标是 JVM 11（理由写在 build.gradle.kts 里），
       # 而那个目标由编译器保证，与构建恰好跑在哪个 JDK 上无关。
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -208,7 +217,7 @@ jobs:
 
       - name: Upload Kotlin test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: kotlin-test-results
           path: kotlin/build/reports/tests/test
@@ -216,11 +225,11 @@ jobs:
 
   dart:
     name: Flutter/Dart SDK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # The Dart SDK alone, not Flutter. This package has no Flutter dependency — web_socket_channel
       # picks dart:io or the browser WebSocket — so installing Flutter would add several minutes and
@@ -241,11 +250,11 @@ jobs:
 
   dotnet-package:
     name: .NET server SDK builds
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # 与平台仓库钉同一个 SDK 版本(10.0.400 / latestFeature)。这里的 global.json 是那一份的副本,
       # 而不是指过去——SDK 拆成独立仓库之后,原来那条 `IM.Server/global.json` 在这里根本不存在,
@@ -253,12 +262,12 @@ jobs:
       # Pins the same SDK as the platform repository. This global.json is a copy, not a reference:
       # after the split the old `IM.Server/global.json` path does not exist here, which is exactly
       # what made this job fail on its first run.
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
 
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           # Directory.Packages.props 留在平台仓库里(中央包管理是它的策略,不是 SDK 的),
@@ -280,11 +289,11 @@ jobs:
 
   swift:
     name: Swift SDK
-    runs-on: macos-latest
+    runs-on: macos-26
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Package.swift declares swift-tools-version 6.0 and the sources build under Swift 6 language
       # mode with strict concurrency; the tests use swift-testing, which ships with the Swift 6
@@ -343,7 +352,7 @@ jobs:
 
       - name: Upload Swift wire samples
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: swift-wire-samples
           path: wire-samples/swift.json
