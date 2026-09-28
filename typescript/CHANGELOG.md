@@ -16,6 +16,16 @@ endpoints. `1.0.0` is reserved for T0 + T1 complete on all five SDKs.
 
 Implements [`sdk/CONTRACT.md`](../CONTRACT.md) contract version `1.0`.
 
+### Fixed (2026-09-28)
+
+- **`connect()` now resolves once the connection is open**, waiting out a failed first attempt and its
+  jittered retries, and rejects if the connection closes first — `1100` for a terminal kick or
+  `disconnect()`, `1101` when the token expired and `onTokenExpired` had no fresh one — the same
+  outcome Kotlin, Swift and Unity already had (CONTRACT §7). It used to resolve as soon as the socket
+  had been *created*, so the README's own first two lines, `await im.connect()` then
+  `await im.msg.send(...)`, failed the send with `1005 not connected` every time against a real
+  server. Found by driving the SDK over its whole T0–T3 surface against a live backend.
+
 ### Changed on the server (2026-09-21)
 
 - `moderation.report` `messageId` and `msg.translate` `messageIds` are strings on the server now

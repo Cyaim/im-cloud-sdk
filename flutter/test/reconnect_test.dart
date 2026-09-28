@@ -44,6 +44,97 @@ void main() {
     });
   });
 
+  group('connect() completes once the connection is open (2026-09-28)', () {
+    // Until 2026-09-28 connect() completed after the first attempt either way, so a refused first
+    // handshake left the caller "connected" to nothing and its next request failed with 1005.
+
+    test('does not complete before the socket opens', () async {
+      final FakeTransport transport = FakeTransport();
+      final ImConnection connection = ImConnection(optionsFor(transport.call));
+
+      bool settled = false;
+      final Future<void> connecting = connection.connect().then((_) => settled = true);
+      await pumpUntil(() => transport.created.isNotEmpty);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(settled, isFalse, reason: 'completed while the socket was still connecting');
+
+      transport.latest.open();
+      await connecting;
+      expect(connection.state, ImConnectionState.open);
+      await connection.close();
+    });
+
+    test('waits out a refused first handshake and completes on the reconnect', () async {
+      final FakeTransport transport = FakeTransport();
+      final ImConnection connection = ImConnection(optionsFor(transport.call));
+
+      bool settled = false;
+      final Future<void> connecting = connection.connect().then((_) => settled = true);
+      await pumpUntil(() => transport.created.isNotEmpty);
+      transport.latest.refuse(StateError('handshake refused'));
+
+      await pumpUntil(() => transport.created.length >= 2);
+      expect(settled, isFalse, reason: 'a gateway mid-restart is waited out, not reported as connected');
+
+      transport.latest.open();
+      await connecting;
+      expect(connection.state, ImConnectionState.open);
+      await connection.close();
+    });
+
+    test('throws 1100 when a terminal kick closes the socket before it opens', () async {
+      final FakeTransport transport = FakeTransport();
+      final ImConnection connection = ImConnection(optionsFor(transport.call));
+
+      final Future<void> connecting = connection.connect();
+      await pumpUntil(() => transport.created.isNotEmpty);
+      transport.latest.open();
+      await transport.latest.die(code: 1000, reason: 'im-kick:UserBanned');
+
+      // Opened, then kicked: the kick lands after connect() already completed, so this one is the
+      // open-then-kicked case and connect() must have completed normally.
+      await connecting;
+
+      final ImConnection second = ImConnection(optionsFor(transport.call));
+      final Future<void> again = second.connect();
+      await pumpUntil(() => transport.created.length >= 2);
+      await transport.latest.die(code: 1000, reason: 'im-kick:UserBanned');
+
+      await expectLater(
+        again,
+        throwsA(isA<ImException>()
+            .having((ImException e) => e.code, 'code', ImErrorCode.unauthorized)
+            .having((ImException e) => e.message, 'message', contains('UserBanned'))),
+      );
+    });
+
+    test('throws 1101 when the token expired and the host app has no fresh one', () async {
+      final FakeTransport transport = FakeTransport();
+      final ImConnection connection =
+          ImConnection(optionsFor(transport.call, onTokenExpired: () async => null));
+
+      final Future<void> connecting = connection.connect();
+      await pumpUntil(() => transport.created.isNotEmpty);
+      await transport.latest.die(code: 1000, reason: 'im-kick:TokenExpired');
+
+      await expectLater(
+        connecting,
+        throwsA(isA<ImException>().having((ImException e) => e.code, 'code', ImErrorCode.tokenExpired)),
+      );
+    });
+
+    test('throws when close() is called before the socket opens', () async {
+      final FakeTransport transport = FakeTransport();
+      final ImConnection connection = ImConnection(optionsFor(transport.call));
+
+      final Future<void> connecting = connection.connect();
+      await pumpUntil(() => transport.created.isNotEmpty);
+      await connection.close();
+
+      await expectLater(connecting, throwsA(isA<ImException>()));
+    });
+  });
+
   group('kick handling', () {
     test('a terminal kick stops reconnecting', () async {
       final FakeTransport transport = FakeTransport();

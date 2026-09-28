@@ -90,6 +90,9 @@ export class ImConnection {
   /** One reauth at a time: twenty requests failing 1101 together must not fetch twenty tokens. */
   private reauthInFlight: Promise<boolean> | null = null;
 
+  /** The kick that closed the last socket, if one did — what a waiting `connect()` reports. */
+  private lastKick: string | null = null;
+
   /** Reasons that mean "do not come back": reconnecting would fail identically, forever. */
   private static readonly TerminalKicks = new Set([
     'MultiLoginPolicy',
@@ -136,13 +139,53 @@ export class ImConnection {
     return () => set!.delete(listener);
   }
 
-  /** Idempotent: connecting an already-connecting or already-open connection is a no-op. */
+  /**
+   * Opens the connection and resolves once it **is** open — waiting out a failed first attempt and
+   * its jittered retries, as Kotlin, Swift and Unity do (CONTRACT §7). Rejects if the connection
+   * closes first: a terminal kick (`1100`, or `1101` when the token expired and no fresh one came)
+   * or {@link close}. Idempotent: a second call while connecting waits for the same outcome.
+   *
+   * Until 2026-09-28 this resolved as soon as the socket had been *created*, so the README's own first
+   * two lines — `await im.connect(); await im.msg.send(...)` — failed the send with `1005 not
+   * connected`, every time, against a real server.
+   * 打开连接，**真的打开之后**才返回（与 Kotlin、Swift、Unity 一致）；在打开之前关掉就拒绝。2026-09-28 之前 socket 一建出来就返回，
+   * README 自己的头两行对着真服务器每次都以 1005「未连接」失败。
+   */
   async connect(): Promise<void> {
     this.stopped = false;
-    if (this.state === 'open' || this.state === 'connecting' || this.state === 'reconnecting') {
+    if (this.state === 'open') {
       return;
     }
-    await this.open();
+
+    if (this.state !== 'connecting' && this.state !== 'reconnecting') {
+      this.lastKick = null;
+      await this.open();
+    }
+
+    await this.opened();
+  }
+
+  /** Settles on the next decisive state: `open` resolves, `closed` rejects. */
+  private opened(): Promise<void> {
+    if (this.state === 'open') {
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve, reject) => {
+      const off = this.onState((state) => {
+        if (state === 'open') {
+          off();
+          resolve();
+        } else if (state === 'closed') {
+          off();
+          const kick = this.lastKick;
+          reject(new ImError(
+            kick === 'TokenExpired' ? ImErrorCode.TokenExpired : ImErrorCode.Unauthorized,
+            'connection closed before it opened' + (kick ? `: im-kick:${kick}` : ''),
+          ));
+        }
+      });
+    });
   }
 
   /** Idempotent, and safe to call from a listener. */
@@ -337,6 +380,7 @@ export class ImConnection {
       // The close reason is the only signal that separates "you were kicked" from "the network
       // died", and the two need opposite responses.
       const kick = this.parseKick(event.reason);
+      this.lastKick = kick;
       if (kick && ImConnection.TerminalKicks.has(kick)) {
         this.emitKick(kick);
         this.setState('closed');
@@ -419,6 +463,7 @@ export class ImConnection {
   private async refreshTokenAndReconnect(): Promise<void> {
     const next = await this.options.onTokenExpired?.();
     if (!next) {
+      this.lastKick = 'TokenExpired';
       this.setState('closed');
       this.emitKick('TokenExpired');
       return;

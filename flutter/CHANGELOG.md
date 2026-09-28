@@ -9,6 +9,16 @@ First published release. It is deliberately **not** `1.0.0` — `1.0.0` is reser
 tiers T0 and T1 complete on all five platforms with §5 and §6 implemented everywhere. The previous
 `1.0.0` in this manifest had never been published and was a promise the SDK did not keep.
 
+### Fixed (2026-09-28)
+
+- **`connect()` now completes once the connection is open**, waiting out a refused or dropped first
+  attempt and its jittered retries, and throws if the connection closes first — `1100` for a terminal
+  kick or `close()`, `1101` when the token expired and `onTokenExpired` had no fresh one — as Kotlin,
+  Swift and Unity already did (CONTRACT §7). It used to complete after the *first* attempt either way:
+  a gateway that refused the first handshake left the caller "connected" to nothing and its next
+  request failed with `1005 not connected`, and a socket that died before its handshake settled
+  left `connect()` waiting forever.
+
 ### Changed on the server (2026-09-21)
 
 - `moderation.report` `messageId` and `msg.translate` `messageIds` are strings on the server now

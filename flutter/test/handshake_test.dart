@@ -52,7 +52,7 @@ void main() {
         socketFactory: gateway.connect,
       ));
 
-      unawaited(client.connect());
+      final Future<void> connecting = client.connect();
       await pumpUntil(() => gateway.sockets.isNotEmpty, because: 'no socket was created');
 
       final Uri url = gateway.socket.url;
@@ -63,7 +63,12 @@ void main() {
       // is common and a doubled slash is a 404 from most reverse proxies.
       expect(url.path, '/im');
 
+      // Disposed before the handshake settled: connect() says so rather than completing as if it
+      // had connected (2026-09-28). Listened to first, so the error has somewhere to go.
+      // 握手落定之前就释放：connect() 说出来，而不是装作连上了。先挂上监听，错误才有去处。
+      final Future<void> refused = expectLater(connecting, throwsA(isA<ImException>()));
       await client.dispose();
+      await refused;
     });
   });
 }

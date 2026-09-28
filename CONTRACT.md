@@ -938,6 +938,13 @@ Plus:
   constrains Swift's actor hop and forbids Unity's dispatcher from holding a lock across the
   callback.
 - **Connect and disconnect are idempotent and safe from any thread.**
+- **`connect()` returns when the connection is open, not when a socket has been created.** It waits out
+  a failed first attempt and the jittered retries after it, and fails if the connection closes first:
+  `1100` for a terminal kick or a `disconnect()`/`close()` issued meanwhile, `1101` when the token
+  expired and the host app had no fresh one. The quick start every README shows —
+  `await connect()` and then a request — depends on it; an SDK that returned early failed that
+  request with `1005`, every time, against a real server (TypeScript and, for a refused first
+  handshake, Dart, until 2026-09-28).
 
 ---
 

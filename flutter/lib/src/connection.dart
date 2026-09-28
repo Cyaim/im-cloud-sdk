@@ -49,6 +49,9 @@ class ImConnection implements ImRequester {
   int _sequence = 0;
   bool _stopped = false;
 
+  /// The kick that closed the last socket, if one did — what a waiting [connect] reports.
+  ImKickReason? _lastKick;
+
   ImConnectionState get state => _state;
 
   /// Connection state transitions, for a status banner.
@@ -70,9 +73,49 @@ class ImConnection implements ImRequester {
     return () => _listeners[target]?.remove(listener);
   }
 
+  /// Opens the connection and completes once it **is** open — waiting out a refused or dropped
+  /// first attempt and its jittered retries, as Kotlin, Swift and Unity do (CONTRACT §7). Throws
+  /// [ImException] if the connection closes first: a terminal kick (`1100`, or `1101` when the
+  /// token expired and no fresh one came) or [close]. A second call while connecting waits for the
+  /// same outcome.
+  ///
+  /// Until 2026-09-28 this completed after the *first* attempt either way, so a gateway that refused
+  /// the first handshake left the caller "connected" to nothing, and its next request failed with
+  /// `1005 not connected`.
+  /// 打开连接，**真的打开之后**才完成（与 Kotlin、Swift、Unity 一致）；打开之前关掉就抛出。2026-09-28 之前第一次尝试失败也照样完成。
   Future<void> connect() async {
     _stopped = false;
-    await _open();
+    if (_state == ImConnectionState.open) return;
+
+    // Subscribed before anything starts, so neither an open nor a close in the next instant is missed.
+    // 在开始之前就订阅，下一瞬间的打开或关闭都不会漏掉。
+    final Future<ImConnectionState> decisive = _states.stream.firstWhere(
+      (ImConnectionState s) => s == ImConnectionState.open || s == ImConnectionState.closed,
+    );
+
+    ImConnectionState reached;
+    if (_state != ImConnectionState.connecting && _state != ImConnectionState.reconnecting) {
+      _lastKick = null;
+
+      // `_open` is not awaited by itself: it waits for the handshake to settle, and a socket that
+      // closes — or is closed — before it settles never does; the state stream reports that. Only an
+      // error thrown by `_open` itself is taken from here.
+      // 不单独 await `_open`：它等握手落定，而握手落定之前就关掉的 socket 永远落定不了——那由状态流报告。这里只取 `_open` 自己抛出的错误。
+      final Future<ImConnectionState> failure =
+          _open().then((_) => Completer<ImConnectionState>().future);
+      reached = await Future.any(<Future<ImConnectionState>>[decisive, failure]);
+      failure.ignore();
+    } else {
+      reached = await decisive;
+    }
+
+    if (reached == ImConnectionState.closed) {
+      final ImKickReason? kick = _lastKick;
+      throw ImException(
+        kick == ImKickReason.tokenExpired ? ImErrorCode.tokenExpired : ImErrorCode.unauthorized,
+        'connection closed before it opened${kick != null ? ': im-kick:${kick.wireValue}' : ''}',
+      );
+    }
   }
 
   Future<void> close() async {
@@ -330,6 +373,7 @@ class ImConnection implements ImRequester {
     // The close reason is the only thing separating "you were kicked" from "the network died",
     // and the two need opposite responses.
     final ImKickReason? kick = ImKickReason.parse(socket.closeReason);
+    _lastKick = kick;
 
     if (kick != null) {
       if (!_kicks.isClosed) {
@@ -361,6 +405,7 @@ class ImConnection implements ImRequester {
     final String? next = await _options.onTokenExpired?.call();
     if (next == null || next.isEmpty) {
       _stopped = true;
+      _lastKick = ImKickReason.tokenExpired;
       _setState(ImConnectionState.closed);
       return;
     }

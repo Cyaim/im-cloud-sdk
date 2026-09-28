@@ -202,6 +202,104 @@ describe('kick handling', () => {
     assert.equal(FakeSocket.instances.length, 1);
   });
 
+  describe('connect() resolves once the connection is open (2026-09-28)', () => {
+    // Until 2026-09-28 connect() resolved as soon as the socket was created, and the README's first two
+    // lines — await connect(), then send — failed the send with 1005 against a real server.
+
+    it('does not resolve before the socket opens', async () => {
+      const connection = new ImConnection(optionsFor());
+      opened.push(connection);
+
+      let settled = false;
+      const connecting = connection.connect().then(() => { settled = true; });
+      await until(() => FakeSocket.instances.length > 0);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assert.equal(settled, false, 'resolved while the socket was still connecting');
+
+      FakeSocket.latest.open();
+      await connecting;
+      assert.equal(connection.currentState, 'open');
+    });
+
+    it('lets a request made straight after it go out, instead of refusing it as offline', async () => {
+      const connection = new ImConnection(optionsFor());
+      opened.push(connection);
+
+      const connecting = connection.connect();
+      await until(() => FakeSocket.instances.length > 0);
+      FakeSocket.latest.open();
+      await connecting;
+
+      const heartbeat = connection.request('conn.heartbeat');
+      const request = FakeSocket.latest.lastRequest!;
+      assert.equal(request.target, 'conn.heartbeat');
+      FakeSocket.latest.reply(request.id, request.target, { heartbeat: 30 });
+      await heartbeat;
+    });
+
+    it('waits out a failed first attempt and resolves on the reconnect', async () => {
+      const connection = new ImConnection(optionsFor());
+      opened.push(connection);
+
+      let settled = false;
+      const connecting = connection.connect().then(() => { settled = true; });
+      await until(() => FakeSocket.instances.length > 0);
+      FakeSocket.latest.die();
+
+      await until(() => FakeSocket.instances.length >= 2);
+      assert.equal(settled, false, 'a gateway mid-restart is waited out, not reported as connected');
+
+      FakeSocket.latest.open();
+      await connecting;
+      assert.equal(connection.currentState, 'open');
+    });
+
+    it('a second call while connecting waits for the same socket', async () => {
+      const connection = new ImConnection(optionsFor());
+      opened.push(connection);
+
+      const first = connection.connect();
+      const second = connection.connect();
+      await until(() => FakeSocket.instances.length > 0);
+      FakeSocket.latest.open();
+      await Promise.all([first, second]);
+      assert.equal(FakeSocket.instances.length, 1);
+    });
+
+    it('rejects when a terminal kick closes the socket before it opens', async () => {
+      const connection = new ImConnection(optionsFor());
+      opened.push(connection);
+
+      const connecting = connection.connect();
+      await until(() => FakeSocket.instances.length > 0);
+      FakeSocket.latest.die(1000, 'im-kick:UserBanned');
+
+      await assert.rejects(connecting, (error: unknown) =>
+        error instanceof ImError && error.code === 1100 && /UserBanned/.test(error.message));
+    });
+
+    it('rejects with 1101 when the token expired and the host app has no fresh one', async () => {
+      const connection = new ImConnection(optionsFor({ onTokenExpired: async () => null }));
+      opened.push(connection);
+
+      const connecting = connection.connect();
+      await until(() => FakeSocket.instances.length > 0);
+      FakeSocket.latest.die(1000, 'im-kick:TokenExpired');
+
+      await assert.rejects(connecting, (error: unknown) => error instanceof ImError && error.code === 1101);
+    });
+
+    it('rejects when close() is called before the socket opens', async () => {
+      const connection = new ImConnection(optionsFor());
+
+      const connecting = connection.connect();
+      await until(() => FakeSocket.instances.length > 0);
+      connection.close();
+
+      await assert.rejects(connecting, (error: unknown) => error instanceof ImError);
+    });
+  });
+
   it('reconnects on an unrecognised kick reason, rather than stranding the client', async () => {
     // A reason added server-side after this SDK shipped must not be treated as terminal, or every
     // deployed client strands itself the day the server grows a new one.
