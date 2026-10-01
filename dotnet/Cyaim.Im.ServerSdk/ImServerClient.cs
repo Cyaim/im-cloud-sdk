@@ -26,7 +26,20 @@ public sealed class ImServerClient : IDisposable
     private readonly HttpClient _http;
     private readonly ImServerOptions _options;
     private readonly bool _ownsHttpClient;
+    private readonly Uri _baseUri;
 
+    /// <summary>
+    /// Builds a client. Pass <paramref name="httpClient"/> to share one (for example from
+    /// <c>IHttpClientFactory</c>); it is used as given and never written to.
+    /// </summary>
+    /// <remarks>
+    /// Until 2026-09-28 the constructor set <c>BaseAddress</c> and <c>Timeout</c> on whatever client it
+    /// was handed: a shared client that had already sent a request made it throw, and one the caller had
+    /// configured was silently re-pointed. Requests now carry absolute URIs built from
+    /// <see cref="ImServerOptions.BaseUrl"/>, and <see cref="ImServerOptions.TimeoutSeconds"/> applies
+    /// per request, whoever owns the client.
+    /// 传入的 HttpClient 原样使用、从不改写。此前构造函数会改它的 BaseAddress 与 Timeout：已经发过请求的共享客户端会让构造抛异常，调用方配好的会被悄悄改指向。
+    /// </remarks>
     public ImServerClient(ImServerOptions options, HttpClient? httpClient = null)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -36,9 +49,8 @@ public sealed class ImServerClient : IDisposable
 
         _options = options;
         _ownsHttpClient = httpClient is null;
-        _http = httpClient ?? new HttpClient();
-        _http.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
-        _http.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+        _http = httpClient ?? new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+        _baseUri = new Uri(options.BaseUrl.TrimEnd('/') + "/");
     }
 
     // ------------------------------------------------------------------ users
@@ -67,17 +79,26 @@ public sealed class ImServerClient : IDisposable
     /// ours rejects, and knowing which three rows failed is the difference between fixing them and
     /// retrying the same page forever.
     /// 逐行返回结果而不是一个计数：批量接口不会整页失败，知道是哪几行坏了才能修，否则只会原样重试。
+    /// <para>
+    /// Each row's <see cref="BatchItemResult{T}.Data"/> (and <see cref="BatchItemResult{T}.Id"/>) is the
+    /// user id it imported — what the server answers. Until 2026-09-28 this was declared as
+    /// <c>BatchResult&lt;UserProfileDto&gt;</c>, so every import that <b>succeeded</b> threw a
+    /// <c>JsonException</c> while reading the reply: the users were created, and the caller never got the
+    /// per-row outcome the method exists for.
+    /// 每行的 Data（与 Id）是导入的那个 user id——服务端答的就是它。此前声明成 UserProfileDto，于是每次**成功**的导入都在读答复时抛 JsonException：
+    /// 用户已经建好，调用方却永远拿不到这个方法存在的理由——逐行结果。
+    /// </para>
     /// </remarks>
-    public async Task<BatchResult<UserProfileDto>> ImportUsersAsync(
+    public async Task<BatchResult<string>> ImportUsersAsync(
         IEnumerable<UserProfileDto> profiles,
         CancellationToken ct = default)
     {
-        var combined = new BatchResult<UserProfileDto>();
+        var combined = new BatchResult<string>();
         var offset = 0;
 
         foreach (var chunk in profiles.Chunk(500))
         {
-            var page = await PostAsync<BatchResult<UserProfileDto>>("v1/users:batch", new { users = chunk }, ct)
+            var page = await PostAsync<BatchResult<string>>("v1/users:batch", new { users = chunk }, ct)
                 .ConfigureAwait(false);
 
             // Indexes are per request; re-base them so a caller that passed one sequence can map
@@ -177,14 +198,24 @@ public sealed class ImServerClient : IDisposable
 
     private async Task<T> PostAsync<T>(string path, object? body, CancellationToken ct)
     {
-        using var response = await SendCoreAsync(HttpMethod.Post, path, body, ct).ConfigureAwait(false);
-        return await ReadAsync<T>(response, ct).ConfigureAwait(false);
+        using var timeout = Deadline(ct);
+        using var response = await SendCoreAsync(HttpMethod.Post, path, body, timeout.Token).ConfigureAwait(false);
+        return await ReadAsync<T>(response, timeout.Token).ConfigureAwait(false);
     }
 
     private async Task SendAsync(HttpMethod method, string path, object? body, CancellationToken ct)
     {
-        using var response = await SendCoreAsync(method, path, body, ct).ConfigureAwait(false);
-        await ReadAsync<object?>(response, ct).ConfigureAwait(false);
+        using var timeout = Deadline(ct);
+        using var response = await SendCoreAsync(method, path, body, timeout.Token).ConfigureAwait(false);
+        await ReadAsync<object?>(response, timeout.Token).ConfigureAwait(false);
+    }
+
+    /// <summary><see cref="ImServerOptions.TimeoutSeconds"/> for one request, on the caller's token.</summary>
+    private CancellationTokenSource Deadline(CancellationToken ct)
+    {
+        var source = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        source.CancelAfter(TimeSpan.FromSeconds(_options.TimeoutSeconds));
+        return source;
     }
 
     private async Task<HttpResponseMessage> SendCoreAsync(HttpMethod method, string path, object? body, CancellationToken ct)
@@ -193,7 +224,7 @@ public sealed class ImServerClient : IDisposable
         var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
         var nonce = Guid.NewGuid().ToString("N");
 
-        using var request = new HttpRequestMessage(method, path);
+        using var request = new HttpRequestMessage(method, new Uri(_baseUri, path));
         if (body is not null)
         {
             request.Content = new ByteArrayContent(payload);
@@ -221,13 +252,26 @@ public sealed class ImServerClient : IDisposable
 
     private static async Task<T> ReadAsync<T>(HttpResponseMessage response, CancellationToken ct)
     {
-        var envelope = await response.Content
-            .ReadFromJsonAsync<ApiEnvelope<T>>(Json, ct)
-            .ConfigureAwait(false);
+        var body = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
 
+        ApiEnvelope<T>? envelope;
+        try
+        {
+            envelope = body.Length == 0 ? null : JsonSerializer.Deserialize<ApiEnvelope<T>>(body, Json);
+        }
+        catch (JsonException) when (!response.IsSuccessStatusCode)
+        {
+            // A proxy's HTML error page, a bare 404 from a route that did not match: no envelope.
+            // 代理的 HTML 错误页、路由没匹配上的裸 404：没有信封。
+            envelope = null;
+        }
+
+        // No envelope, no business code: 0, with the HTTP status beside it — never the status in the
+        // code's place, where a caller switching on codes would read 404 as one of ours.
+        // 没有信封就没有业务码：用 0，HTTP 状态另放——绝不把状态码塞进业务码的位置，按业务码分支的调用方会把 404 读成我们的一个码。
         if (envelope is null)
         {
-            throw new ImApiException((int)response.StatusCode, "empty response", null);
+            throw new ImApiException(0, $"HTTP {(int)response.StatusCode} with no response envelope", null, (int)response.StatusCode);
         }
 
         // The HTTP status describes the transport; `code` describes the operation. A 200 with a
@@ -278,12 +322,16 @@ public sealed class ImServerOptions
 }
 
 /// <summary>Thrown for any non-zero business code, carrying the trace id for support tickets.</summary>
-public sealed class ImApiException(int code, string message, string? traceId)
+public sealed class ImApiException(int code, string message, string? traceId, int httpStatus = 0)
     : Exception($"IM API error {code}: {message}" + (traceId is null ? "" : $" (traceId {traceId})"))
 {
+    /// <summary>The business code; 0 when the reply carried no envelope (see <see cref="HttpStatus"/>).</summary>
     public int Code { get; } = code;
 
     public string? TraceId { get; } = traceId;
+
+    /// <summary>The HTTP status of a reply that carried no envelope; 0 otherwise.</summary>
+    public int HttpStatus { get; } = httpStatus;
 }
 
 public sealed class TokenResult

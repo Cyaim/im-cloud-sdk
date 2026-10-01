@@ -345,12 +345,18 @@ export class ImConnection {
   }
 
   private async open(): Promise<void> {
-    this.setState(this.attempt === 0 ? 'connecting' : 'reconnecting');
-
+    // Checked before the state moves: a connection left at 'connecting' by a throw here could never
+    // be connected again — every later connect() would wait on a socket that does not exist.
+    // 在挪状态之前检查：在这里抛出却把状态留在 connecting 的连接再也连不上——之后每次 connect() 都会等一个不存在的 socket。
     const Impl = this.options.webSocketImpl ?? globalThis.WebSocket;
     if (!Impl) {
-      throw new Error('No WebSocket implementation available. Pass options.webSocketImpl.');
+      throw new Error(
+        'No WebSocket implementation available: Node has one built in from 22. On Node 18-21 pass ' +
+          'options.webSocketImpl, e.g. the WebSocket class of the `ws` package.',
+      );
     }
+
+    this.setState(this.attempt === 0 ? 'connecting' : 'reconnecting');
 
     const socket = new Impl(this.buildUrl());
     this.socket = socket;

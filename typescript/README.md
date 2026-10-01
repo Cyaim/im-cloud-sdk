@@ -56,7 +56,7 @@ im.onMessage(async (m) => {
 im.onConversationNeedsReload((id) => reloadFromHistory(id));
 im.onState((s) => console.log('connection', s));
 
-await im.connect();
+await im.connect();                      // resolves once the connection is open
 await im.msg.send({ receiverId: 'bob', content: { text: 'hello' } });
 ```
 
@@ -352,6 +352,9 @@ try {
 
 ## Notes
 
+- **Node: the built-in `WebSocket` arrived in Node 22.** On Node 18–21 pass one in —
+  `webSocketImpl: WebSocket` from the [`ws`](https://www.npmjs.com/package/ws) package. Without it
+  `connect()` rejects with a message that says so. Browsers and React Native have one built in.
 - **Never put an AppSecret in client code.** The client only ever holds a short-lived user token
   minted by your backend, and never calls the `/v1` REST API — that is your backend's surface.
 - `deviceId` must be stable for a given installation. The multi-device policy uses it to tell a

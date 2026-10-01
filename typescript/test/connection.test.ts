@@ -289,6 +289,21 @@ describe('kick handling', () => {
       await assert.rejects(connecting, (error: unknown) => error instanceof ImError && error.code === 1101);
     });
 
+    it('rejects, and stays connectable, when there is no WebSocket implementation', async () => {
+      // Node 18-21 has no global WebSocket. Until 2026-09-28 the throw left the connection at
+      // 'connecting', so even a later connect() with an implementation waited forever.
+      const original = globalThis.WebSocket;
+      // @ts-expect-error -- simulating a runtime without a global WebSocket
+      delete globalThis.WebSocket;
+      try {
+        const connection = new ImConnection(optionsFor({ webSocketImpl: undefined }));
+        await assert.rejects(connection.connect(), /webSocketImpl/);
+        assert.notEqual(connection.currentState, 'connecting');
+      } finally {
+        globalThis.WebSocket = original;
+      }
+    });
+
     it('rejects when close() is called before the socket opens', async () => {
       const connection = new ImConnection(optionsFor());
 

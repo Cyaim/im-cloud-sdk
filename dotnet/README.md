@@ -79,3 +79,19 @@ worth logging: it identifies the exact request end to end and is what a support 
 
 Note that a `200 OK` with a non-zero `code` is a **business failure**, not a success — the SDK
 raises it as an exception so it cannot be silently ignored.
+
+A reply with **no envelope at all** — a proxy's error page, a bare 404 from a path that did not
+match — throws with `Code` 0 and the HTTP status in `HttpStatus`. There is no business code to
+report, and putting the status in its place would read as one of ours.
+
+## Sharing an HttpClient
+
+Pass one in (for example from `IHttpClientFactory`) and it is used as given: the client never
+writes its `BaseAddress` or `Timeout`. Requests go to `BaseUrl`, and `TimeoutSeconds` applies per
+request whoever owns the client.
+
+## Importing users
+
+`ImportUsersAsync` sends batches of 500 and returns one row per profile, in the order you passed
+them: `Code` 0 with the imported user id in `Data`, or the code and message that refused that row.
+Fix the rows in `Failures` and send only those again.

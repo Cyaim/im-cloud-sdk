@@ -25,6 +25,10 @@ Implements [`sdk/CONTRACT.md`](../CONTRACT.md) contract version `1.0`.
   had been *created*, so the README's own first two lines, `await im.connect()` then
   `await im.msg.send(...)`, failed the send with `1005 not connected` every time against a real
   server. Found by driving the SDK over its whole T0–T3 surface against a live backend.
+- **A runtime without a WebSocket no longer strands the connection.** On Node 18–21 (no built-in
+  `WebSocket` before 22) `connect()` threw after the state had already moved to `connecting`, so even
+  a later `connect()` with an implementation waited forever. The check now runs first, the message
+  says what to pass (`webSocketImpl`, e.g. from `ws`), and the README's Notes say so too.
 
 ### Changed on the server (2026-09-21)
 
