@@ -6,6 +6,7 @@ import 'cancel.dart';
 import 'connection.dart';
 import 'cursor_store.dart';
 import 'cursors.dart';
+import 'desk.dart';
 import 'device_logs.dart';
 import 'log_store.dart';
 import 'models.dart';
@@ -58,6 +59,7 @@ class ImClient {
     );
     moderation = ImModerationApi(_connection);
     diag = ImDiagApi(_connection);
+    desk = ImDeskApi(_connection);
 
     // Defaulted rather than required, unlike the cursor store, and the asymmetry is deliberate:
     // losing cursors loses a user's messages, while losing logs loses a diagnostic (ADR-003).
@@ -144,6 +146,11 @@ class ImClient {
   /// `diag.*` — this device's half of troubleshooting. Driven by the client; see [ImDiagApi].
   late final ImDiagApi diag;
 
+  /// `desk.*` — the customer-service desk (T4): a customer asking for a person and rating them, an
+  /// agent taking, transferring and closing sessions. The conversation itself is an ordinary chat;
+  /// see [ImDeskApi].
+  late final ImDeskApi desk;
+
   /// The SDK's own runtime log: written here, read when the server asks this device for it.
   ///
   /// Exposed so an application can add its own lines — the ones that explain what the *user* was
@@ -223,6 +230,18 @@ class ImClient {
 
     return controller.stream;
   }
+
+  /// `evt.desk`, decoded: what happened to a desk session, or to this agent's workbench.
+  ///
+  /// Not an endpoint, so it lives here rather than on [desk]. Frames arrive for **agents**; a
+  /// customer's half of the desk is the 1801–1807 notices in [messages]. A frame whose `event` this
+  /// build does not know is dropped here rather than delivered half-built.
+  ///
+  /// 坐席侧的 evt.desk。event 不认识的帧在这里丢掉，而不是半成品地交给应用。
+  Stream<ImDeskEvent> get deskEvents => events(ImPushTarget.desk)
+      .map(ImDeskEvent.tryParse)
+      .where((ImDeskEvent? event) => event != null)
+      .cast<ImDeskEvent>();
 
   /// Loads the cursor store, then opens the socket. Idempotent.
   Future<void> connect() async {

@@ -34,14 +34,16 @@ SDK's published sources (`sdk/typescript/src`, `sdk/kotlin/src/main`, `sdk/swift
 | | T0–T2 typed | typed overall, of 107 | remaining, reachable via `invoke()` |
 |---|---|---|---|
 | `sdk/typescript` | **53 / 53** | 82 (76.6%) | T3 (0) + T4 (25) |
-| `sdk/kotlin` | **53 / 53** | 73 (68.2%) | T3 (0) + T4 (34) |
-| `sdk/swift` | **53 / 53** | 73 (68.2%) | T3 (0) + T4 (34) |
-| `sdk/flutter` | **53 / 53** | 73 (68.2%) | T3 (0) + T4 (34) |
-| `sdk/unity` | **53 / 53** | 73 (68.2%) | T3 (0) + T4 (34) |
+| `sdk/kotlin` | **53 / 53** | 82 (76.6%) | T3 (0) + T4 (25) |
+| `sdk/swift` | **53 / 53** | 82 (76.6%) | T3 (0) + T4 (25) |
+| `sdk/flutter` | **53 / 53** | 82 (76.6%) | T3 (0) + T4 (25) |
+| `sdk/unity` | **53 / 53** | 82 (76.6%) | T3 (0) + T4 (25) |
 
-Every row adds up to 107 — what is typed, plus what is left. TypeScript's extra nine are the
-`desk.*` family, typed for 客服云; they are T4 work, which is why the first column still reads 53
-on all five. §3 explains why that does not make T4 partly done.
+Every row adds up to 107 — what is typed, plus what is left. The nine above T0–T3 on every row are
+the `desk.*` family, typed for 客服云 — in TypeScript since 2026-09-07, and on the other four since
+2026-10-09, which is when the five rows became one row again. They are T4 work, which is why the
+first column still reads 53 on all five; §3 explains why one family typed everywhere does not make
+T4 partly done.
 
 **T3 has been typed on all five since 2026-09-21**, which is why it reads `0` under *remaining* on
 every row and why the middle column moved by exactly twenty everywhere. The first column keeps its
@@ -55,7 +57,7 @@ score the same on this table and still fail every customer who ships on two plat
 
 Since 2026-09-21 only **T4 is deliberately untyped** — not missing; T3 is typed on all five. A
 customer can call all 107 endpoints today;
-34 of them without types on the weakest SDK (25 on TypeScript), against payload shapes they must read out of the server's C# source. Say
+25 of them without types on the weakest SDK — and on every other, since all five type the same 82 — against payload shapes they must read out of the server's C# source. Say
 that plainly in a sales conversation — it is a real cost, and it is one the buyer discovers in
 their first sprint if you do not.
 
@@ -224,7 +226,7 @@ choosing against the weakest one.
 | **T1** | 1:1 chat MVP | 18 | **18 ✅** | The smallest set that ships a two-person chat app a customer would launch. |
 | **T2** | Social graph and groups | 32 | **32 ✅** | What turns a chat into a messenger: contacts, blocking, groups, presence, reporting. |
 | **T3** | Competitive parity | 20 | **20 ✅** | Not needed to ship, needed to win: the rows a buyer ticks against 融云 / 环信 / 网易云信. |
-| **T4** | Specialist verticals | 34 | 0 (9 in TypeScript) | Service desk, E2EE, live rooms, AI streaming, scheduling, folders. |
+| **T4** | Specialist verticals | 34 | 9 | Service desk, E2EE, live rooms, AI streaming, scheduling, folders. The nine are `desk.*`. |
 
 **T0–T2 are complete on all five, and have been since 2026-08-28** — 51 targets each that day, when
 the two newest, `moderation.report` and `push.clicked`, were typed; **53 since 2026-08-29**, when
@@ -303,6 +305,24 @@ They are never a reason to delay T0–T3.
 surface — the server no longer routes those targets, so they are not here to be typed. No platform
 had typed any of them, which is why the count moved and no other column did. §9.1 records why
 removing seven published endpoints did not force a MAJOR bump, and when that stops being true.
+
+**`desk.*` is typed on all five as of 2026-10-09** — TypeScript first, on 2026-09-07, and Kotlin,
+Swift, Flutter and Unity together on 2026-10-09, each with the nine verbs, every payload type they
+reference, the `evt.desk` frame decoded, and its change values asserted against `deskChanges`
+(§4.5). That makes the family done by §3.1's definition and the tier still not: the other 25 T4
+targets are untyped everywhere, which is why the row above reads `9` rather than a tick. Two things
+remain TypeScript's alone and are worth naming rather than discovering: `readDeskNotification`
+(the 1801–1807 notice read out of an ordinary message) and `DeskContextKeys` — the other four read
+those notices from the message content and the context keys from SPEC-06 directly. And Swift's
+nine were written on a machine with no Swift toolchain: the SDK repository's macOS job is the first
+thing that compiles them, and its first run must re-record `wire-samples/swift.json`. Until that
+recording is committed, the platform's `SdkWireSampleBindingTests` names Swift's eight desk request
+types in a pinned, shrink-only exemption (`AwaitingRecording`) rather than judging them, so read
+"recorded and judged" as four SDKs today, not five.
+desk.* 自 2026-10-09 起五端都已类型化：这一族按 §3.1 算做完了，T4 这一层仍没有——其余 25 条五端都没做。
+
+What follows is the paragraph as it stood while TypeScript was the only one, kept because its
+argument — type a family whole or not at all — is the one the other four then followed.
 
 **`desk.*` is typed in TypeScript as of 2026-09-07, and in TypeScript only.** The customer that
 §3's rule waits for is 客服云, whose visitor widget bundles `@cyaim/im-client` and whose agent

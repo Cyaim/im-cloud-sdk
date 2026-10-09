@@ -211,12 +211,26 @@ its target — so if you know the endpoint you know the call, in this SDK and in
 | `im.Push` | `SetToken` `RegisterAsync` `UnregisterAsync` `ClickedAsync` |
 | `im.Moderation` | `ReportAsync` |
 | `im.Diag` | `LogRequestsAsync` `LogUploadedAsync` — the client drives both; ordinary games never call them |
+| `im.Desk` | `RequestAsync` `AcceptAsync` `TransferAsync` `CloseAsync` `StatusAsync` `QueueAsync` `RateAsync` `CannedAsync` `SuggestAsync` — T4, the customer-service desk |
 
-That is tiers **T0**, **T1**, **T2** and **T3** of `sdk/CONTRACT.md` — 73 of the server's 107
-endpoints: the session floor, everything a two-person chat app needs to launch, the contacts,
+That is tiers **T0**, **T1**, **T2** and **T3** of `sdk/CONTRACT.md`, plus the nine `desk.*` of T4 —
+82 of the server's 107 endpoints: the session floor, everything a two-person chat app needs to launch, the contacts,
 blocking, groups, presence and reporting that turn it into a messenger a store will accept, and the
 competitive-parity tier on top — pins, favourites, search, read-receipt detail, burn-after-reading
 and group administration. The names after the `·` are T3.
+
+The desk is how an in-game "contact support" screen reaches a person: `RequestAsync` and
+`RateAsync` are the player's, the rest an agent's, `CloseAsync` either side's, and the conversation
+itself is an ordinary chat with the desk account. `ImDeskTransferRequest` is built with `Agent`,
+`Skill` or `Queue`, so exactly one target goes out; an `ImDeskCloseRequest` with `InviteRating` left
+null still invites a rating; `ImDeskStatusRequest` is also the heartbeat, and takes its status as a
+constructor argument (`new ImDeskStatusRequest(ImAgentStatus.Available)`) because the default, 0, is
+`Offline` and the server accepts it; `ImDeskSession.EndReason` is a string where `State` is an integer. `im.OnDeskEvent(handler)` decodes `evt.desk` into
+`ImDeskEvent`. The 1801–1807 notices a player sees arrive as ordinary messages. Treat one as a desk
+notice only when `ContentType` is `ImMessageContentType.Notification` **and** the content's `code`
+is 1801–1807: the same seven numbers are account error codes elsewhere on this platform, so a bare
+code check will one day draw "your account is locked" onto a support transcript. The TypeScript
+SDK's `readDeskNotification` documents the fields each code carries; this SDK has no reader yet.
 
 Every method takes exactly one request object, because with positional parameters the server adding
 one optional field is a source-breaking change in five languages at once. Convenience overloads
@@ -249,9 +263,9 @@ Every T3 method carries its full list of refusals in its doc comment. These are 
   Called with no request it lists across every group you manage.
 - **`friend.setRemark` without `Remark` clears the remark**, while leaving `Tags` null keeps them.
 
-Everything else — calls, E2EE, live rooms, the service desk, AI streaming, scheduling, conversation
-folders: the 34 endpoints of T4 — is reachable today through the escape hatch, which shares one code
-path with the typed surface and is not going away:
+Everything else — E2EE, live rooms, AI streaming, scheduling, conversation folders: the other 25
+endpoints of T4 — is reachable today through the escape hatch, which shares one code path with the
+typed surface and is not going away:
 
 ```csharp
 // msg.cancelScheduled is tier 4 and not typed yet

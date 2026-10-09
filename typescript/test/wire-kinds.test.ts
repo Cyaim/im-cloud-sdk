@@ -6,7 +6,10 @@ import { fileURLToPath } from 'node:url';
 
 import type { ImClient } from '../src/client.js';
 import {
+  AgentStatus,
   ConversationType,
+  DeskCannedReplyScope,
+  DeskDisposition,
   GroupInviteMode,
   GroupJoinMode,
   GroupRole,
@@ -20,7 +23,8 @@ import { FakeSocket, until } from './fake-socket.js';
 import { type Inventory, loadInventory } from './inventory.js';
 
 /**
- * Every request field of every T0–T3 endpoint, in the JSON kind the server's C# type binds from.
+ * Every request field of every typed endpoint — T0–T3 and `desk.*` — in the JSON kind the server's C#
+ * type binds from.
  *
  * **Why the kind, and why the server's type rather than this SDK's.** The socket binder does not go
  * through the platform's JSON options: it reads each request property with the C# type the DTO
@@ -286,6 +290,44 @@ const rows: Row[] = [
   row('group.setNickname', (c, k) => c.group.setNickname(k({ groupId: 'team', userId: 'bob', nickname: 'Bobby' }))),
   row('group.announcement', (c, k) => c.group.announcement(k({ groupId: 'team', announcement: 'Standup at 10:00' }))),
 
+  // ---- T4: desk.*, typed whole. The three transfer rows together send every member of the server's
+  // DTO, which no single body may — the union forbids it, and the server answers it with 1001.
+  row(
+    'desk.request',
+    (c, k) => c.desk.request(k({ skill: 'billing', priority: 2, context: { 'desk.channel': 'app' } })),
+    'desk.request, every field',
+  ),
+  row('desk.request', (c) => c.desk.request(), 'desk.request, nothing filled in'),
+  row('desk.accept', (c, k) => c.desk.accept(k({ sessionId: 'ds_1' })), 'desk.accept, a named session'),
+  row('desk.accept', (c) => c.desk.accept(), 'desk.accept, the next one waiting'),
+  row('desk.transfer', (c, k) => c.desk.transfer(k({ sessionId: 'ds_1', toAgentId: 'a_7', note: 'wire' })), 'desk.transfer to an agent'),
+  row('desk.transfer', (c, k) => c.desk.transfer(k({ sessionId: 'ds_1', toSkill: 'billing' })), 'desk.transfer to a skill'),
+  row('desk.transfer', (c, k) => c.desk.transfer(k({ sessionId: 'ds_1', toQueue: true })), 'desk.transfer back to the queue'),
+  row('desk.close', (c, k) =>
+    c.desk.close(
+      k({
+        sessionId: 'ds_1',
+        resolution: 'refunded',
+        tags: ['billing/refund'],
+        disposition: DeskDisposition.ToLead,
+        summary: 'wire',
+        inviteRating: false,
+      }),
+    ),
+  ),
+  row('desk.status', (c, k) => c.desk.status(k({ status: AgentStatus.Busy, maxConcurrent: 4 }))),
+  row('desk.queue', (c) => c.desk.queue()),
+  row('desk.rate', (c, k) =>
+    c.desk.rate(k({ sessionId: 'ds_1', score: 2, resolved: false, starTags: ['slow'], comment: 'wire' })),
+  ),
+  row('desk.suggest', (c, k) => c.desk.suggest(k({ sessionId: 'ds_1' }))),
+  row(
+    'desk.canned',
+    (c, k) => c.desk.canned(k({ skill: 'billing', scope: DeskCannedReplyScope.Personal, ownerMemberId: 'm_1' })),
+    'desk.canned, every filter',
+  ),
+  row('desk.canned', (c) => c.desk.canned(), 'desk.canned, no filter'),
+
   // ---- public methods that build their own body
   row('msg.send', (c) => c.sendText({ receiverId: 'bob' }, 'hi'), 'im.sendText'),
   row('msg.history', (c) => c.history(C, 40, 20), 'im.history'),
@@ -533,7 +575,9 @@ interface WireFrame {
 
 describe('request wire kinds: every field, as the server declares it', () => {
   const inventory = loadInventory();
-  const shipped = ['T0', 'T1', 'T2', 'T3'].flatMap((tier) => inventory.tiers[tier]?.targets ?? []);
+  // Every target this SDK types, whatever its tier: T0–T3, and the desk.* family of T4. A family typed
+  // outside the floor meets the same binder that every T1 call meets, and is held to the same rules.
+  const shipped = inventory.endpoints.filter((e) => e.implementedIn?.['typescript'] === true).map((e) => e.target);
   const requestTypes = new Map(inventory.endpoints.map((e) => [e.target, e.requestType ?? null]));
 
   const samples: Sample[] = [];
@@ -594,7 +638,7 @@ describe('request wire kinds: every field, as the server declares it', () => {
 
   after(closeAll);
 
-  it('has a row for every T0–T3 endpoint, and names each row once', () => {
+  it('has a row for every endpoint this SDK types, and names each row once', () => {
     const targets = new Set(rows.map((r) => r.target));
     assert.deepEqual(
       shipped.filter((target) => !targets.has(target)),
@@ -604,7 +648,7 @@ describe('request wire kinds: every field, as the server declares it', () => {
     assert.deepEqual(
       [...targets].filter((target) => !shipped.includes(target)),
       [],
-      'a row for an endpoint outside T0–T3',
+      'a row for an endpoint this SDK does not type',
     );
     assert.equal(new Set(rows.map((r) => r.via)).size, rows.length, 'two rows share a name');
   });

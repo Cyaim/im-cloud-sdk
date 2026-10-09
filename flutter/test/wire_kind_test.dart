@@ -468,6 +468,63 @@ Map<String, List<Future<void> Function(ImClient im)>> recipes() {
             detail: 'wire',
           )),
     ],
+
+    // desk (T4) — the three transfer paths together send every member of the server's DTO, which
+    // no single body may: the server answers two targets at once with 1001.
+    'desk.request': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.desk.request(const ImDeskRequest(
+            skill: 'billing',
+            priority: 2,
+            context: <String, Object?>{'desk.channel': 'app'},
+          )),
+      (ImClient im) => im.desk.request(),
+    ],
+    'desk.accept': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.desk.accept(const ImDeskAcceptRequest(sessionId: 'ds_1')),
+      (ImClient im) => im.desk.accept(),
+    ],
+    'desk.transfer': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.desk.transfer(
+          const ImDeskTransferRequest.agent(sessionId: 'ds_1', agentId: 'a_7', note: 'wire')),
+      (ImClient im) =>
+          im.desk.transfer(const ImDeskTransferRequest.skill(sessionId: 'ds_1', skill: 'billing')),
+      (ImClient im) => im.desk.transfer(const ImDeskTransferRequest.queue(sessionId: 'ds_1')),
+    ],
+    'desk.close': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.desk.close(const ImDeskCloseRequest(
+            sessionId: 'ds_1',
+            resolution: 'refunded',
+            tags: <String>['billing/refund'],
+            disposition: ImDeskDisposition.toLead,
+            summary: 'wire',
+            inviteRating: false,
+          )),
+    ],
+    'desk.status': <Future<void> Function(ImClient)>[
+      (ImClient im) =>
+          im.desk.status(const ImDeskStatusRequest(status: ImAgentStatus.busy, maxConcurrent: 4)),
+    ],
+    'desk.queue': <Future<void> Function(ImClient)>[(ImClient im) => im.desk.queue()],
+    'desk.rate': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.desk.rate(const ImDeskRateRequest(
+            sessionId: 'ds_1',
+            score: 2,
+            resolved: false,
+            starTags: <String>['slow'],
+            comment: 'wire',
+          )),
+    ],
+    'desk.suggest': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.desk.suggest(const ImDeskSuggestRequest(sessionId: 'ds_1')),
+    ],
+    'desk.canned': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.desk.canned(const ImDeskCannedRequest(
+            skill: 'billing',
+            scope: ImDeskCannedReplyScope.personal,
+            ownerMemberId: 'm_1',
+          )),
+      (ImClient im) => im.desk.canned(),
+    ],
   };
 }
 
@@ -476,7 +533,7 @@ Map<String, List<Future<void> Function(ImClient im)>> recipes() {
 final class Inventory {
   Inventory._(this.requestTypes, this.types, this.enums);
 
-  /// T0–T3 target → request DTO name (null for a parameterless endpoint), for the targets this
+  /// Target → request DTO name (null for a parameterless endpoint), for every target this
   /// package implements.
   final Map<String, String?> requestTypes;
 
@@ -500,7 +557,8 @@ final class Inventory {
           final Map<String, dynamic> endpoint = raw as Map<String, dynamic>;
           final Map<String, dynamic> implemented =
               endpoint['implementedIn'] as Map<String, dynamic>;
-          if (!const <String>{'T0', 'T1', 'T2', 'T3'}.contains(endpoint['tier'])) continue;
+          // Every tier, not only T0–T3: a T4 family this package types (desk.*) goes out through the
+          // same binder, and is judged by the same rules, as anything in T1.
           if (implemented['flutter'] != true) continue;
           requestTypes[endpoint['target'] as String] = endpoint['requestType'] as String?;
         }
@@ -792,7 +850,7 @@ File wireSampleFile() {
 void main() {
   final Inventory inventory = Inventory.load();
 
-  test('every T0–T3 target this package implements has a recipe, and no recipe names another', () {
+  test('every target this package implements has a recipe, and no recipe names another', () {
     final Set<String> implemented = inventory.requestTypes.keys.toSet();
     final Set<String> recipeTargets = recipes().keys.toSet();
 

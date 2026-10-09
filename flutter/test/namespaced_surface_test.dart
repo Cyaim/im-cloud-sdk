@@ -36,6 +36,7 @@ final Map<Type, String> namespaces = <Type, String>{
   ImPushApi: 'push',
   ImModerationApi: 'moderation',
   ImDiagApi: 'diag',
+  ImDeskApi: 'desk',
 };
 
 /// The push token cache is the only non-endpoint the contract puts on a namespace: §6.2 requires

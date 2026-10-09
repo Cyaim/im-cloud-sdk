@@ -9,6 +9,7 @@ export 'src/api.dart'
     show
         ImConnApi,
         ImConvApi,
+        ImDeskApi,
         ImDiagApi,
         ImFriendApi,
         ImGroupApi,
@@ -24,6 +25,7 @@ export 'src/client.dart' show ImClient;
 export 'src/connection.dart' show ImConnection;
 export 'src/cursor_store.dart'
     show ImCursorScope, ImCursorSnapshot, ImCursorStore, ImInMemoryCursorStore;
+export 'src/desk.dart';
 export 'src/device_logs.dart'
     show
         ImDeviceLogAnswer,

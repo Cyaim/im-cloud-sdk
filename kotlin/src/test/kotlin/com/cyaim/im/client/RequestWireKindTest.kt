@@ -259,6 +259,22 @@ class RequestWireKindTest {
             sample(PushClickedRequest(pushId = "pu_1", messageId = bigId.toString())),
             sample(SubmitReportRequest("mallory", "s_alice_bob", bigId, ReportCategory.Spam, "n")),
             sample(DeviceLogAnswer("lr_1", uploaded = true, sizeBytes = 2_048, coveredFromMs = 1L, volatile = true, detail = "d")),
+            sample(DeskRequest(skill = "billing", priority = 2, context = buildJsonObject { put("desk.channel", "app") })),
+            sample(DeskAcceptRequest("ds_1")),
+            // Every member at once, which none of the three factories builds and the server would refuse
+            // with 1001 — the point here is each member's JSON kind, and one body is how this sweep sees
+            // all five. DeskTest holds what the factories actually send.
+            sample(DeskTransferRequest("ds_1", toAgentId = "a_7", toSkill = "billing", toQueue = true, note = "n")),
+            sample(
+                DeskCloseRequest(
+                    "ds_1", resolution = "r", tags = listOf("billing/refund"), disposition = DeskDisposition.ToLead,
+                    summary = "s", inviteRating = false,
+                ),
+            ),
+            sample(DeskStatusRequest(AgentStatus.Busy, maxConcurrent = 4)),
+            sample(DeskRateRequest("ds_1", score = 2, resolved = false, starTags = listOf("slow"), comment = "c")),
+            sample(DeskSuggestRequest("ds_1")),
+            sample(DeskCannedRequest(skill = "billing", scope = DeskCannedReplyScope.Personal, ownerMemberId = "m_1")),
         ).toMap()
     }
 

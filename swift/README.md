@@ -301,11 +301,24 @@ and a bug report mentioning `msg.forward` can be grepped for.
 | `im.group` | `create` `info` `update` `dismiss` `memberList` `joined` `invite` `kick` `quit` `join` · `transfer` `applicationList` `handleApplication` `setRole` `mute` `muteMember` `setNickname` `announcement` |
 | `im.moderation` | `report` |
 | `im.diag` | `logRequests` `logUploaded` — driven by `ImClient` itself; apps do not call these |
+| `im.desk` | `request` `accept` `transfer` `close` `status` `queue` `rate` `canned` `suggest` — tier 4, the customer-service desk |
 
-That is tiers 0 to 3 of the client contract — 73 endpoints — typed end to end; the names after the
-`·` are tier 3. The 34 endpoints of tier 4 (live rooms, service desk, the E2EE key directory, AI
-streaming and translation, scheduling, conversation folders) go through `invoke` until they are
-typed.
+That is tiers 0 to 3 of the client contract typed end to end, plus the nine `desk.*` of tier 4 — 82
+endpoints; the names after the `·` are tier 3. The other 25 endpoints of tier 4 (live rooms, the
+E2EE key directory, AI streaming and translation, scheduling, conversation folders) go through
+`invoke` until they are typed.
+
+The desk has two audiences and the session decides which one you are: `request` and `rate` are the
+customer's, the rest an agent's, `close` either side's; the conversation itself is an ordinary chat
+with the desk account. `DeskTransferRequest` is built with `.agent(…)`, `.skill(…)` or `.queue(…)`
+so exactly one target goes out; a `DeskCloseRequest` with `inviteRating` left `nil` still invites a
+rating; `DeskStatusRequest` is also the heartbeat, so send it on a timer; `DeskSession.endReason` is
+a string where `state` is an integer. `im.deskEvents()` decodes `evt.desk` into `DeskEvent`.
+The 1801–1807 notices a customer sees arrive as ordinary messages. Treat one as a desk notice only
+when `contentType` is `.notification` **and** `content["code"]` is 1801–1807: the same seven
+numbers are account error codes elsewhere on this platform, so a bare code check will one day draw
+"your account is locked" onto a support transcript. The TypeScript SDK's `readDeskNotification`
+documents the fields each code carries; this SDK has no reader yet.
 
 Three tier-3 behaviours are worth knowing before the first call. `im.msg.search` is **off by
 default** (the tenant's `EnableSearch`, `1203`) and rate limited per user *before* that check

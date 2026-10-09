@@ -13,6 +13,18 @@ published as `ImSdk.contractVersion`.
 First published release. The version is deliberately below 1.0.0: `1.0.0` is reserved for contract
 tiers T0 and T1 complete on **all five** SDKs. Nothing before this was ever published.
 
+### Added (2026-10-09)
+
+- **`im.desk` — the nine `desk.*` endpoints of T4**, typed as TypeScript has typed them since
+  2026-09-07: `request`, `accept`, `transfer`, `close`, `status`, `queue`, `rate`, `canned`,
+  `suggest`, with their request and payload types (`DeskSession`, `DeskQueueView`,
+  `DeskCannedReply`, …), `AgentStatus` / `DeskSessionState` as open integer enums and
+  `DeskEndReason` / `DeskDisposition` / `DeskCannedReplyScope` / `DeskSessionChange` as string
+  constants. `DeskTransferRequest` is built through `agent` / `skill` / `queue` so exactly one target
+  goes out. `im.deskEvents` decodes `evt.desk`.
+- `wire-samples/kotlin.json` records the eight desk request bodies, so the platform's binder judges
+  them like every other request.
+
 ### Changed on the server (2026-09-21)
 
 - `moderation.report` `messageId` and `msg.translate` `messageIds` are strings on the server now

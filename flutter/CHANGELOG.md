@@ -9,6 +9,18 @@ First published release. It is deliberately **not** `1.0.0` — `1.0.0` is reser
 tiers T0 and T1 complete on all five platforms with §5 and §6 implemented everywhere. The previous
 `1.0.0` in this manifest had never been published and was a promise the SDK did not keep.
 
+### Added (2026-10-09)
+
+- **`im.desk` — the nine `desk.*` endpoints of T4**, typed as TypeScript has typed them since
+  2026-09-07: `request`, `accept`, `transfer`, `close`, `status`, `queue`, `rate`, `canned`,
+  `suggest`, with their request and payload types (`ImDeskSession`, `ImDeskQueueView`,
+  `ImDeskCannedReply`, …), `ImAgentStatus` / `ImDeskSessionState` as open integer enums and
+  `ImDeskEndReason` / `ImDeskDisposition` / `ImDeskCannedReplyScope` / `ImDeskSessionChange` as
+  string constants. `ImDeskTransferRequest` has one constructor per target, so exactly one goes out.
+  `im.deskEvents` decodes `evt.desk`.
+- `test/wire_kind_test.dart` now judges and records every target this package types, not only
+  T0–T3, so the desk bodies are in `wire-samples/flutter.json` for the platform's binder.
+
 ### Fixed (2026-09-28)
 
 - **`connect()` now completes once the connection is open**, waiting out a refused or dropped first

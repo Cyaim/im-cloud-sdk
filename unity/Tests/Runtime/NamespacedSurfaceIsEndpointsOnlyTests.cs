@@ -51,6 +51,7 @@ namespace Cyaim.Im.Tests
             { typeof(ImPushApi), "push" },
             { typeof(ImModerationApi), "moderation" },
             { typeof(ImDiagApi), "diag" },
+            { typeof(ImDeskApi), "desk" },
         };
 
         /// <summary>

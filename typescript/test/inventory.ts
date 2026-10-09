@@ -15,7 +15,13 @@ export interface Inventory {
   contractVersion: string;
   tiers: Record<string, { targets: string[] }>;
   /** `requestType` names an entry of `payloadTypes`; null for an endpoint that takes no body. */
-  endpoints: Array<{ target: string; requestType?: string | null; tier?: string }>;
+  endpoints: Array<{
+    target: string;
+    requestType?: string | null;
+    tier?: string;
+    /** Per SDK: whether its published sources name the target outside comments. */
+    implementedIn?: Record<string, boolean>;
+  }>;
 
   /**
    * The server's request and payload types as **C# declares them** — `string`, `long?`,

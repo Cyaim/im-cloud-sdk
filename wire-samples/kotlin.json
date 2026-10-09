@@ -55,6 +55,14 @@
     {"type":"RegisterPushTokenRequest","via":"asBody(RegisterPushTokenRequest)","body":{"provider":"fcm","token":"tok","language":"zh-CN"}},
     {"type":"PushClickedRequest","via":"asBody(PushClickedRequest)","body":{"pushId":"pu_1","messageId":"360381357961969667"}},
     {"type":"SubmitReportRequest","via":"asBody(SubmitReportRequest)","body":{"targetUserId":"mallory","conversationId":"s_alice_bob","messageId":"360381357961969667","category":"spam","note":"n"}},
-    {"type":"DeviceLogAnswer","via":"asBody(DeviceLogAnswer)","body":{"requestId":"lr_1","uploaded":true,"sizeBytes":2048,"coveredFromMs":1,"volatile":true,"detail":"d"}}
+    {"type":"DeviceLogAnswer","via":"asBody(DeviceLogAnswer)","body":{"requestId":"lr_1","uploaded":true,"sizeBytes":2048,"coveredFromMs":1,"volatile":true,"detail":"d"}},
+    {"type":"DeskRequest","via":"asBody(DeskRequest)","body":{"skill":"billing","priority":2,"context":{"desk.channel":"app"}}},
+    {"type":"DeskAcceptRequest","via":"asBody(DeskAcceptRequest)","body":{"sessionId":"ds_1"}},
+    {"type":"DeskTransferRequest","via":"asBody(DeskTransferRequest)","body":{"sessionId":"ds_1","toAgentId":"a_7","toSkill":"billing","toQueue":true,"note":"n"}},
+    {"type":"DeskCloseRequest","via":"asBody(DeskCloseRequest)","body":{"sessionId":"ds_1","resolution":"r","tags":["billing/refund"],"disposition":"to-lead","summary":"s","inviteRating":false}},
+    {"type":"DeskStatusRequest","via":"asBody(DeskStatusRequest)","body":{"status":2,"maxConcurrent":4}},
+    {"type":"DeskRateRequest","via":"asBody(DeskRateRequest)","body":{"sessionId":"ds_1","score":2,"resolved":false,"starTags":["slow"],"comment":"c"}},
+    {"type":"DeskSuggestRequest","via":"asBody(DeskSuggestRequest)","body":{"sessionId":"ds_1"}},
+    {"type":"DeskCannedRequest","via":"asBody(DeskCannedRequest)","body":{"skill":"billing","scope":"personal","ownerMemberId":"m_1"}}
   ]
 }

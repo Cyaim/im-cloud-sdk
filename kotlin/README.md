@@ -166,9 +166,10 @@ peer will never send.
 
 ## The typed surface
 
-73 endpoints — contract tiers T0, T1, T2 and T3 in full — grouped into namespaces named for the
-target prefix, so a reader who knows the endpoint name knows the call without a lookup table.
-`msg.recall` is `im.msg.recall`; there are no synonyms. The names after the `·` are T3.
+82 endpoints — contract tiers T0, T1, T2 and T3 in full, plus the nine `desk.*` of T4 — grouped
+into namespaces named for the target prefix, so a reader who knows the endpoint name knows the call
+without a lookup table. `msg.recall` is `im.msg.recall`; there are no synonyms. The names after the
+`·` are T3.
 
 | Namespace | Endpoints |
 |---|---|
@@ -182,6 +183,7 @@ target prefix, so a reader who knows the endpoint name knows the call without a 
 | `im.push` | `register` `unregister` `clicked` |
 | `im.moderation` | `report` |
 | `im.diag` | `logRequests` `logUploaded` — the client drives both; ordinary applications never call them |
+| `im.desk` | `request` `accept` `transfer` `close` `status` `queue` `rate` `canned` `suggest` — T4, the customer-service desk |
 
 Every method takes exactly one request object, named for the server DTO. That is not a style
 preference: with positional parameters, the server adding one optional field is a source-breaking
@@ -218,10 +220,35 @@ Every T3 method carries its full list of refusals in its KDoc. These are the one
   Called with no argument it lists across every group you manage.
 - **`friend.setRemark` without `remark` clears the remark**, while leaving `tags` null keeps them.
 
+### The service desk — `im.desk` (T4)
+
+Two audiences share the namespace and the session decides which one you are: `request` and `rate`
+are the customer's (an in-app "contact support" screen), `accept`, `transfer`, `status`, `queue`,
+`canned` and `suggest` are an agent's, `close` is either side's. The conversation itself is an
+ordinary chat with the desk account — `msg.send` and `msg.history` — and these nine only move the
+assignment around it.
+
+- **`DeskTransferRequest` has no public constructor.** Build it with `DeskTransferRequest.agent(…)`,
+  `.skill(…)` or `.queue(…)`: the server refuses two targets, or none, with `1001`.
+- **Leaving `DeskCloseRequest.inviteRating` null invites a rating** — the server's default is `true`.
+  Pass `false` to close quietly.
+- **`DeskStatusRequest` is also the heartbeat.** Send it on a timer; the roster reclaims an agent
+  whose console stops talking. `AgentStatus` goes out as its integer.
+- **`DeskSession.endReason` is a string** (`DeskEndReason`) where `state` beside it is an integer.
+- **`DeskCannedRequest.ownerMemberId` is a filter, not a permission**: leave it null and every
+  member's personal entries come back.
+- `im.deskEvents` is `evt.desk` decoded into `DeskEvent` — a session frame (`change` is one of
+  `DeskSessionChange`, and `session` is null on a forced release) or the agent `takeover` frame.
+  The 1801–1807 notices a customer sees arrive as ordinary messages. Treat one as a desk notice
+  only when `contentType` is `MessageContentType.Notification` **and** `content.code` is 1801–1807:
+  the same seven numbers are account error codes elsewhere on this platform, so a bare code check
+  will one day draw "your account is locked" onto a support transcript. The TypeScript SDK's
+  `readDeskNotification` documents the fields each code carries; this SDK has no reader yet.
+
 ### Anything not yet typed
 
-Tier T4 — E2EE keys, chat rooms, the service desk, streaming, scheduling, folders, translation —
-goes through the escape hatch, which shares one code path with the typed methods:
+The rest of tier T4 — E2EE keys, chat rooms, streaming, scheduling, folders, translation — goes
+through the escape hatch, which shares one code path with the typed methods:
 
 ```kotlin
 // msg.cancelScheduled is tier T4 and not typed yet:

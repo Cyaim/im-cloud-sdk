@@ -10,6 +10,17 @@ to ask which platform.
 
 ### Added
 
+- **`im.Desk` — the nine `desk.*` endpoints of T4**, typed as TypeScript has typed them since
+  2026-09-07: `RequestAsync`, `AcceptAsync`, `TransferAsync`, `CloseAsync`, `StatusAsync`,
+  `QueueAsync`, `RateAsync`, `CannedAsync`, `SuggestAsync`, with their request and payload types
+  (`ImDeskSession`, `ImDeskQueueView`, `ImDeskCannedReply`, …), `ImAgentStatus` /
+  `ImDeskSessionState` as integer enums and `ImDeskEndReason` / `ImDeskDisposition` /
+  `ImDeskCannedReplyScope` / `ImDeskSessionChange` as string constants. `ImDeskTransferRequest` is
+  built through `Agent` / `Skill` / `Queue`, so exactly one target goes out, and
+  `ImDeskStatusRequest` takes its status in its only constructor, because an unset status would be
+  `Offline` (0), which the server accepts: a heartbeat that forgot it would sign the agent out. `im.OnDeskEvent`
+  decodes `evt.desk`. The wire-sample recorder now covers every tier this SDK types, so the desk
+  bodies are in `wire-samples/unity.json`.
 - **Thread replies.** `ImSendRequest.ThreadRootId` (`long?`) sends a message as a reply into the
   thread rooted at that message id — the same value `ImMessage.ThreadRootId` reads back. It goes on
   the wire as the decimal string of the id, like `QuoteMessageId`, because the server's member is a

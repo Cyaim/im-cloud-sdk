@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -39,7 +40,7 @@ import kotlin.random.Random
 /**
  * The client applications actually use.
  *
- * Beyond wrapping the 73 typed endpoints of tiers T0–T3, this owns the one thing every correct IM
+ * Beyond wrapping the 82 typed endpoints — tiers T0–T3, and the nine `desk.*` of T4 — this owns the one thing every correct IM
  * client must do and most hand-rolled ones do not: it keeps two cursors per conversation, notices
  * when an arriving message skips a number, and pulls the missing range before delivering.
  *
@@ -179,6 +180,13 @@ public class ImClient(
     /** `diag.*` — this device's half of troubleshooting. Driven by the client; see [DiagApi]. */
     public val diag: DiagApi = DiagApi(connection)
 
+    /**
+     * `desk.*` — the customer-service desk (T4): a customer asking for a person and rating them, an
+     * agent taking, transferring and closing sessions. The conversation itself is an ordinary chat;
+     * see [DeskApi].
+     */
+    public val desk: DeskApi = DeskApi(connection)
+
     private val deviceLogs: ImDeviceLogs = ImDeviceLogs(diag, log, options.deviceId)
 
     // ------------------------------------------------------------------------- events
@@ -244,6 +252,24 @@ public class ImClient(
                 frame.body?.data?.jsonObject?.get("reason")?.jsonPrimitive?.content
             }.getOrNull().orEmpty()
             KickEvent(KickReason.fromWire(raw), raw)
+        }
+
+    /**
+     * `evt.desk`, decoded: what happened to a desk session, or to this agent's workbench.
+     *
+     * Not an endpoint, so it lives here rather than on [desk]. Frames arrive for **agents**; a
+     * customer's half of the desk is the 1801–1807 notices in [messages]. A frame this build cannot
+     * decode, or whose `event` it does not know, is dropped here rather than delivered half-built —
+     * a server newer than the app must not be able to stop a workbench.
+     *
+     * 坐席侧的 evt.desk。解不开、或 event 不认识的帧在这里丢掉，而不是半成品地交给应用。
+     */
+    public val deskEvents: Flow<DeskEvent> = connection.frames
+        .filter { it.target == PushTarget.Desk }
+        .mapNotNull { frame ->
+            runCatching { ImJson.decodeFromJsonElement(DeskEvent.serializer(), frame.body?.data.orEmptyObject()) }
+                .getOrNull()
+                ?.takeIf { it.event == DeskEvent.SESSION || it.event == DeskEvent.AGENT }
         }
 
     /** Socket lifecycle. */

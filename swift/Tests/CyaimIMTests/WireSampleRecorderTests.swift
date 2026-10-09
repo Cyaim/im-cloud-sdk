@@ -270,6 +270,65 @@ struct WireSampleRecorderTests {
         try samples.append(Self.line(SetGroupNicknameRequest(groupId: "team", userId: "alice", nickname: "Al"), encoder))
         try samples.append(Self.line(AnnouncementRequest(groupId: "team", announcement: "standup at ten"), encoder))
 
+        // desk (T4). The transfer is every member at once through the internal initialiser, which no
+        // factory builds and the server would refuse with 1001 — what the binder judges here is each
+        // member's JSON kind, and one body is the only way a one-sample-per-type recording shows all five.
+        try samples.append(Self.line(
+            DeskRequest(skill: "billing", priority: 2, context: ["desk.channel": .string("app")]),
+            encoder
+        ))
+        try samples.append(Self.line(DeskAcceptRequest(sessionId: "ds_1"), encoder))
+        try samples.append(Self.line(
+            DeskTransferRequest(sessionId: "ds_1", toAgentId: "a_7", toSkill: "billing", toQueue: true, note: "wire"),
+            encoder
+        ))
+        try samples.append(Self.line(
+            DeskCloseRequest(
+                sessionId: "ds_1",
+                resolution: "refunded",
+                tags: ["billing/refund"],
+                disposition: ImDeskDisposition.toLead,
+                summary: "wire",
+                inviteRating: false
+            ),
+            encoder
+        ))
+        try samples.append(Self.line(DeskStatusRequest(status: .busy, maxConcurrent: 4), encoder))
+        try samples.append(Self.line(
+            DeskRateRequest(sessionId: "ds_1", score: 2, resolved: false, starTags: ["slow"], comment: "wire"),
+            encoder
+        ))
+        try samples.append(Self.line(DeskSuggestRequest(sessionId: "ds_1"), encoder))
+        try samples.append(Self.line(
+            DeskCannedRequest(skill: "billing", scope: ImDeskCannedReplyScope.personal, ownerMemberId: "m_1"),
+            encoder
+        ))
+
+        // Every request type the inventory marks implementedIn.swift needs a sample here, or the
+        // platform's binder never judges it. The platform repository holds this too, but only when the
+        // submodule is bumped; holding it here makes this job say it when the recorder changes. The
+        // TypeScript, Kotlin, Dart and Unity recorders each hold the same rule.
+        // 清单标记 Swift 已实现的每个请求类型都要在这里有一条样本，否则平台的绑定器判不到它。
+        let recordedTypes = Set(samples.compactMap { sample -> String? in
+            guard let start = sample.range(of: "{\"type\":\"") else { return nil }
+            let rest = sample[start.upperBound...]
+            guard let end = rest.firstIndex(of: "\"") else { return nil }
+            return String(rest[..<end])
+        })
+        let inventoryURL = Self.sdkRoot().appendingPathComponent("endpoint-inventory.json")
+        let inventory = try JSONSerialization.jsonObject(with: Data(contentsOf: inventoryURL)) as? [String: Any]
+        let endpoints = inventory?["endpoints"] as? [[String: Any]] ?? []
+        #expect(!endpoints.isEmpty, "\(inventoryURL.path) lists no endpoints")
+        let implementedTypes = Set(endpoints.compactMap { endpoint -> String? in
+            guard (endpoint["implementedIn"] as? [String: Any])?["swift"] as? Bool == true else { return nil }
+            return endpoint["requestType"] as? String
+        })
+        let unsampled = implementedTypes.subtracting(recordedTypes).sorted()
+        #expect(
+            unsampled.isEmpty,
+            "the inventory marks these request types implemented in Swift and no sample here encodes one: \(unsampled.joined(separator: ", ")); add a line for each and re-record"
+        )
+
         var lines: [String] = [
             "{",
             "  \"$comment\": \"RECORDED by SDK/swift/Tests/CyaimIMTests/WireSampleRecorderTests.swift from JSONEncoder, the encoder every typed method hands its request to. Do not edit by hand; re-record with IM_RECORD_WIRE_SAMPLES=1 swift test (in SDK/swift). Judged against the server's real socket binder by IM.Server/tests/IM.Tests.Unit/SdkWireSampleBindingTests.cs in the platform repository.\",",

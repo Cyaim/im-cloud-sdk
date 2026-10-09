@@ -240,12 +240,26 @@ endpoint greps straight to the call.
 | `im.push` | `register` `unregister` `clicked` · plus `setToken` / `clearToken` for the lifecycle above |
 | `im.moderation` | `report` |
 | `im.diag` | `logRequests` `logUploaded` — the client drives both; ordinary applications never call them |
+| `im.desk` | `request` `accept` `transfer` `close` `status` `queue` `rate` `canned` `suggest` — T4, the customer-service desk |
 
 That is contract tiers **T0, T1, T2 and T3 complete** — session floor, 1:1 chat MVP, social graph
-and groups, and competitive parity: 73 of the server's 107 endpoints. The names after the `·` are
-T3. The 34 endpoints of T4 go through `invoke()` until they are typed. Every method takes exactly
-one request object named for the server DTO, so the server adding an optional field stays
-additive instead of breaking your call sites.
+and groups, and competitive parity — plus the nine `desk.*` of T4: 82 of the server's 107
+endpoints. The names after the `·` are T3. The other 25 endpoints of T4 go through `invoke()` until
+they are typed. Every method takes exactly one request object named for the server DTO, so the
+server adding an optional field stays additive instead of breaking your call sites.
+
+The desk has two audiences and the session decides which one you are: `request` and `rate` are the
+customer's, the rest an agent's, `close` either side's; the conversation itself is an ordinary chat
+with the desk account. `ImDeskTransferRequest` has only the `.agent`, `.skill` and `.queue`
+constructors, so exactly one target goes out; an `ImDeskCloseRequest` with `inviteRating` left null
+still invites a rating; `ImDeskStatusRequest` is also the heartbeat, so send it on a timer;
+`ImDeskSession.endReason` is a string where `state` is an integer. `im.deskEvents` decodes
+`evt.desk` into `ImDeskEvent`. The 1801–1807 notices a customer sees arrive as ordinary messages.
+Treat one as a desk notice only when `contentType` is `ImMessageContentType.notification` **and**
+`content['code']` is 1801–1807: the same seven numbers are account error codes elsewhere on this
+platform, so a bare code check will one day draw "your account is locked" onto a support
+transcript. The TypeScript SDK's `readDeskNotification` documents the fields each code carries;
+this SDK has no reader yet.
 
 ### Tier T3 — what the signatures do not say
 

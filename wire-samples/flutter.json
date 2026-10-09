@@ -92,6 +92,20 @@
     {"target":"push.clicked","type":"PushClickedRequest","via":"push.clicked #1","body":{}},
     {"target":"moderation.report","type":"SubmitReportRequest","via":"moderation.report #0","body":{"targetUserId":"bob","conversationId":"g_wire","messageId":"360381357961969667","category":"spam","note":"wire"}},
     {"target":"diag.logRequests","type":null,"via":"diag.logRequests #0","body":{}},
-    {"target":"diag.logUploaded","type":"DeviceLogAnswer","via":"diag.logUploaded #0","body":{"requestId":"lr_1","uploaded":true,"sizeBytes":5000000001,"coveredFromMs":1758412000000,"volatile":true,"detail":"wire"}}
+    {"target":"diag.logUploaded","type":"DeviceLogAnswer","via":"diag.logUploaded #0","body":{"requestId":"lr_1","uploaded":true,"sizeBytes":5000000001,"coveredFromMs":1758412000000,"volatile":true,"detail":"wire"}},
+    {"target":"desk.request","type":"DeskRequest","via":"desk.request #0","body":{"skill":"billing","priority":2,"context":{"desk.channel":"app"}}},
+    {"target":"desk.request","type":"DeskRequest","via":"desk.request #1","body":{}},
+    {"target":"desk.accept","type":"DeskAcceptRequest","via":"desk.accept #0","body":{"sessionId":"ds_1"}},
+    {"target":"desk.accept","type":"DeskAcceptRequest","via":"desk.accept #1","body":{}},
+    {"target":"desk.transfer","type":"DeskTransferRequest","via":"desk.transfer #0","body":{"sessionId":"ds_1","toAgentId":"a_7","note":"wire"}},
+    {"target":"desk.transfer","type":"DeskTransferRequest","via":"desk.transfer #1","body":{"sessionId":"ds_1","toSkill":"billing"}},
+    {"target":"desk.transfer","type":"DeskTransferRequest","via":"desk.transfer #2","body":{"sessionId":"ds_1","toQueue":true}},
+    {"target":"desk.close","type":"DeskCloseRequest","via":"desk.close #0","body":{"sessionId":"ds_1","resolution":"refunded","tags":["billing/refund"],"disposition":"to-lead","summary":"wire","inviteRating":false}},
+    {"target":"desk.status","type":"DeskStatusRequest","via":"desk.status #0","body":{"status":2,"maxConcurrent":4}},
+    {"target":"desk.queue","type":null,"via":"desk.queue #0","body":{}},
+    {"target":"desk.rate","type":"DeskRateRequest","via":"desk.rate #0","body":{"sessionId":"ds_1","score":2,"resolved":false,"starTags":["slow"],"comment":"wire"}},
+    {"target":"desk.suggest","type":"DeskSuggestRequest","via":"desk.suggest #0","body":{"sessionId":"ds_1"}},
+    {"target":"desk.canned","type":"DeskCannedRequest","via":"desk.canned #0","body":{"skill":"billing","scope":"personal","ownerMemberId":"m_1"}},
+    {"target":"desk.canned","type":"DeskCannedRequest","via":"desk.canned #1","body":{}}
   ]
 }

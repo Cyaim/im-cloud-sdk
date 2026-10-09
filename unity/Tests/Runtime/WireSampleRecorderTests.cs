@@ -78,6 +78,7 @@ namespace Cyaim.Im.Tests
             typeof(ImPushApi),
             typeof(ImModerationApi),
             typeof(ImDiagApi),
+            typeof(ImDeskApi),
         };
 
         /// <summary>
@@ -103,7 +104,12 @@ namespace Cyaim.Im.Tests
                 "the untyped escape hatch: the body is the caller's JsonValue, so there is no SDK spelling to record"),
         };
 
-        private static readonly string[] ShippedTiers = { "T0", "T1", "T2", "T3" };
+        /// <summary>
+        /// Every tier with a typed method here. T4 is in it because <c>desk.*</c> is typed whole: a
+        /// family this SDK sends goes through the same binder as anything in T1, so it is recorded
+        /// and judged the same way.
+        /// </summary>
+        private static readonly string[] ShippedTiers = { "T0", "T1", "T2", "T3", "T4" };
 
         /// <summary>
         /// Server request fields no Unity body carries, each with the reason. The platform repository
@@ -497,6 +503,49 @@ namespace Cyaim.Im.Tests
                 R("user.setStatus", "User.SetStatusAsync(ImSetStatusRequest)", c => c.User.SetStatusAsync(new ImSetStatusRequest("in a match"))),
                 R("user.setStatus", "User.SetStatusAsync()", c => c.User.SetStatusAsync()),
 
+                // ------------------------------------------------------------- desk (T4)
+                // The three transfer rows together send every member of the server's DTO, which no
+                // single body may: the server answers two targets at once with 1001.
+                R("desk.request", "Desk.RequestAsync, every member", c => c.Desk.RequestAsync(new ImDeskRequest
+                {
+                    Skill = "billing",
+                    Priority = 2,
+                    Context = Obj("desk.channel", "app"),
+                })),
+                R("desk.request", "Desk.RequestAsync, nothing filled in", c => c.Desk.RequestAsync()),
+                R("desk.accept", "Desk.AcceptAsync, a named session", c => c.Desk.AcceptAsync(new ImDeskAcceptRequest { SessionId = "ds_1" })),
+                R("desk.accept", "Desk.AcceptAsync, the next one waiting", c => c.Desk.AcceptAsync()),
+                R("desk.transfer", "Desk.TransferAsync, to an agent", c => c.Desk.TransferAsync(ImDeskTransferRequest.Agent("ds_1", "a_7", "wire"))),
+                R("desk.transfer", "Desk.TransferAsync, to a skill", c => c.Desk.TransferAsync(ImDeskTransferRequest.Skill("ds_1", "billing"))),
+                R("desk.transfer", "Desk.TransferAsync, back to the queue", c => c.Desk.TransferAsync(ImDeskTransferRequest.Queue("ds_1"))),
+                R("desk.close", "Desk.CloseAsync", c => c.Desk.CloseAsync(new ImDeskCloseRequest
+                {
+                    SessionId = "ds_1",
+                    Resolution = "refunded",
+                    Tags = Strings("billing/refund"),
+                    Disposition = ImDeskDisposition.ToLead,
+                    Summary = "wire",
+                    InviteRating = false,
+                })),
+                R("desk.status", "Desk.StatusAsync", c => c.Desk.StatusAsync(new ImDeskStatusRequest(ImAgentStatus.Busy) { MaxConcurrent = 4 })),
+                R("desk.queue", "Desk.QueueAsync", c => c.Desk.QueueAsync()),
+                R("desk.rate", "Desk.RateAsync", c => c.Desk.RateAsync(new ImDeskRateRequest
+                {
+                    SessionId = "ds_1",
+                    Score = 2,
+                    Resolved = false,
+                    StarTags = Strings("slow"),
+                    Comment = "wire",
+                })),
+                R("desk.suggest", "Desk.SuggestAsync", c => c.Desk.SuggestAsync(new ImDeskSuggestRequest { SessionId = "ds_1" })),
+                R("desk.canned", "Desk.CannedAsync, every filter", c => c.Desk.CannedAsync(new ImDeskCannedRequest
+                {
+                    Skill = "billing",
+                    Scope = ImDeskCannedReplyScope.Personal,
+                    OwnerMemberId = "m_1",
+                })),
+                R("desk.canned", "Desk.CannedAsync, no filter", c => c.Desk.CannedAsync()),
+
                 // ------------------------------------------- frozen [Obsolete] aliases
                 R("msg.send", "ImClient.SendAsync [Obsolete]", c => c.SendAsync(FullSend(ImRecipient.Conversation("c_wire"), ImConversationType.Single, "cm-4"))),
                 Generated("msg.send", "ImClient.SendTextAsync [Obsolete]", c => c.SendTextAsync(ImRecipient.User("bob"), "hi")),
@@ -540,7 +589,7 @@ namespace Cyaim.Im.Tests
             }
 
             Assert.That(covered, Is.EqualTo(expected),
-                "every T0-T3 endpoint the inventory marks implementedIn.unity needs a row here, and no row may reach any other");
+                "every endpoint the inventory marks implementedIn.unity needs a row here, and no row may reach any other");
         }
 
         /// <summary>Every public method that sends has a row, and every row names a real method.</summary>

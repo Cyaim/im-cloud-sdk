@@ -182,6 +182,7 @@ namespace Cyaim.Im
             Push = new ImPushApi(this);
             Moderation = new ImModerationApi(this);
             Diag = new ImDiagApi(this);
+            Desk = new ImDeskApi(this);
 
             // Defaulted rather than required, unlike the cursor store: losing cursors loses a
             // player's messages, while losing logs loses a diagnostic (ADR-003).
@@ -239,6 +240,13 @@ namespace Cyaim.Im
 
         /// <summary><c>diag.*</c> — this device's half of troubleshooting. Driven by the client.</summary>
         public ImDiagApi Diag { get; private set; }
+
+        /// <summary>
+        /// <c>desk.*</c> — the customer-service desk (T4): a player asking for a person and rating
+        /// them, an agent taking, transferring and closing sessions. The conversation itself is an
+        /// ordinary chat; see <see cref="ImDeskApi"/>.
+        /// </summary>
+        public ImDeskApi Desk { get; private set; }
 
         /// <summary>
         /// The SDK's own runtime log: written here, read when the server asks this device for it.
@@ -403,6 +411,34 @@ namespace Cyaim.Im
             }
 
             return _connection.On(target, delegate(ImFrame frame) { handler(frame.Data); });
+        }
+
+        /// <summary>
+        /// Subscribes to <c>evt.desk</c>, decoded: what happened to a desk session, or to this
+        /// agent's workbench. Dispose to unsubscribe.
+        /// </summary>
+        /// <remarks>
+        /// Not an endpoint, so it lives here rather than on <see cref="Desk"/>. Frames arrive for
+        /// agents; a player's half of the desk is the 1801–1807 notices in
+        /// <see cref="MessageReceived"/>. A frame whose <c>event</c> this build does not know is
+        /// dropped here rather than delivered half-built.
+        /// 坐席侧的 evt.desk。event 不认识的帧在这里丢掉，而不是半成品地交给应用。
+        /// </remarks>
+        public IDisposable OnDeskEvent(Action<ImDeskEvent> handler)
+        {
+            if (handler == null)
+            {
+                throw new ArgumentNullException("handler");
+            }
+
+            return On(ImPushTarget.Desk, delegate(JsonValue data)
+            {
+                var deskEvent = ImPayload.Read<ImDeskEvent>(data);
+                if (deskEvent.IsKnown)
+                {
+                    handler(deskEvent);
+                }
+            });
         }
 
         /// <summary>Subscribes to a server push as a whole frame, for the id, status and traceId.</summary>

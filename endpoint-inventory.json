@@ -30,10 +30,10 @@
     "controllers": 13,
     "implemented": {
       "typescript": 82,
-      "kotlin": 73,
-      "swift": 73,
-      "flutter": 73,
-      "unity": 73
+      "kotlin": 82,
+      "swift": 82,
+      "flutter": 82,
+      "unity": 82
     }
   },
   "tiers": {
@@ -177,10 +177,10 @@
       "endpoints": 34,
       "implemented": {
         "typescript": 9,
-        "kotlin": 0,
-        "swift": 0,
-        "flutter": 0,
-        "unity": 0
+        "kotlin": 9,
+        "swift": 9,
+        "flutter": 9,
+        "unity": 9
       },
       "targets": [
         "msg.streamAbort",
@@ -1151,10 +1151,10 @@
       "note": "The agent's canned-reply list. Its request body is optional, which is what the generator's parameter regex could not read until 2026-08-27.",
       "implementedIn": {
         "typescript": true,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1168,10 +1168,10 @@
       "note": "LLM reply suggestions for an agent; returns 1203 when no provider is configured. Tiered on 2026-08-27 with desk.rate and desk.canned.",
       "implementedIn": {
         "typescript": true,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1185,10 +1185,10 @@
       "note": "The customer rates a finished desk session. Tiered on 2026-08-27: it shipped untiered, which stopped the generator and froze the inventory.",
       "implementedIn": {
         "typescript": true,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1201,10 +1201,10 @@
       "tier": "T4",
       "implementedIn": {
         "typescript": true,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1217,10 +1217,10 @@
       "tier": "T4",
       "implementedIn": {
         "typescript": true,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1233,10 +1233,10 @@
       "tier": "T4",
       "implementedIn": {
         "typescript": true,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1249,10 +1249,10 @@
       "tier": "T4",
       "implementedIn": {
         "typescript": true,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1265,10 +1265,10 @@
       "tier": "T4",
       "implementedIn": {
         "typescript": true,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1282,10 +1282,10 @@
       "note": "Agent-console surface. The customer side of a desk session arrives as ordinary messages.",
       "implementedIn": {
         "typescript": true,
-        "kotlin": false,
-        "swift": false,
-        "flutter": false,
-        "unity": false
+        "kotlin": true,
+        "swift": true,
+        "flutter": true,
+        "unity": true
       }
     },
     {

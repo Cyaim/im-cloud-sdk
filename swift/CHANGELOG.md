@@ -13,6 +13,19 @@ First published release. The version is deliberately **0.9.0** rather than 1.0.0
 reserved for tiers 0 and 1 complete on all five SDKs, and until then the number would be a promise
 the family does not keep. Implements client contract **1.0**.
 
+### Added (2026-10-09)
+
+- **`im.desk` — the nine `desk.*` endpoints of tier 4**, typed as TypeScript has typed them since
+  2026-09-07: `request`, `accept`, `transfer`, `close`, `status`, `queue`, `rate`, `canned`,
+  `suggest`, with their request and payload types (`DeskSession`, `DeskQueueView`,
+  `DeskCannedReply`, …), `AgentStatus` / `DeskSessionState` as open integer enums and
+  `ImDeskEndReason` / `ImDeskDisposition` / `ImDeskCannedReplyScope` / `ImDeskSessionChange` as
+  string constants. `DeskTransferRequest` is built through `.agent` / `.skill` / `.queue` so exactly
+  one target goes out. `im.deskEvents()` decodes `evt.desk`; a frame whose `event` this build does
+  not know is skipped.
+- Written without a Swift toolchain: the macOS job is the first thing that compiles it, and
+  `wire-samples/swift.json` has to be re-recorded from that job's artifact before it goes green.
+
 ### Changed on the server (2026-09-21)
 
 - `moderation.report` `messageId` and `msg.translate` `messageIds` are strings on the server now
