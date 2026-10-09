@@ -313,12 +313,12 @@ reference, the `evt.desk` frame decoded, and its change values asserted against 
 targets are untyped everywhere, which is why the row above reads `9` rather than a tick. Two things
 remain TypeScript's alone and are worth naming rather than discovering: `readDeskNotification`
 (the 1801–1807 notice read out of an ordinary message) and `DeskContextKeys` — the other four read
-those notices from the message content and the context keys from SPEC-06 directly. And Swift's
-nine were written on a machine with no Swift toolchain: the SDK repository's macOS job is the first
-thing that compiles them, and its first run must re-record `wire-samples/swift.json`. Until that
-recording is committed, the platform's `SdkWireSampleBindingTests` names Swift's eight desk request
-types in a pinned, shrink-only exemption (`AwaitingRecording`) rather than judging them, so read
-"recorded and judged" as four SDKs today, not five.
+those notices from the message content and the context keys from SPEC-06 directly. Swift's nine
+were written on a machine with no Swift toolchain; the SDK repository's macOS job was the first thing
+to compile them (build and every test green on its first run, run 37904357569), and its recording of
+the eight desk request bodies is committed unchanged as `wire-samples/swift.json`, so the platform's
+`SdkWireSampleBindingTests` judges all five SDKs' desk bodies — the temporary exemption it carried for
+Swift in between is empty again.
 desk.* 自 2026-10-09 起五端都已类型化：这一族按 §3.1 算做完了，T4 这一层仍没有——其余 25 条五端都没做。
 
 What follows is the paragraph as it stood while TypeScript was the only one, kept because its
