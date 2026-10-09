@@ -57,6 +57,14 @@
     {"type":"MuteGroupRequest","via":"JSONEncoder(MuteGroupRequest)","body":{"groupId":"team","mute":true,"untilMs":1758412790000}},
     {"type":"MuteMemberRequest","via":"JSONEncoder(MuteMemberRequest)","body":{"groupId":"team","untilMs":1758412790000,"userId":"mallory"}},
     {"type":"SetGroupNicknameRequest","via":"JSONEncoder(SetGroupNicknameRequest)","body":{"groupId":"team","nickname":"Al","userId":"alice"}},
-    {"type":"AnnouncementRequest","via":"JSONEncoder(AnnouncementRequest)","body":{"announcement":"standup at ten","groupId":"team"}}
+    {"type":"AnnouncementRequest","via":"JSONEncoder(AnnouncementRequest)","body":{"announcement":"standup at ten","groupId":"team"}},
+    {"type":"DeskRequest","via":"JSONEncoder(DeskRequest)","body":{"context":{"desk.channel":"app"},"priority":2,"skill":"billing"}},
+    {"type":"DeskAcceptRequest","via":"JSONEncoder(DeskAcceptRequest)","body":{"sessionId":"ds_1"}},
+    {"type":"DeskTransferRequest","via":"JSONEncoder(DeskTransferRequest)","body":{"note":"wire","sessionId":"ds_1","toAgentId":"a_7","toQueue":true,"toSkill":"billing"}},
+    {"type":"DeskCloseRequest","via":"JSONEncoder(DeskCloseRequest)","body":{"disposition":"to-lead","inviteRating":false,"resolution":"refunded","sessionId":"ds_1","summary":"wire","tags":["billing/refund"]}},
+    {"type":"DeskStatusRequest","via":"JSONEncoder(DeskStatusRequest)","body":{"maxConcurrent":4,"status":2}},
+    {"type":"DeskRateRequest","via":"JSONEncoder(DeskRateRequest)","body":{"comment":"wire","resolved":false,"score":2,"sessionId":"ds_1","starTags":["slow"]}},
+    {"type":"DeskSuggestRequest","via":"JSONEncoder(DeskSuggestRequest)","body":{"sessionId":"ds_1"}},
+    {"type":"DeskCannedRequest","via":"JSONEncoder(DeskCannedRequest)","body":{"ownerMemberId":"m_1","scope":"personal","skill":"billing"}}
   ]
 }
