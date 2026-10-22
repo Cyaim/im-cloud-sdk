@@ -29,11 +29,11 @@
     "endpoints": 107,
     "controllers": 13,
     "implemented": {
-      "typescript": 82,
-      "kotlin": 82,
+      "typescript": 89,
+      "kotlin": 89,
       "swift": 82,
-      "flutter": 82,
-      "unity": 82
+      "flutter": 89,
+      "unity": 89
     }
   },
   "tiers": {
@@ -176,11 +176,11 @@
       "rule": "Load-bearing for a minority of tenants and dead weight for the rest: calls, service desk, end-to-end encryption, live chat rooms, AI streaming, scheduling, folders. Correctly typed when a customer asks; never a reason to delay T0–T3.",
       "endpoints": 34,
       "implemented": {
-        "typescript": 9,
-        "kotlin": 9,
+        "typescript": 16,
+        "kotlin": 16,
         "swift": 9,
-        "flutter": 9,
-        "unity": 9
+        "flutter": 16,
+        "unity": 16
       },
       "targets": [
         "msg.streamAbort",
@@ -678,11 +678,11 @@
       "tier": "T4",
       "note": "Chat rooms are best-effort and carry seq 0: they must bypass the gap-repair path entirely.",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -970,11 +970,11 @@
       "responseType": null,
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -986,11 +986,11 @@
       "responseType": null,
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1002,11 +1002,11 @@
       "responseType": "PagedResult<string>",
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1018,11 +1018,11 @@
       "responseType": "long",
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1034,11 +1034,11 @@
       "responseType": "SendMessageResult",
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1050,11 +1050,11 @@
       "responseType": null,
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {

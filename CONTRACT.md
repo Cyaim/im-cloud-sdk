@@ -33,15 +33,18 @@ SDK's published sources (`sdk/typescript/src`, `sdk/kotlin/src/main`, `sdk/swift
 
 | | T0–T2 typed | typed overall, of 107 | remaining, reachable via `invoke()` |
 |---|---|---|---|
-| `sdk/typescript` | **53 / 53** | 82 (76.6%) | T3 (0) + T4 (25) |
-| `sdk/kotlin` | **53 / 53** | 82 (76.6%) | T3 (0) + T4 (25) |
+| `sdk/typescript` | **53 / 53** | 89 (83.2%) | T3 (0) + T4 (18) |
+| `sdk/kotlin` | **53 / 53** | 89 (83.2%) | T3 (0) + T4 (18) |
 | `sdk/swift` | **53 / 53** | 82 (76.6%) | T3 (0) + T4 (25) |
-| `sdk/flutter` | **53 / 53** | 82 (76.6%) | T3 (0) + T4 (25) |
-| `sdk/unity` | **53 / 53** | 82 (76.6%) | T3 (0) + T4 (25) |
+| `sdk/flutter` | **53 / 53** | 89 (83.2%) | T3 (0) + T4 (18) |
+| `sdk/unity` | **53 / 53** | 89 (83.2%) | T3 (0) + T4 (18) |
 
 Every row adds up to 107 — what is typed, plus what is left. The nine above T0–T3 on every row are
 the `desk.*` family, typed for 客服云 — in TypeScript since 2026-09-07, and on the other four since
-2026-10-09, which is when the five rows became one row again. They are T4 work, which is why the
+2026-10-09, which is when the five rows became one row again. Since 2026-10-22 four rows carry seven
+more: the `room.*` family, typed in TypeScript, Kotlin, Dart and Unity. Swift's row still reads 82
+because no Swift toolchain was available to build and record it; until it is typed there, §3's
+"all five" column does not count `room.*`, since that column is the intersection. They are T4 work, which is why the
 first column still reads 53 on all five; §3 explains why one family typed everywhere does not make
 T4 partly done.
 
@@ -57,7 +60,7 @@ score the same on this table and still fail every customer who ships on two plat
 
 Since 2026-09-21 only **T4 is deliberately untyped** — not missing; T3 is typed on all five. A
 customer can call all 107 endpoints today;
-25 of them without types on the weakest SDK — and on every other, since all five type the same 82 — against payload shapes they must read out of the server's C# source. Say
+25 of them without types on the weakest SDK (Swift, at 82) and 18 on the other four, which type the same 89 — against payload shapes they must read out of the server's C# source. Say
 that plainly in a sales conversation — it is a real cost, and it is one the buyer discovers in
 their first sprint if you do not.
 
