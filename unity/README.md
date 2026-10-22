@@ -202,7 +202,7 @@ its target — so if you know the endpoint you know the call, in this SDK and in
 | | endpoints |
 |---|---|
 | `im.Conn` | `HeartbeatAsync` `ReauthAsync` `SyncAsync` |
-| `im.Msg` | `SendAsync` `SyncAsync` `HistoryAsync` `RecallAsync` `DeleteAsync` `TypingAsync` `EditAsync` `ForwardAsync` `ReactAsync` `ReceiptAsync` · `PinAsync` `UnpinAsync` `PinsAsync` `FavouriteAsync` `UnfavouriteAsync` `FavouritesAsync` `BurnAsync` `SearchAsync` `ReceiptDetailAsync` |
+| `im.Msg` | `SendAsync` `SyncAsync` `HistoryAsync` `RecallAsync` `DeleteAsync` `TypingAsync` `EditAsync` `ForwardAsync` `ReactAsync` `ReceiptAsync` · `PinAsync` `UnpinAsync` `PinsAsync` `FavouriteAsync` `UnfavouriteAsync` `FavouritesAsync` `BurnAsync` `SearchAsync` `ReceiptDetailAsync` · `StreamBeginAsync` `StreamAppendAsync` `StreamCompleteAsync` `StreamAbortAsync` (T4, streaming replies) |
 | `im.Conv` | `ListAsync` `GetAsync` `ReadAsync` `UnreadTotalAsync` `SettingAsync` `DeleteAsync` `ClearAsync` · `MarkUnreadAsync` |
 | `im.User` | `MeAsync` `ProfileAsync` `BatchProfileAsync` `UpdateProfileAsync` `PresenceAsync` `SubscribePresenceAsync` `UnsubscribePresenceAsync` · `SetStatusAsync` |
 | `im.Friend` | `ListAsync` `AddAsync` `HandleRequestAsync` `RequestListAsync` `DeleteAsync` `BlockListAsync` `BlockAsync` `UnblockAsync` · `SetRemarkAsync` |
@@ -214,11 +214,12 @@ its target — so if you know the endpoint you know the call, in this SDK and in
 | `im.Desk` | `RequestAsync` `AcceptAsync` `TransferAsync` `CloseAsync` `StatusAsync` `QueueAsync` `RateAsync` `CannedAsync` `SuggestAsync` — T4, the customer-service desk |
 | `im.Room` | `JoinAsync` `QuitAsync` `SendAsync` `OnlineCountAsync` `MemberListAsync` `MuteAsync` `KickAsync` — T4, chat rooms |
 
-That is tiers **T0**, **T1**, **T2** and **T3** of `sdk/CONTRACT.md`, plus the nine `desk.*` and the
-seven `room.*` of T4 — 89 of the server's 107 endpoints: the session floor, everything a two-person chat app needs to launch, the contacts,
+That is tiers **T0**, **T1**, **T2** and **T3** of `sdk/CONTRACT.md`, plus the nine `desk.*`, the
+seven `room.*` and the four `msg.stream*` of T4 — 93 of the server's 107 endpoints: the session floor, everything a two-person chat app needs to launch, the contacts,
 blocking, groups, presence and reporting that turn it into a messenger a store will accept, and the
 competitive-parity tier on top — pins, favourites, search, read-receipt detail, burn-after-reading
-and group administration. The names after the `·` are T3.
+and group administration. The names after the `·` are T3, except the four `Stream…Async` on `im.Msg`,
+which are T4.
 
 The desk is how an in-game "contact support" screen reaches a person: `RequestAsync` and
 `RateAsync` are the player's, the rest an agent's, `CloseAsync` either side's, and the conversation
@@ -282,6 +283,91 @@ using (im.OnRoomEvent(e =>
 Every method takes exactly one request object, because with positional parameters the server adding
 one optional field is a source-breaking change in five languages at once. Convenience overloads
 exist where a request has at most two required scalars — `im.Conv.ReadAsync(id, seq)` is fine.
+
+### Streaming replies
+
+An AI assistant typing out its reply — a bot, a desk agent's suggestion, an NPC: the producer opens a
+stream, appends pieces as its model produces them, and completes it into one ordinary message. The
+platform calls no model; it carries the pieces.
+
+**Sending.** `im.Msg.StreamBeginAsync(new ImBeginStreamRequest(recipient))` answers an
+`ImStreamHandle`; then `StreamAppendAsync(streamId, delta)` for each piece, and finally
+`StreamCompleteAsync(new ImCompleteStreamRequest(streamId))` (the stored message's `ImSendResult`) or
+`StreamAbortAsync(new ImStreamAbortRequest(streamId, reason))`. `ImStreamWriter` holds the stream id and
+the `ClientMsgId` for you; the four calls remain the surface.
+
+```csharp
+var reply = await ImStreamWriter.BeginAsync(im.Msg, new ImBeginStreamRequest(ImRecipient.User("bob"))
+{
+    Placeholder = JsonValue.NewObject().Set("name", "Assistant"),
+});
+try
+{
+    foreach (var token in tokens) await reply.AppendAsync(token);
+    await reply.CompleteAsync();                 // stored as {"text": every piece, joined}
+}
+catch (Exception)
+{
+    await reply.AbortAsync("the model failed");  // a terminal frame for everyone; nothing stored
+    throw;
+}
+```
+
+- **Anyone signed in may stream, but only as themselves**, in a single chat (a chat with yourself
+  included) or a group of at most 200 — a chat room, system or assistant conversation answers `1008`.
+  Every permission `msg.send` checks is checked at `StreamBeginAsync`, not at the end; no app setting
+  or add-on gates it. `Recipient` names the conversation, as on `ImSendRequest`.
+- **`ClientMsgId` is the finished message's idempotency key** and the server makes none up: a null one
+  is generated and written back onto the request. `ContentType` is what the finished message will
+  carry (sent as its integer). `Options` is an `ImMessageOptions`, because its keys — and
+  `pushConfig`'s, one level further down — are matched case-sensitively and a miscased one is dropped
+  without an error; a non-empty `PushConfig.Title` / `Body` is refused (`1103`).
+- **A stream dies of silence, not of age**: append or complete within
+  `ImStreamHandle.IdleTimeoutSeconds` (30) of the last call, or the server reaps it — a terminal
+  frame, no message. Limits: 4096 characters a piece and 16384 in all (`1401`, and the stream stays
+  open), 100 pieces a second and 60 openings a minute (`1003`). An empty piece is accepted and ignored.
+- **`StreamCompleteAsync` without `Content` stores `{"text": …}` of the pieces; with `Content`, it
+  replaces them.** It can be refused as `msg.send` can, and the stream is consumed either way: a
+  second complete or abort answers `1002`, as does any call after the stream was reaped. Unlike
+  `SendAsync` it moves no cursor — the stored message comes back to the producer on
+  `MessageReceived` like everyone else's, and a cursor already at its seq would drop it.
+
+**Receiving.** `im.OnStreamEvent(handler)` decodes `evt.stream` into `ImStreamEvent`s: the opening
+(index 0, with the producer's `Placeholder`), pieces (index 1, 2, 3…), and one terminal frame (one past
+the last piece) — `Completed` with the stored message's `MessageId` and `Seq`, or `Aborted` with an
+`AbortReason` (the producer aborted, went quiet, or its completion was refused). The producer's own
+connection receives all of them too. An `ImStreamAssembler` turns them into the `ImStreamState` to draw:
+
+```csharp
+var assembler = new ImStreamAssembler();
+im.OnStreamEvent(e =>
+{
+    var s = assembler.Accept(e);
+    if (s == null) return;                       // a duplicate, or nothing changed
+    switch (s.Status)
+    {
+        case ImStreamStatus.Streaming: DrawTyping(s.StreamId, s.Placeholder, s.Text); break;
+        case ImStreamStatus.Completed: SwapForMessage(s.StreamId, s.MessageId.Value); break;
+        case ImStreamStatus.Aborted:   DrawStopped(s.StreamId, s.AbortReason); break;
+    }
+});
+```
+
+- **The pieces are not messages.** No seq, online devices only, never stored, never resent: they never
+  reach `MessageReceived`, a cursor or the gap repair, and there is nothing to `Commit`. Pieces are
+  joined by index, not arrival; a duplicate is ignored. **A hole is not repaired** — there is no
+  offset, resend or catch-up — it is counted (`HasGap`, `MissingFragments`), as is a stream this device
+  joined midway (`SawBegin` false). A piece can arrive *after* the terminal frame (pieces are low
+  priority, the terminal frame is not, and the server's queue sends normal frames first); the
+  assembler remembers finished streams and fills it in rather than reopening one.
+- **The completed stream is an ordinary message**: a real seq, the `ClientMsgId` it was opened with,
+  delivered on `MessageReceived` through cursors and gap repair like any other — to the producer too.
+  That message, not `ImStreamState.Text`, is what to keep: the producer may have replaced the pieces,
+  and a piece this device missed is in it. **The terminal frame and the message arrive in either
+  order**; match them by `MessageId` (or `ClientMsgId`). A device that was offline simply gets the
+  message.
+- An aborted stream leaves nothing behind. Streams in flight when the connection drops are settled by
+  the stored message or not at all — `assembler.Clear()` on reconnect.
 
 ### Tier T3 — what the signatures do not say
 
@@ -492,6 +578,7 @@ token fetch, and `test-framework` for the tests below. The runtime itself needs 
 | `Kicked` | Kicked off, with whether it is terminal |
 | `On(target, fn)` | Any other server event (`evt.typing`, `evt.read`, `evt.group`, …) |
 | `OnDeskEvent(fn)` / `OnRoomEvent(fn)` | `evt.desk`, and the `room.*` events inside `evt.system`, decoded |
+| `OnStreamEvent(fn)` | `evt.stream` — streaming-reply pieces, decoded; feed them to an `ImStreamAssembler` |
 | `Conn` `Msg` `Conv` `User` `Friend` `Group` `Media` `Push` | The typed surface |
 | `InvokeAsync<T>(target, body)` | Any endpoint not yet typed |
 | `Connection` | The socket underneath: `ReconnectNow()`, `SetToken()`, `ReauthAsync()`, raw frames |

@@ -486,6 +486,43 @@ namespace Cyaim.Im
             });
         }
 
+        /// <summary>
+        /// Subscribes to <c>evt.stream</c>, decoded: the opening, the pieces and the terminal frame of
+        /// every streaming reply in this user's conversations. Dispose to unsubscribe.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Not an endpoint, so it lives here rather than on <see cref="Msg"/>. <c>evt.stream</c> is its own
+        /// push target, and nothing on it is a message: a frame has no seq, is never stored and is never
+        /// resent, so it bypasses <see cref="MessageReceived"/>, the cursors and the gap repair entirely,
+        /// and there is nothing to commit. The completed stream arrives separately, as an ordinary
+        /// message on <see cref="MessageReceived"/> — repaired, cursored and committed like any other —
+        /// before or after its terminal frame. Feed the frames to an <see cref="ImStreamAssembler"/> to
+        /// get the text to draw. A frame without a stream id is dropped here rather than delivered
+        /// half-built.
+        /// </para>
+        /// <para>
+        /// evt.stream 是独立的推送目标，上面没有消息：没有 seq、不落库、不重发，所以完全绕开 MessageReceived、游标与补洞，
+        /// 也无需 Commit。收尾后的那条普通消息另走 MessageReceived，可能早于也可能晚于终帧。
+        /// </para>
+        /// </remarks>
+        public IDisposable OnStreamEvent(Action<ImStreamEvent> handler)
+        {
+            if (handler == null)
+            {
+                throw new ArgumentNullException("handler");
+            }
+
+            return On(ImPushTarget.Stream, delegate(JsonValue data)
+            {
+                var streamEvent = ImStreamEvent.FromData(data);
+                if (streamEvent != null)
+                {
+                    handler(streamEvent);
+                }
+            });
+        }
+
         /// <summary>Subscribes to a server push as a whole frame, for the id, status and traceId.</summary>
         public IDisposable OnFrame(string target, Action<ImFrame> handler)
         {

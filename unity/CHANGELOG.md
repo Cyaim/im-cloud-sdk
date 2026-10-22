@@ -10,6 +10,22 @@ to ask which platform.
 
 ### Added
 
+- **Streaming replies — the four `msg.stream*` endpoints of T4** on `im.Msg`: `StreamBeginAsync`,
+  `StreamAppendAsync` (also `(streamId, delta)`), `StreamCompleteAsync`, `StreamAbortAsync`, with
+  `ImBeginStreamRequest` (addressed by `ImRecipient`; a null `ClientMsgId` is generated and written back
+  onto the request; `ContentType` as its integer), `ImStreamAppendRequest`, `ImCompleteStreamRequest`,
+  `ImStreamAbortRequest` and `ImStreamHandle`. `ImMessageOptions` / `ImPushConfig` write the server's
+  nested `MessageOptions` and `PushConfig` in their exact camelCase, sending only what is set.
+  `StreamCompleteAsync` returns the stored message's `ImSendResult` and, unlike `SendAsync`, moves no
+  cursor: the message is echoed to the producer's own connection and must still reach
+  `MessageReceived`. `ImStreamWriter` is an optional handle over the four calls.
+- **`im.OnStreamEvent`** decodes `evt.stream` into `ImStreamEvent` (`Phase`: begin / delta / completed /
+  aborted; the message id read quoted or bare). **`ImStreamAssembler`** joins pieces by index, ignores
+  duplicates, counts holes and mid-stream joins without repairing them, and fills a piece that arrives
+  after the terminal frame into the remembered finished stream. Frames never reach `MessageReceived`,
+  a cursor or `msg.sync`; the completed message does, gap repair included — `StreamTests` proves both,
+  with the terminal frame before and after the message. The stream rows are in
+  `wire-samples/unity.json`.
 - **`im.Room` — the seven `room.*` endpoints of T4**: `JoinAsync`, `QuitAsync`, `SendAsync`,
   `OnlineCountAsync`, `MemberListAsync`, `MuteAsync`, `KickAsync`, with `ImRoomIdRequest`,
   `ImRoomCursorRequest`, `ImRoomSendRequest` + `ImRoomMessage` (the members of `SendMessageRequest` a

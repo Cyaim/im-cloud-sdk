@@ -122,7 +122,7 @@ namespace Cyaim.Im.Tests
         /// or not the inventory has caught up; once it has, the entry is redundant and harmless.
         /// implementedIn 由平台仓库重新生成清单时才翻转；在这里登记的家族不论清单是否跟上都要求有行。
         /// </remarks>
-        private static readonly string[] TypedFamilies = { "room." };
+        private static readonly string[] TypedFamilies = { "room.", "msg.stream" };
 
         /// <summary>
         /// Server request fields no Unity body carries, each with the reason. The platform repository
@@ -231,6 +231,44 @@ namespace Cyaim.Im.Tests
         }
 
         /// <summary>
+        /// A <c>msg.streamBegin</c> with every member set. Unlike <see cref="FullOptions"/>, the options
+        /// are the SDK's typed <see cref="ImMessageOptions"/>, every member set away from the server's
+        /// default, so the nested keys recorded are the SDK's own spelling.
+        /// </summary>
+        private static ImBeginStreamRequest FullBegin(ImRecipient recipient, string clientMsgId)
+        {
+            return new ImBeginStreamRequest(recipient)
+            {
+                ClientMsgId = clientMsgId,
+                ContentType = ImMessageContentType.Custom,
+                Placeholder = Obj("name", "Assistant"),
+                Options = new ImMessageOptions
+                {
+                    Persistent = false,
+                    UpdateConversation = false,
+                    CountUnread = false,
+                    OfflinePush = false,
+                    PushConfig = new ImPushConfig
+                    {
+                        Title = "Assistant",
+                        Body = "is replying",
+                        Sound = "ding.caf",
+                        Payload = new Dictionary<string, string> { { "deepLink", "app://c_wire" } },
+                        BadgeCount = false,
+                        ChannelId = "im_messages",
+                    },
+                    NeedReceipt = true,
+                    Priority = ImMessagePriority.High,
+                    OnlineOnly = true,
+                    NoSelfSync = true,
+                    ExpireIn = 5000L,
+                    ModerationBypass = true,
+                },
+                Extensions = Obj("model", "m-1"),
+            };
+        }
+
+        /// <summary>
         /// One row per public typed method, overload, defaulted call and frozen alias, each with
         /// every member its request type has set to a value that is neither empty nor the default.
         /// </summary>
@@ -333,6 +371,26 @@ namespace Cyaim.Im.Tests
                     Limit = 20,
                 })),
                 R("msg.receiptDetail", "Msg.ReceiptDetailAsync", c => c.Msg.ReceiptDetailAsync(new ImReceiptDetailRequest("c_wire", Big))),
+
+                // ------------------------------------------------------- msg.stream* (T4)
+                // One address per begin row, as on msg.send: the three together cover the type. options
+                // here is the SDK's own ImMessageOptions, so its keys (and pushConfig's) are the SDK's
+                // spelling, not this file's. The defaulted row has its generated clientMsgId pinned.
+                // 每条 begin 只带一种地址，三条合起来覆盖整个类型；这里的 options 是 SDK 自己的 ImMessageOptions。
+                R("msg.streamBegin", "Msg.StreamBeginAsync(ImRecipient.User), every member", c => c.Msg.StreamBeginAsync(FullBegin(ImRecipient.User("bob"), "cm-st-1"))),
+                R("msg.streamBegin", "Msg.StreamBeginAsync(ImRecipient.Group), every member", c => c.Msg.StreamBeginAsync(FullBegin(ImRecipient.Group("team"), "cm-st-2"))),
+                R("msg.streamBegin", "Msg.StreamBeginAsync(ImRecipient.Conversation), every member", c => c.Msg.StreamBeginAsync(FullBegin(ImRecipient.Conversation("c_wire"), "cm-st-3"))),
+                Generated("msg.streamBegin", "Msg.StreamBeginAsync, defaults filled in", c => c.Msg.StreamBeginAsync(new ImBeginStreamRequest(ImRecipient.User("bob")))),
+                R("msg.streamAppend", "Msg.StreamAppendAsync(ImStreamAppendRequest)", c => c.Msg.StreamAppendAsync(new ImStreamAppendRequest("st_wire", "Hel"))),
+                R("msg.streamAppend", "Msg.StreamAppendAsync(string, string)", c => c.Msg.StreamAppendAsync("st_wire", "lo")),
+                R("msg.streamComplete", "Msg.StreamCompleteAsync, every member", c => c.Msg.StreamCompleteAsync(new ImCompleteStreamRequest("st_wire")
+                {
+                    Content = Obj("text", "Hello, cleaned up"),
+                    Extensions = Obj("model", "m-2"),
+                })),
+                R("msg.streamComplete", "Msg.StreamCompleteAsync, the pieces as they are", c => c.Msg.StreamCompleteAsync(new ImCompleteStreamRequest("st_wire"))),
+                R("msg.streamAbort", "Msg.StreamAbortAsync, with a reason", c => c.Msg.StreamAbortAsync(new ImStreamAbortRequest("st_wire", "the model failed"))),
+                R("msg.streamAbort", "Msg.StreamAbortAsync, no reason", c => c.Msg.StreamAbortAsync(new ImStreamAbortRequest("st_wire"))),
 
                 // ------------------------------------------------------------------ conv
                 R("conv.list", "Conv.ListAsync(ImListConversationsRequest)", c => c.Conv.ListAsync(new ImListConversationsRequest
@@ -827,7 +885,7 @@ namespace Cyaim.Im.Tests
                     + "Do not edit by hand; re-record with IM_RECORD_WIRE_SAMPLES=1 dotnet IM.Tests.UnitySdk.dll "
                     + "(in IM.Server/tests/IM.Tests.UnitySdk/bin/Debug/net10.0 of the platform repository). "
                     + "The keys inside options, pushConfig, content, patch and extensions are the recorder's own spelling: "
-                    + "the SDK passes those JsonValues through verbatim. "
+                    + "the SDK passes those JsonValues through verbatim (msg.streamBegin's options and pushConfig excepted: ImMessageOptions writes those). "
                     + "Judged against the server's real socket binder by IM.Server/tests/IM.Tests.Unit/SdkWireSampleBindingTests.cs in the platform repository.") + ",",
                 "  \"sdk\": \"unity\",",
                 "  \"omitted\": {",
@@ -938,8 +996,23 @@ namespace Cyaim.Im.Tests
         /// </summary>
         private static JsonValue Pin(Row row, JsonValue body)
         {
-            // msg.send fills in its own members; room.send fills in its nested message's.
-            // msg.send 补的是自己的字段；room.send 补的是嵌套 message 里的。
+            // msg.send fills in its own members; room.send fills in its nested message's; msg.streamBegin
+            // fills in only a clientMsgId, and has no clock.
+            // msg.send 补的是自己的字段；room.send 补的是嵌套 message 里的；msg.streamBegin 只补 clientMsgId，没有时钟字段。
+            if (row.Target == "msg.streamBegin")
+            {
+                Assert.That(body.Has("sendTime"), Is.False, row.Via + ": BeginStreamRequest has no sendTime; body was " + body.ToJson());
+                if (row.GeneratedClientMsgId)
+                {
+                    Assert.That(body["clientMsgId"].Kind, Is.EqualTo(JsonKind.String),
+                        row.Via + ": clientMsgId is a string on the server; body was " + body.ToJson());
+                    Assert.That(body["clientMsgId"].AsString(), Is.Not.Empty, row.Via + ": clientMsgId");
+                    body.Set("clientMsgId", PinnedId);
+                }
+
+                return body;
+            }
+
             JsonValue message;
             if (row.Target == "msg.send")
             {

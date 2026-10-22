@@ -412,6 +412,122 @@ namespace Cyaim.Im
             return RequestAsync<ImMessageReceipt>("msg.receiptDetail", request, cancellationToken);
         }
 
+        // ------------------------------------------------------------------------- T4: streaming
+        //
+        // A reply produced a piece at a time (an AI assistant typing it out). The pieces travel as
+        // evt.stream frames, which are not messages: no seq, online only, never stored, never repaired
+        // (ImClient.OnStreamEvent, ImStreamAssembler). The completed stream is one ordinary message on
+        // evt.message, through the cursors and gap repair like any other. See ImStreamTypes.cs.
+        // 分片经 evt.stream 推送，不是消息：没有 seq、只投在线、不落库、不补洞。收尾后的那条才是普通消息，照常走游标与补洞。
+
+        /// <summary>
+        /// Opens a stream and tells every online member of the conversation to draw a placeholder.
+        /// Returns the handle every later call names.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// A null <see cref="ImBeginStreamRequest.ClientMsgId"/> is generated and written back <b>onto the
+        /// request object</b>, as <see cref="ForwardAsync"/> does, so the caller can read the key of the
+        /// message this stream becomes; the server makes none up.
+        /// </para>
+        /// <para>
+        /// Every refusal <c>msg.send</c> could give for the address and the sender is given here, at the
+        /// opening: <c>1104</c> / <c>1408</c> / <c>1303</c> / <c>1302</c>, <c>1500</c> / <c>1501</c> /
+        /// <c>1503</c> / <c>1506</c> / <c>1505</c>; <c>1008</c> for anything but a single chat or a group of
+        /// at most 200; <c>1103</c> for refused options; <c>1003</c> past 60 openings a minute.
+        /// </para>
+        /// <para>
+        /// 开流时就按 msg.send 的规则检查全部权限。ClientMsgId 留空则生成并写回请求对象，调用方可以读回。
+        /// </para>
+        /// </remarks>
+        public Task<ImStreamHandle> StreamBeginAsync(
+            ImBeginStreamRequest request,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            RequireRequest(request);
+            if (request.Recipient.IsEmpty)
+            {
+                throw new ArgumentException(
+                    "ImBeginStreamRequest.Recipient is required; build one with ImRecipient.User/Group/Conversation.",
+                    "request");
+            }
+
+            if (string.IsNullOrEmpty(request.ClientMsgId))
+            {
+                request.ClientMsgId = Client.NewClientMsgId();
+            }
+
+            return RequestAsync<ImStreamHandle>("msg.streamBegin", request, cancellationToken);
+        }
+
+        /// <summary>Sends the next piece of an open stream.</summary>
+        /// <remarks>
+        /// An empty delta is accepted by the server and does nothing. Refusals: <c>1002</c> finished or
+        /// expired, <c>1103</c> someone else's stream, <c>1401</c> a piece over 4096 characters or a text
+        /// past the cap (the stream stays open), <c>1003</c> more than 100 pieces a second.
+        /// 空 delta 服务端接受且什么都不做；1401 之后流仍然开着。
+        /// </remarks>
+        public Task StreamAppendAsync(
+            ImStreamAppendRequest request,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            RequireRequest(request);
+            Require(request.StreamId, "streamId");
+            return ExecuteAsync("msg.streamAppend", request, cancellationToken);
+        }
+
+        /// <summary>Shorthand for <see cref="StreamAppendAsync(ImStreamAppendRequest, CancellationToken)"/>.</summary>
+        public Task StreamAppendAsync(
+            string streamId,
+            string delta,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            return StreamAppendAsync(new ImStreamAppendRequest(streamId, delta), cancellationToken);
+        }
+
+        /// <summary>
+        /// Finishes a stream into one ordinary message and returns its <see cref="ImSendResult"/> — a real
+        /// <c>Seq</c>, the <c>ClientMsgId</c> the stream was opened with.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <b>Unlike <see cref="SendAsync"/>, this moves no cursor.</b> The stored message is delivered on
+        /// <c>evt.message</c> to the producer's own connection too, and it must arrive on
+        /// <see cref="ImClient.MessageReceived"/> like anyone else's; a delivered cursor already moved to
+        /// its seq would drop it there as a duplicate.
+        /// </para>
+        /// <para>
+        /// It can be refused the ways <c>msg.send</c> can (moderation, a webhook, the store), and the stream
+        /// is consumed either way: receivers get a terminal frame with an <c>abortReason</c>, and a second
+        /// complete or abort answers <c>1002</c>.
+        /// </para>
+        /// <para>
+        /// 与 SendAsync 不同，这里不动游标：存下来的消息也会推给生产者自己的连接，必须照常从 MessageReceived 出来；
+        /// 先把游标挪到它的 seq，它就会被当成重复丢掉。被拒时流同样被消费掉。
+        /// </para>
+        /// </remarks>
+        public Task<ImSendResult> StreamCompleteAsync(
+            ImCompleteStreamRequest request,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            RequireRequest(request);
+            Require(request.StreamId, "streamId");
+            return RequestAsync<ImSendResult>("msg.streamComplete", request, cancellationToken);
+        }
+
+        /// <summary>
+        /// Ends a stream without a message. Receivers get a terminal frame with the reason, so no
+        /// placeholder hangs for the idle window.
+        /// </summary>
+        public Task StreamAbortAsync(
+            ImStreamAbortRequest request,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            RequireRequest(request);
+            Require(request.StreamId, "streamId");
+            return ExecuteAsync("msg.streamAbort", request, cancellationToken);
+        }
+
         // There is deliberately no SendTextAsync here.
         //
         // `msg.sendText` is not an endpoint — it is not in sdk/endpoint-inventory.json and never
