@@ -311,8 +311,40 @@ class RequestWireKindTest {
             sample(StreamAppendRequest("st_1", "Hel")),
             sample(CompleteStreamRequest("st_1", content = textContent("Hello"), extensions = ext)),
             sample(StreamAbortRequest("st_1", reason = "the model failed")),
+            sample(
+                ScheduleRequest(
+                    sendAt = 1_758_499_200_000L, content = textContent("later"), contentType = MessageContentType.Image,
+                    conversationId = "s_alice_bob", receiverId = "bob", groupId = "team",
+                    conversationType = ConversationType.Group, clientMsgId = "cid", mentionAll = true,
+                    mentionedUserIds = listOf("bob"), quoteMessageId = bigId, threadRootId = bigId - 2, extensions = ext,
+                ),
+            ),
+            sample(ScheduleIdRequest("sch_1")),
+            sample(
+                UpsertFolderRequest(
+                    name = "Work", folderId = "f_work", order = 3, tags = listOf("work"), unreadOnly = true,
+                    types = listOf(ConversationType.Single, ConversationType.Group),
+                ),
+            ),
+            sample(FolderIdRequest("f_work")),
+            sample(TranslateRequest("s_alice_bob", listOf(bigId, 7L), targetLanguage = "zh-CN", sourceLanguage = "en")),
         ).toMap()
     }
+
+    /**
+     * The shortest body each request type of the round-77 calls leaves as — what a caller who sets
+     * only what the server requires puts on the wire. Not swept above (that sweep wants every member
+     * present); recorded so the platform's binder also judges the bodies that omit the optional ones,
+     * which is where a member the server marks required would throw instead of defaulting.
+     *
+     * 第 77 轮那几条调用各自最短的请求体：只填服务端必需的成员时发出去的样子。不进上面的扫描（它要求每个成员都在），
+     * 只录下来，让平台的绑定器也判一遍省掉可选成员的请求体。
+     */
+    private fun minimalSamples(): List<Pair<String, JsonObject>> = listOf(
+        sample(ScheduleRequest(sendAt = 1_758_499_200_000L, content = textContent("later"), receiverId = "bob")),
+        sample(UpsertFolderRequest("Work")),
+        sample(TranslateRequest("s_alice_bob", listOf(bigId), targetLanguage = "zh-CN")),
+    )
 
     /** Encoded by `asBody()`, the one encoder every typed method hands its request to. */
     private inline fun <reified T> sample(request: T): Pair<String, JsonObject> =
@@ -342,6 +374,12 @@ class RequestWireKindTest {
         for ((key, reason) in omitted) {
             val (type, field) = key.split('.', limit = 2)
             if (samples[type]?.containsKey(field) == true) sweep.problems += "$key is declared omitted ($reason) but is sent"
+        }
+        for ((type, body) in minimalSamples()) {
+            val names = (types[type] as? JsonObject)?.get("properties")?.jsonArray
+                ?.map { it.jsonObject.getValue("name").jsonPrimitive.content }?.toSet()
+            if (names == null) sweep.problems += "$type (minimal): the inventory has no payload type $type"
+            else for (key in body.keys - names) sweep.problems += "$type.$key (minimal): sent, but the server's $type has no such field"
         }
         for ((key, reason) in omittedAt) {
             val path = key.split('.')
@@ -414,9 +452,13 @@ class RequestWireKindTest {
         lines += omitted.entries.joinToString(",\n") { (key, reason) -> "    ${quote(key)}: ${quote(reason)}" }
         lines += "  },"
         lines += "  \"samples\": ["
-        lines += samples().entries.joinToString(",\n") { (type, body) ->
+        val full = samples().entries.map { (type, body) ->
             "    {\"type\":${quote(type)},\"via\":${quote("asBody($type)")},\"body\":$body}"
         }
+        val minimal = minimalSamples().map { (type, body) ->
+            "    {\"type\":${quote(type)},\"via\":${quote("asBody($type) minimal")},\"body\":$body}"
+        }
+        lines += (full + minimal).joinToString(",\n")
         lines += "  ]"
         lines += "}"
         lines += ""

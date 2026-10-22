@@ -166,16 +166,16 @@ peer will never send.
 
 ## The typed surface
 
-93 endpoints — contract tiers T0, T1, T2 and T3 in full, plus the nine `desk.*`, the seven
-`room.*` and the four `msg.stream*` of T4 — grouped into namespaces named for the target prefix, so a reader who knows the endpoint name knows the call
+100 endpoints — contract tiers T0, T1, T2 and T3 in full, plus, of T4, the nine `desk.*`, the seven
+`room.*`, the four `msg.stream*`, the three schedule calls, the three folder calls and `msg.translate` — grouped into namespaces named for the target prefix, so a reader who knows the endpoint name knows the call
 without a lookup table. `msg.recall` is `im.msg.recall`; there are no synonyms. The names after the
 `·` are T3.
 
 | Namespace | Endpoints |
 |---|---|
 | `im.conn` | `heartbeat` `reauth` `sync` |
-| `im.msg` | `send` `sync` `history` `recall` `edit` `delete` `forward` `react` `receipt` `typing` · `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search` `receiptDetail` · T4: `streamBegin` `streamAppend` `streamComplete` `streamAbort` |
-| `im.conv` | `list` `get` `read` `setting` `delete` `clear` `unreadTotal` · `markUnread` |
+| `im.msg` | `send` `sync` `history` `recall` `edit` `delete` `forward` `react` `receipt` `typing` · `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search` `receiptDetail` · T4: `streamBegin` `streamAppend` `streamComplete` `streamAbort` `schedule` `scheduled` `cancelScheduled` `translate` |
+| `im.conv` | `list` `get` `read` `setting` `delete` `clear` `unreadTotal` · `markUnread` · T4: `folders` `upsertFolder` `deleteFolder` |
 | `im.user` | `me` `profile` `batchProfile` `updateProfile` `presence` `subscribePresence` `unsubscribePresence` · `setStatus` |
 | `im.friend` | `list` `add` `handleRequest` `requestList` `delete` `block` `unblock` `blockList` · `setRemark` |
 | `im.group` | `create` `info` `update` `dismiss` `memberList` `joined` `invite` `kick` `quit` `join` · `transfer` `applicationList` `handleApplication` `setRole` `mute` `muteMember` `setNickname` `announcement` |
@@ -344,15 +344,92 @@ im.streamEvents.assemble().collect { stream ->
   by the stored message or not at all — reset a long-lived `StreamAssembler` with `clear()` on
   reconnect (`assemble()` starts a fresh one per collection).
 
-### Anything not yet typed
+### Scheduled messages — `im.msg.schedule` (T4)
 
-The rest of tier T4 — E2EE keys, scheduling, folders, translation — goes through the
-escape hatch, which shares one code path with the typed methods:
+Write a message now, have the server send it later: `im.msg.schedule(ScheduleRequest(sendAt, content, receiverId = …))`
+answers a `ScheduledMessage` with the `scheduleId` to cancel it by; `im.msg.scheduled()` pages the
+outbox; `im.msg.cancelScheduled(scheduleId)` takes one back.
 
 ```kotlin
-// msg.cancelScheduled is tier T4 and not typed yet:
-im.invoke<Unit>("msg.cancelScheduled", buildJsonObject {
-    put("scheduleId", scheduleId)
+val entry = im.msg.schedule(ScheduleRequest(
+    sendAt = System.currentTimeMillis() + 60 * 60_000,
+    content = textContent("Stand-up in five minutes"),
+    groupId = "team",
+))
+im.msg.cancelScheduled(entry.scheduleId)
+```
+
+- **`ScheduleRequest` is flat and is not a `SendMessageRequest`.** The server binds the message
+  members at the top level beside `sendAt`, and there is no `options` and no `sendTime` on this
+  path. Address it by `conversationId`, else `groupId`, else `receiverId`; the sender must be allowed
+  to write there exactly as for `msg.send`, checked when scheduling. `clientMsgId` is optional — left
+  null, the server keys the eventual send `sch-<scheduleId>`.
+- **Limits** (`IM:Extras`): `sendAt` at least 10 seconds and at most 90 days ahead (`1001`
+  otherwise); 120 schedules created per user per hour (`1003`); 100 pending per user (`1006`).
+  **`msg.schedule` is not idempotent**: a retry after a lost reply schedules twice — list first.
+- **It fires on the server's sweep**, every 15 seconds by default: on the first sweep after `sendAt`,
+  never before. The receiver gets an **ordinary `evt.message`** (the sender's devices the usual self-sync) with
+  a real seq, through `im.messages`, cursors and gap repair like any other message. Scheduling itself
+  delivers nothing, moves no cursor, and **pushes no event**: another device sees the outbox change
+  only by calling `msg.scheduled` again.
+- **`ScheduledMessage` has no state field.** Pending: `messageId` and `error` both null. Sent:
+  `messageId` set. Cancelled: `error == "cancelled by sender"`. Failed: `error` is the reason.
+  **Cancelled, sent and failed entries stay listed for about 48 hours**, so a cancel is not followed
+  by an empty list. `msg.scheduled` runs in `sendAt` order, 20 a page by default (100 at most).
+- `msg.cancelScheduled`: `1002` for an unknown schedule or someone else's, `1006` once the dispatcher
+  has started sending it.
+
+### Conversation folders — `im.conv.folders` (T4)
+
+A folder is a saved filter over the conversation list — tags, optionally conversation types and
+"unread only" — that the server stores per user and the client applies. `im.conv.folders()` returns
+all of them as a plain `List` (no paging); `im.conv.upsertFolder(UpsertFolderRequest(name, …))`
+creates one (no `folderId`) or replaces one wholesale, and answers it as stored;
+`im.conv.deleteFolder(folderId)` removes it and leaves the conversations alone.
+
+- **Every tag must already be on one of your conversations** (`conv.setting`'s `tags`), or the save
+  is `1001`. Other limits: 20 folders per user (`1006`), 16 tags per folder, names and tags up to 64
+  characters, a `folderId` of 1–64 letters, digits, `-`, `_` or `.`.
+- `types` go out as integers; an empty list is stored as none and comes back absent (all types).
+  `order` below 0 is stored as 0. Sort by `order`, then `name`.
+- **Creating is not idempotent** — keep the `folderId` from the answer and send it on every later save.
+  Deleting one you do not have is `1002`. No event announces a folder change; re-read on other devices.
+
+### Translation — `im.msg.translate` (T4)
+
+`im.msg.translate(TranslateRequest(conversationId, messageIds, "zh-CN"))` translates up to 50
+messages of one conversation and answers a `TranslationResult`: one `TranslatedMessage` per id, with
+`text`, `cached`, or an `error` for that message alone — a message that cannot be translated does not
+fail the call. `sourceLanguage` is a hint; leave it null to let the provider detect it.
+
+**The platform calls no model of its own, and most deployments refuse this call.** Both refusals are
+ordinary `ImException`s carrying the server's sentence, checked before anything else about the request:
+
+- `1204 PlanExpired` — the tenant's plan does not include the translation add-on (Enterprise and up,
+  or a trial);
+- `1203 FeatureNotEnabled` — the plan includes it but the deployment has no provider configured
+  (`IM:Translation:Provider`).
+
+```kotlin
+try {
+    show(im.msg.translate(TranslateRequest(conversationId, listOf(message.messageId), "zh-CN")))
+} catch (e: ImException) {
+    if (e.code == ImErrorCode.FeatureNotEnabled || e.code == ImErrorCode.PlanExpired) hideTranslate(e.message)
+    else throw e
+}
+```
+
+Neither is retryable; do not latch either beyond the session, since both are runtime settings.
+
+### Anything not yet typed
+
+The rest of tier T4 — the E2EE key directory (`keys.*`) — goes through the escape hatch, which
+shares one code path with the typed methods:
+
+```kotlin
+// keys.remaining is tier T4 and not typed yet:
+val left = im.invoke<Int>("keys.remaining", buildJsonObject {
+    put("deviceId", deviceId)
 })
 ```
 

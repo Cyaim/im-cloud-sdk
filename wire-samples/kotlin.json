@@ -72,6 +72,14 @@
     {"type":"BeginStreamRequest","via":"asBody(BeginStreamRequest)","body":{"conversationId":"s_alice_bob","receiverId":"bob","groupId":"team","clientMsgId":"cid","contentType":2,"placeholder":{"name":"Assistant"},"options":{"persistent":false,"updateConversation":false,"countUnread":false,"offlinePush":false,"pushConfig":{"title":"t","body":"b","sound":"s","payload":{"k":"v"},"badgeCount":false,"channelId":"ch"},"needReceipt":true,"priority":2,"onlineOnly":true,"noSelfSync":true,"expireIn":5000,"moderationBypass":true},"extensions":{"k":"v"}}},
     {"type":"StreamAppendRequest","via":"asBody(StreamAppendRequest)","body":{"streamId":"st_1","delta":"Hel"}},
     {"type":"CompleteStreamRequest","via":"asBody(CompleteStreamRequest)","body":{"streamId":"st_1","content":{"text":"Hello"},"extensions":{"k":"v"}}},
-    {"type":"StreamAbortRequest","via":"asBody(StreamAbortRequest)","body":{"streamId":"st_1","reason":"the model failed"}}
+    {"type":"StreamAbortRequest","via":"asBody(StreamAbortRequest)","body":{"streamId":"st_1","reason":"the model failed"}},
+    {"type":"ScheduleRequest","via":"asBody(ScheduleRequest)","body":{"sendAt":1758499200000,"content":{"text":"later"},"contentType":2,"conversationId":"s_alice_bob","receiverId":"bob","groupId":"team","conversationType":2,"clientMsgId":"cid","mentionAll":true,"mentionedUserIds":["bob"],"quoteMessageId":"360381357961969667","threadRootId":"360381357961969665","extensions":{"k":"v"}}},
+    {"type":"ScheduleIdRequest","via":"asBody(ScheduleIdRequest)","body":{"scheduleId":"sch_1"}},
+    {"type":"UpsertFolderRequest","via":"asBody(UpsertFolderRequest)","body":{"name":"Work","folderId":"f_work","order":3,"tags":["work"],"unreadOnly":true,"types":[1,2]}},
+    {"type":"FolderIdRequest","via":"asBody(FolderIdRequest)","body":{"folderId":"f_work"}},
+    {"type":"TranslateRequest","via":"asBody(TranslateRequest)","body":{"conversationId":"s_alice_bob","messageIds":["360381357961969667","7"],"targetLanguage":"zh-CN","sourceLanguage":"en"}},
+    {"type":"ScheduleRequest","via":"asBody(ScheduleRequest) minimal","body":{"sendAt":1758499200000,"content":{"text":"later"},"contentType":1,"receiverId":"bob","mentionAll":false,"mentionedUserIds":[]}},
+    {"type":"UpsertFolderRequest","via":"asBody(UpsertFolderRequest) minimal","body":{"name":"Work","order":0,"tags":[],"unreadOnly":false}},
+    {"type":"TranslateRequest","via":"asBody(TranslateRequest) minimal","body":{"conversationId":"s_alice_bob","messageIds":["360381357961969667"],"targetLanguage":"zh-CN"}}
   ]
 }

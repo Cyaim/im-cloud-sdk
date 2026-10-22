@@ -13,6 +13,27 @@ published as `ImSdk.contractVersion`.
 First published release. The version is deliberately below 1.0.0: `1.0.0` is reserved for contract
 tiers T0 and T1 complete on **all five** SDKs. Nothing before this was ever published.
 
+### Added (2026-10-22, scheduling, folders, translation)
+
+- **Scheduled messages on `im.msg`**: `schedule`, `scheduled`, `cancelScheduled` (with a one-field
+  overload), with `ScheduleRequest` / `ScheduleIdRequest` and `ScheduledMessage`. `ScheduleRequest`
+  is the server's flat shape — the message members beside `sendAt`, no `options`, no `sendTime` —
+  and leaves `clientMsgId` to the server when null. `ScheduledMessage` has no state field; its KDoc
+  says how `messageId` and `error` tell pending, sent, cancelled ("cancelled by sender") and failed
+  apart. A fired schedule is an ordinary `evt.message`; nothing new is decoded.
+- **Conversation folders on `im.conv`**: `folders` (a plain list), `upsertFolder`, `deleteFolder`
+  (with a one-field overload), with `UpsertFolderRequest` / `FolderIdRequest` and
+  `ConversationFolder`; `types` go out as integers.
+- **`im.msg.translate`** with `TranslateRequest` (ids quoted), `TranslationResult` and
+  `TranslatedMessage`. A deployment without translation answers `1203` / `1204`, which reach the
+  caller as an ordinary `ImException` with the server's message.
+- Tests (`ScheduleTest`): every call's whole frame, minimal and full; replies with every field set
+  held to `payloadTypes`; `ScheduleRequest` pinned as `SendMessageRequest` minus `options` and
+  `sendTime` plus `sendAt`; scheduling proven to move no cursor; the 1203 / 1204 / 1002 / 1006 paths.
+- `wire-samples/kotlin.json` records the five new request bodies in full, and the three that have
+  optional members once more in their shortest form (`via` ending `minimal`).
+- README sections for the three families; the escape-hatch example is now `keys.remaining`.
+
 ### Added (2026-10-22, streaming)
 
 - **The four `msg.stream*` endpoints of T4** on `im.msg`: `streamBegin`, `streamAppend`,

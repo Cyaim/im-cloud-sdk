@@ -340,6 +340,62 @@ public class MsgApi internal constructor(
         connection.execute("msg.streamAbort", request.asBody())
     }
 
+    // ------------------------------------------------------------------- scheduling (T4)
+
+    /**
+     * Schedules a message for [ScheduleRequest.sendAt] and answers the outbox entry — `scheduleId` to
+     * cancel it by, no `messageId` yet.
+     *
+     * **Moves no cursor and delivers nothing.** When it fires, the message reaches the receiver as an
+     * ordinary `evt.message` with a real seq (and the sender's devices through the usual self-sync), on the
+     * first server sweep after `sendAt` (every 15 seconds by default). No event announces the schedule
+     * itself. **Not idempotent**: a retry after a lost reply schedules twice. See [ScheduleRequest] for
+     * the refusals and limits.
+     *
+     * 不动游标、不投递任何东西：到点发出时，接收方经普通 evt.message 收到它（发送者的设备经通常的自同步），粒度是服务端扫描周期（默认 15 秒）。
+     * 不幂等：丢了答复就重试会建两条。
+     */
+    public suspend fun schedule(request: ScheduleRequest): ScheduledMessage =
+        connection.request("msg.schedule", request.asBody())
+
+    /**
+     * The caller's outbox in `sendAt` order, earliest first: pending schedules **and** the ones settled
+     * in about the last 48 hours — sent, cancelled (`error` "cancelled by sender") or failed. See
+     * [ScheduledMessage] for telling them apart. The server's page is 20 by default and 100 at most.
+     * Page on [Page.nextCursor]; [Page.total] is never present.
+     *
+     * 按 sendAt 从早到晚列出待发的，以及约 48 小时内已了结的（已发、已取消、失败）。
+     */
+    public suspend fun scheduled(request: PageRequest = PageRequest()): Page<ScheduledMessage> =
+        connection.request("msg.scheduled", request.asBody())
+
+    /**
+     * Cancels one of the caller's pending schedules. `1002` for an unknown id or someone else's,
+     * `1006` once it is being sent. The entry stays listed, marked cancelled, for about 48 hours.
+     */
+    public suspend fun cancelScheduled(request: ScheduleIdRequest) {
+        connection.execute("msg.cancelScheduled", request.asBody())
+    }
+
+    /** [cancelScheduled] for the one-field case. */
+    public suspend fun cancelScheduled(scheduleId: String): Unit = cancelScheduled(ScheduleIdRequest(scheduleId))
+
+    // ------------------------------------------------------------------ translation (T4)
+
+    /**
+     * Translates up to 50 messages of one conversation. Per-message failures come back inside the
+     * result ([TranslatedMessage.error]); the call itself fails only as a whole.
+     *
+     * **A deployment without translation refuses it as an ordinary [ImException]**: `1204
+     * PlanExpired` when the plan lacks the translation add-on, `1203 FeatureNotEnabled` when the plan
+     * has it but no provider is configured — both checked before the request itself, both carrying
+     * the server's message. Neither is retryable; do not latch either for longer than a session.
+     *
+     * 没有翻译能力的部署以普通 ImException 拒绝：套餐不含翻译回 1204，含翻译但没配服务商回 1203，都带服务端的原话，都不可重试。
+     */
+    public suspend fun translate(request: TranslateRequest): TranslationResult =
+        connection.request("msg.translate", request.asBody())
+
     /** [request] with a client message id, filled in when blank. Shared by [StreamWriter]. */
     internal fun keyed(request: BeginStreamRequest): BeginStreamRequest =
         if (request.clientMsgId.isNotBlank()) request else request.copy(clientMsgId = newClientMsgId())

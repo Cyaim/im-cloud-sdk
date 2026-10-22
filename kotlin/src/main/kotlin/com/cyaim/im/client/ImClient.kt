@@ -40,7 +40,7 @@ import kotlin.random.Random
 /**
  * The client applications actually use.
  *
- * Beyond wrapping the 93 typed endpoints — tiers T0–T3, and the nine `desk.*`, seven `room.*` and four `msg.stream*` of T4 — this owns the one thing every correct IM
+ * Beyond wrapping the 100 typed endpoints — tiers T0–T3, and of T4 the nine `desk.*`, seven `room.*`, four `msg.stream*`, three schedule, three folder calls and `msg.translate` — this owns the one thing every correct IM
  * client must do and most hand-rolled ones do not: it keeps two cursors per conversation, notices
  * when an arriving message skips a number, and pulls the missing range before delivering.
  *
@@ -527,9 +527,9 @@ public class ImClient(
      * `invoke("msg.sync", …)` returns messages and moves nothing.
      *
      * ```kotlin
-     * // msg.cancelScheduled is tier T4 and not typed yet:
-     * im.invoke<Unit>("msg.cancelScheduled", buildJsonObject {
-     *     put("scheduleId", scheduleId)
+     * // keys.remaining is tier T4 and not typed yet:
+     * val left = im.invoke<Int>("keys.remaining", buildJsonObject {
+     *     put("deviceId", deviceId)
      * })
      * ```
      */

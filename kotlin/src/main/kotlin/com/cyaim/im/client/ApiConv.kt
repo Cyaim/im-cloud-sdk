@@ -83,4 +83,31 @@ public class ConvApi internal constructor(private val connection: ImConnection) 
     /** [markUnread] for the two-field case. */
     public suspend fun markUnread(conversationId: String, unread: Boolean = true): Unit =
         markUnread(MarkUnreadRequest(conversationId, unread))
+
+    // ---------------------------------------------------------------------- folders (T4)
+
+    /**
+     * The caller's folders, all of them: **a plain list, not a [Page]** (at most 20). Sort by
+     * [ConversationFolder.order], then name. Nothing is pushed when a folder changes on another
+     * device; call this again to pick it up.
+     *
+     * 直接是列表而不是分页（至多 20 个）。别的设备改了文件夹不会推送，要重新调用。
+     */
+    public suspend fun folders(): List<ConversationFolder> = connection.request("conv.folders")
+
+    /**
+     * Creates a folder (no `folderId`) or replaces one, and answers it as stored — take the id from
+     * here. Every tag must already be on one of the caller's conversations (`1001` otherwise); see
+     * [UpsertFolderRequest] for the limits. A retried create makes a second folder.
+     */
+    public suspend fun upsertFolder(request: UpsertFolderRequest): ConversationFolder =
+        connection.request("conv.upsertFolder", request.asBody())
+
+    /** Deletes a folder; the conversations and their tags stay. `1002` for one the caller does not have. */
+    public suspend fun deleteFolder(request: FolderIdRequest) {
+        connection.execute("conv.deleteFolder", request.asBody())
+    }
+
+    /** [deleteFolder] for the one-field case. */
+    public suspend fun deleteFolder(folderId: String): Unit = deleteFolder(FolderIdRequest(folderId))
 }
