@@ -241,11 +241,12 @@ endpoint greps straight to the call.
 | `im.moderation` | `report` |
 | `im.diag` | `logRequests` `logUploaded` — the client drives both; ordinary applications never call them |
 | `im.desk` | `request` `accept` `transfer` `close` `status` `queue` `rate` `canned` `suggest` — T4, the customer-service desk |
+| `im.room` | `join` `quit` `send` `onlineCount` `memberList` `mute` `kick` — T4, chat rooms (see below) |
 
 That is contract tiers **T0, T1, T2 and T3 complete** — session floor, 1:1 chat MVP, social graph
-and groups, and competitive parity — plus the nine `desk.*` of T4: 82 of the server's 107
-endpoints. The names after the `·` are T3. The other 25 endpoints of T4 go through `invoke()` until
-they are typed. Every method takes exactly one request object named for the server DTO, so the
+and groups, and competitive parity — plus the nine `desk.*` and seven `room.*` of T4: 89 of the
+server's 107 endpoints. The names after the `·` are T3. The other 18 endpoints of T4 go through
+`invoke()` until they are typed. Every method takes exactly one request object named for the server DTO, so the
 server adding an optional field stays additive instead of breaking your call sites.
 
 The desk has two audiences and the session decides which one you are: `request` and `rate` are the
@@ -260,6 +261,52 @@ Treat one as a desk notice only when `contentType` is `ImMessageContentType.noti
 platform, so a bare code check will one day draw "your account is locked" onto a support
 transcript. The TypeScript SDK's `readDeskNotification` documents the fields each code carries;
 this SDK has no reader yet.
+
+### Chat rooms — best-effort, `seq` 0, never repaired
+
+A room (a live-stream room, a broadcast hall) trades persistence for scale, and the rule that
+follows is the one an integrator cannot guess from the signatures: **a room message carries `seq`
+0 and bypasses gap repair entirely.** It arrives on `im.messages` like any message, with
+`conversationId` `r_<roomId>` and `conversationType` `ImConversationType.chatRoom`; it is never
+stored, never fetched again by `msg.sync`, and never moves a cursor — this package does not enqueue
+it behind a repair, does not mark it delivered, and `im.room.send` does not write a cursor from its
+result, whose `seq` is always 0. A frame lost to a bad network is gone; deduplicate on `messageId`.
+
+```dart
+final ImRoomJoinResult joined = await im.room.join(const ImRoomIdRequest(roomId: 'live-1'));
+render(joined.recent);                       // the ring buffer, oldest first; not replayed on messages
+
+im.messages
+    .where((ImMessage m) => ImRoom.roomIdOf(m.conversationId) == 'live-1')
+    .listen(render);                         // seq 0, best-effort
+
+await im.room.send(ImRoomSendRequest.text('live-1', '🌹', priority: ImMessagePriority.low));
+
+im.roomEvents.listen((ImRoomEvent e) {       // room.muted / room.kicked / room.destroyed, from evt.system
+  if (e.event == ImRoomEvent.kicked && e.userId == myUserId) leaveRoomScreen();
+});
+```
+
+- **Membership belongs to the connection.** After a reconnect, call `room.join` again; the package
+  does not rejoin by itself.
+- **Rooms are created and destroyed by the tenant's backend** (`POST /v1/rooms`,
+  `DELETE /v1/rooms/{id}`); there is no socket call for either. An unknown or destroyed room is
+  `1600` on every call.
+- `room.send` takes an `ImRoomMessage`, nested under `message`: the members of `msg.send`'s
+  request a room actually reads — `clientMsgId` (required; generated when omitted), `contentType`,
+  `content`, the mentions, `sendTime`, `extensions` and a `priority` (sent as `options.priority`).
+  There is no address, quote or thread member, as in the TypeScript and Kotlin SDKs. A room over its
+  budget sheds `ImMessagePriority.low` first (`1003`), so send gifts and emotes low. Not joined (or
+  kicked) is `1602`, a muted member `1506`, everyone but owner and admins during a room-wide mute
+  `1603`.
+- `ImRoomMuteRequest` both mutes and unmutes: a future `untilMs` mutes until then, null unmutes —
+  which is why `untilMs` must be passed even though it is nullable, and why `.unmute` exists.
+  `userId` null means the whole room. Only the owner or an admin may mute or kick (`1103`), and
+  never the owner (`1511`).
+- `room.memberList` returns a **sample** of user ids, one shard per page — not the roster.
+- `im.roomEvents` keeps only `evt.system` events whose name starts with `room.`, so the device-log
+  request on the same target is left to the client. A `room.` event this build does not type is
+  delivered with its `body` intact.
 
 ### Tier T3 — what the signatures do not say
 

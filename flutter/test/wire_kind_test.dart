@@ -44,6 +44,44 @@ const Map<String, Map<String, String>> omitted = <String, Map<String, String>>{
   },
 };
 
+const String _roomAddress = 'room.send: the room is the address — RoomService stamps r_<roomId> '
+    'and type 3 whatever the body says, so ImRoomMessage has no member for it';
+const String _roomUnstored = 'room.send: a room message is never stored, so there is nothing to '
+    'quote or thread under; RoomService never reads it';
+const String _roomOptions = 'room.send: RoomService reads only options.priority and stamps '
+    'online-only, unstored options itself; ImRoomMessage carries the priority alone';
+
+/// Members of a type nested in a request body that this package deliberately never sends, keyed
+/// by target and then by path. Today only `room.send`'s `message`: [ImRoomMessage] is the subset of
+/// `SendMessageRequest` a room reads, as in the TypeScript and Kotlin SDKs.
+///
+/// Kept apart from [omitted] because it is not recorded into `wire-samples/flutter.json`: the
+/// platform's judge keys omissions by type (`SendMessageRequest.groupId`), and `msg.send` sends
+/// every one of these members of that same type. Every entry must name a real nested member and
+/// must stay absent from every body, exactly like [omitted].
+/// 嵌套类型里刻意不发的成员，按 target 与路径列出；不写进录制文件（平台的判定按类型记省略，
+/// 而 msg.send 发送了同一类型的这些成员）。
+const Map<String, Map<String, String>> nestedOmitted = <String, Map<String, String>>{
+  'room.send': <String, String>{
+    'message.conversationId': _roomAddress,
+    'message.receiverId': _roomAddress,
+    'message.groupId': _roomAddress,
+    'message.conversationType': _roomAddress,
+    'message.quoteMessageId': _roomUnstored,
+    'message.threadRootId': _roomUnstored,
+    'message.options.persistent': _roomOptions,
+    'message.options.updateConversation': _roomOptions,
+    'message.options.countUnread': _roomOptions,
+    'message.options.offlinePush': _roomOptions,
+    'message.options.pushConfig': _roomOptions,
+    'message.options.needReceipt': _roomOptions,
+    'message.options.onlineOnly': _roomOptions,
+    'message.options.noSelfSync': _roomOptions,
+    'message.options.expireIn': _roomOptions,
+    'message.options.moderationBypass': _roomOptions,
+  },
+};
+
 /// Fields where the inventory's type is known to be behind the server, each keyed by the one C#
 /// type it excuses. An entry is inert as soon as the inventory records anything else, so it cannot
 /// hide a later regression, and the test fails once it is inert: otherwise an excuse outlives its
@@ -525,6 +563,54 @@ Map<String, List<Future<void> Function(ImClient im)>> recipes() {
           )),
       (ImClient im) => im.desk.canned(),
     ],
+
+    // room (T4) — `room.send` nests an ImRoomMessage, the subset of SendMessageRequest a room reads;
+    // the members it never sends are in `nestedOmitted` with the reason.
+    // room.send 嵌套的是 ImRoomMessage（房间实际读取的子集），不发的成员列在 nestedOmitted 里。
+    'room.join': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.room.join(const ImRoomIdRequest(roomId: 'live-wire')),
+    ],
+    'room.quit': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.room.quit(const ImRoomIdRequest(roomId: 'live-wire')),
+    ],
+    'room.send': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.room.send(ImRoomSendRequest(
+            roomId: 'live-wire',
+            message: ImRoomMessage(
+              contentType: ImMessageContentType.image,
+              content: <String, dynamic>{'objectKey': 'o/1.png', 'width': 640},
+              clientMsgId: 'cm-room-wire',
+              mentionAll: true,
+              mentionedUserIds: <String>['bob', 'carol'],
+              priority: ImMessagePriority.high,
+              sendTime: 1758412800000,
+              extensions: <String, dynamic>{'origin': 'wire'},
+            ),
+          )),
+      (ImClient im) => im.room.send(ImRoomSendRequest.text(
+            'live-wire',
+            'gift',
+            clientMsgId: 'cm-room-text',
+            mentionedUserIds: <String>['host'],
+            priority: ImMessagePriority.low,
+          )),
+    ],
+    'room.onlineCount': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.room.onlineCount(const ImRoomIdRequest(roomId: 'live-wire')),
+    ],
+    'room.memberList': <Future<void> Function(ImClient)>[
+      (ImClient im) =>
+          im.room.memberList(const ImRoomCursorRequest(roomId: 'live-wire', cursor: '1', limit: 100)),
+      (ImClient im) => im.room.memberList(const ImRoomCursorRequest(roomId: 'live-wire')),
+    ],
+    'room.mute': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.room.mute(
+          const ImRoomMuteRequest(roomId: 'live-wire', userId: 'bob', untilMs: 1758412860000)),
+      (ImClient im) => im.room.mute(const ImRoomMuteRequest.unmute(roomId: 'live-wire')),
+    ],
+    'room.kick': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.room.kick(const ImRoomKickRequest(roomId: 'live-wire', userId: 'bob')),
+    ],
   };
 }
 
@@ -791,7 +877,8 @@ void requireSent(
   for (final MapEntry<String, String> property in inventory.types[type]!.entries) {
     final String at = path.isEmpty ? property.key : '$path.${property.key}';
     if (!sent.contains(at)) {
-      if (omitted[target]?.containsKey(at) != true) {
+      if (omitted[target]?.containsKey(at) != true &&
+          nestedOmitted[target]?.containsKey(at) != true) {
         findings.add('$target $at (${property.value}): no call path sends it — populate it in the '
             'recipe, or declare it in `omitted` with the reason the SDK never sends it');
       }
@@ -821,11 +908,27 @@ const String recordingComment = 'RECORDED by SDK/flutter/test/wire_kind_test.dar
 /// decides on — and pins the value.
 const Set<String> generatedFields = <String>{'clientMsgId', 'sendTime'};
 
+/// Members holding a nested request whose own [generatedFields] are filled in the same way:
+/// `room.send` carries the message `msg.send` sends, one level down.
+/// room.send 把 msg.send 的那条消息嵌在 message 里，其中的生成字段同样按类型钉住。
+const Set<String> nestedMessageFields = <String>{'message'};
+
 Object? pinned(Object? value) => switch (value) {
       int() => 1758412790000,
       WireFloat() => const WireFloat(0.5),
       String() => 'generated',
       _ => value,
+    };
+
+/// [body] with every generated field pinned, at the top level and inside [nestedMessageFields].
+Map<String, dynamic> pinGenerated(Map<String, dynamic> body, {bool nested = true}) =>
+    <String, dynamic>{
+      for (final MapEntry<String, dynamic> field in body.entries)
+        field.key: generatedFields.contains(field.key)
+            ? pinned(field.value)
+            : nested && nestedMessageFields.contains(field.key) && field.value is Map<String, dynamic>
+                ? pinGenerated(field.value as Map<String, dynamic>, nested: false)
+                : field.value,
     };
 
 /// Compact JSON, with a [WireFloat] written back as the fraction it was on the wire.
@@ -955,6 +1058,28 @@ void main() {
             reason: '`omitted` says ${entry.key} never sends $field, and a call path sent it');
       }
     }
+
+    // Likewise a nested omission: its path must walk through the server's types to a real member,
+    // and no call path may have sent it.
+    for (final MapEntry<String, Map<String, String>> entry in nestedOmitted.entries) {
+      final String? requestType = inventory.requestTypes[entry.key];
+      expect(requestType, isNotNull,
+          reason: '`nestedOmitted` names ${entry.key}, which takes no request');
+      for (final String path in entry.value.keys) {
+        final List<String> segments = path.split('.');
+        expect(segments.length, greaterThan(1),
+            reason: '`nestedOmitted` names ${entry.key} $path, which is top-level: use `omitted`');
+        String? type = requestType;
+        for (final String segment in segments) {
+          final String? member = inventory.types[type]?[segment];
+          expect(member, isNotNull,
+              reason: '`nestedOmitted` names ${entry.key} $path, and $type declares no $segment');
+          type = member!.endsWith('?') ? member.substring(0, member.length - 1) : member;
+        }
+        expect(sentByTarget[entry.key]!.contains(path), isFalse,
+            reason: '`nestedOmitted` says ${entry.key} never sends $path, and a call path sent it');
+      }
+    }
   });
 
   // The judge above reads endpoint-inventory.json, which records the server's C# type names but not
@@ -986,10 +1111,7 @@ void main() {
             .firstOrNull;
         if (frame == null) continue; // the kind test above reports a recipe that sent nothing
 
-        final Map<String, dynamic> body = <String, dynamic>{
-          for (final MapEntry<String, dynamic> field in frame.body.entries)
-            field.key: generatedFields.contains(field.key) ? pinned(field.value) : field.value,
-        };
+        final Map<String, dynamic> body = pinGenerated(frame.body);
         samples.add('    {"target":${jsonEncode(recipe.key)},'
             '"type":${jsonEncode(inventory.requestTypes[recipe.key])},'
             '"via":${jsonEncode('${recipe.key} #$via')},"body":${encodeWire(body)}}');

@@ -9,6 +9,28 @@ First published release. It is deliberately **not** `1.0.0` — `1.0.0` is reser
 tiers T0 and T1 complete on all five platforms with §5 and §6 implemented everywhere. The previous
 `1.0.0` in this manifest had never been published and was a promise the SDK did not keep.
 
+### Added (2026-10-22)
+
+- **`im.room` — the seven `room.*` endpoints of T4**: `join`, `quit`, `send`, `onlineCount`,
+  `memberList`, `mute`, `kick`, with `ImRoomIdRequest`, `ImRoomCursorRequest`, `ImRoomSendRequest`
+  (an `ImRoomMessage` nested under `message` — the members of `SendMessageRequest` a room reads,
+  as in TypeScript and Kotlin — plus `.text` factories that take a priority),
+  `ImRoomMuteRequest` (`untilMs` required-but-nullable, and `.unmute`), `ImRoomKickRequest`,
+  `ImChatRoom` and `ImRoomJoinResult`. `room.onlineCount` reads the bare number the server answers;
+  `room.memberList` returns an `ImPage<String>` sample.
+- `im.roomEvents` decodes the `room.muted` / `room.kicked` / `room.destroyed` events out of
+  `evt.system` into `ImRoomEvent`, keeping an unknown `room.*` event with its body and leaving every
+  other `evt.system` event (the device-log request) to its own handler. `ImRoom` maps a room id to
+  its `r_<roomId>` conversation id and back.
+- Tests prove the rule the inventory notes on `room.join`: a room message (`seq` 0) is delivered
+  without a `msg.sync`, without touching any cursor, without making the next conversation message
+  look like a gap, without waiting behind a repair in flight, and even past a stale cursor under the
+  room's id; `room.send` writes no cursor from its `seq` 0 result.
+- The room bodies are in `wire-samples/flutter.json`; the recorder now pins the generated
+  `clientMsgId` / `sendTime` inside `room.send`'s nested `message` as it does at the top level, and
+  the kind test accepts a nested member left out only through `nestedOmitted`, which names the
+  path and the reason and is checked against the inventory (not recorded into the sample file).
+
 ### Added (2026-10-09)
 
 - **`im.desk` — the nine `desk.*` endpoints of T4**, typed as TypeScript has typed them since

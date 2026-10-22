@@ -28,6 +28,7 @@ import 'logging.dart';
 import 'models.dart';
 import 'protocol.dart';
 import 'requests.dart';
+import 'room.dart';
 
 /// What a namespace needs from the connection, and nothing more.
 ///
@@ -1002,4 +1003,80 @@ final class ImDeskApi extends _Namespace {
   /// did not answer.
   Future<List<String>> suggest(ImDeskSuggestRequest request, [ImCancelToken? cancel]) async =>
       imStringList(await rawData('desk.suggest', request.toJson(), cancel));
+}
+
+// ---------------------------------------------------------------------------- room (T4)
+
+/// `room.*` — chat rooms: live-stream rooms and broadcast halls, where thousands talk at once and
+/// nobody needs yesterday's backlog (T4).
+///
+/// **A room message is not a conversation message.** It travels on `ImClient.messages` with `seq`
+/// 0 and conversation id `r_<roomId>` ([ImRoom.conversationIdOf]), is never stored, never repaired
+/// and never moves a cursor; a frame lost to a bad network is simply gone. That is the trade a room
+/// makes for scale, and it is why [send] is here and not a `msg.send` with a different address:
+/// its result's `seq` is always 0 and must not be read as a position.
+///
+/// **Membership belongs to this connection.** After a reconnect, [join] again — the server has
+/// forgotten this socket and this package does not rejoin on its own. The `room.muted`,
+/// `room.kicked` and `room.destroyed` events arrive on `ImClient.roomEvents`.
+///
+/// **Rooms are created and destroyed by the tenant's backend** (`POST /v1/rooms`,
+/// `DELETE /v1/rooms/{id}`). A room id nobody created, or one destroyed, is `1600` on every call.
+///
+/// 聊天室消息 seq 恒为 0：不入库、不补洞、不动游标，丢了就是丢了——这是聊天室换取规模的代价。
+/// 成员身份属于连接，重连后要重新 join。房间由租户后端经 REST 创建与销毁。
+final class ImRoomApi extends _Namespace {
+  const ImRoomApi(super.requester);
+
+  /// `room.join`. Enters the room on this connection and returns it, its online count, and its
+  /// recent messages (oldest first). Joining again is harmless. `1601` when the room is at
+  /// [ImChatRoom.maxOnline].
+  Future<ImRoomJoinResult> join(ImRoomIdRequest request, [ImCancelToken? cancel]) =>
+      decodeOne('room.join', request.toJson(), cancel, ImRoomJoinResult.fromJson);
+
+  /// `room.quit`. Leaves the room on this connection. Never fails for a room-specific reason.
+  Future<void> quit(ImRoomIdRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('room.quit', request.toJson(), cancel);
+
+  /// `room.send`. Broadcasts one message to whoever is in the room right now.
+  ///
+  /// The caller must have joined (`1602` otherwise, including after being kicked); a muted member
+  /// is `1506`, anyone but the owner and admins during a room-wide mute `1603`, a room over its
+  /// budget `1003`. **The result's `seq` is always 0** and its `conversationId` is `r_<roomId>`;
+  /// nothing here writes a cursor from it. A shadow-banned sender gets an ordinary success, and
+  /// only they see the message.
+  /// 结果的 seq 恒为 0，这里不会据此写任何游标。
+  Future<ImSendResult> send(ImRoomSendRequest request, [ImCancelToken? cancel]) =>
+      decodeOne('room.send', request.toJson(), cancel, ImSendResult.fromJson);
+
+  /// `room.onlineCount`. How many are in the room, across the cluster. The server answers a bare
+  /// number rather than an object.
+  Future<int> onlineCount(ImRoomIdRequest request, [ImCancelToken? cancel]) async =>
+      imIntOr(await rawData('room.onlineCount', request.toJson(), cancel));
+
+  /// `room.memberList`. **A sample of user ids, one membership shard per page — not the roster.**
+  /// Page on [ImPage.hasMore] / [ImPage.nextCursor] only; a page may be short, or empty, with
+  /// more to come.
+  /// 返回的是抽样，不是全量名单；只按 hasMore / nextCursor 翻页。
+  Future<ImPage<String>> memberList(ImRoomCursorRequest request, [ImCancelToken? cancel]) async {
+    final Map<String, dynamic> json =
+        imMap(await rawData('room.memberList', request.toJson(), cancel));
+    return ImPage<String>(
+      items: imStringList(json['items']),
+      hasMore: imBool(json['hasMore']),
+      nextCursor: imString(json['nextCursor']),
+      total: imInt(json['total']),
+    );
+  }
+
+  /// `room.mute`. Mutes or unmutes one member, or the whole room — see [ImRoomMuteRequest] for why
+  /// `untilMs` decides which. Owner and admins only (`1103`); never the owner (`1511`). Everyone in
+  /// the room hears `room.muted`.
+  Future<void> mute(ImRoomMuteRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('room.mute', request.toJson(), cancel);
+
+  /// `room.kick`. Removes a member from the room. Owner and admins only (`1103`); never the owner
+  /// (`1511`). Everyone in the room hears `room.kicked`.
+  Future<void> kick(ImRoomKickRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('room.kick', request.toJson(), cancel);
 }

@@ -106,6 +106,16 @@
     {"target":"desk.rate","type":"DeskRateRequest","via":"desk.rate #0","body":{"sessionId":"ds_1","score":2,"resolved":false,"starTags":["slow"],"comment":"wire"}},
     {"target":"desk.suggest","type":"DeskSuggestRequest","via":"desk.suggest #0","body":{"sessionId":"ds_1"}},
     {"target":"desk.canned","type":"DeskCannedRequest","via":"desk.canned #0","body":{"skill":"billing","scope":"personal","ownerMemberId":"m_1"}},
-    {"target":"desk.canned","type":"DeskCannedRequest","via":"desk.canned #1","body":{}}
+    {"target":"desk.canned","type":"DeskCannedRequest","via":"desk.canned #1","body":{}},
+    {"target":"room.join","type":"RoomIdRequest","via":"room.join #0","body":{"roomId":"live-wire"}},
+    {"target":"room.quit","type":"RoomIdRequest","via":"room.quit #0","body":{"roomId":"live-wire"}},
+    {"target":"room.send","type":"RoomSendRequest","via":"room.send #0","body":{"roomId":"live-wire","message":{"clientMsgId":"generated","contentType":2,"content":{"objectKey":"o/1.png","width":640},"mentionAll":true,"mentionedUserIds":["bob","carol"],"options":{"priority":2},"sendTime":1758412790000,"extensions":{"origin":"wire"}}}},
+    {"target":"room.send","type":"RoomSendRequest","via":"room.send #1","body":{"roomId":"live-wire","message":{"clientMsgId":"generated","contentType":1,"content":{"text":"gift"},"mentionAll":false,"mentionedUserIds":["host"],"options":{"priority":0},"sendTime":1758412790000}}},
+    {"target":"room.onlineCount","type":"RoomIdRequest","via":"room.onlineCount #0","body":{"roomId":"live-wire"}},
+    {"target":"room.memberList","type":"RoomCursorRequest","via":"room.memberList #0","body":{"roomId":"live-wire","cursor":"1","limit":100}},
+    {"target":"room.memberList","type":"RoomCursorRequest","via":"room.memberList #1","body":{"roomId":"live-wire","limit":50}},
+    {"target":"room.mute","type":"RoomMuteRequest","via":"room.mute #0","body":{"roomId":"live-wire","userId":"bob","untilMs":1758412860000}},
+    {"target":"room.mute","type":"RoomMuteRequest","via":"room.mute #1","body":{"roomId":"live-wire"}},
+    {"target":"room.kick","type":"RoomKickRequest","via":"room.kick #0","body":{"roomId":"live-wire","userId":"bob"}}
   ]
 }

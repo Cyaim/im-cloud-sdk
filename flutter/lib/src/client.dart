@@ -13,6 +13,7 @@ import 'models.dart';
 import 'options.dart';
 import 'protocol.dart';
 import 'requests.dart';
+import 'room.dart';
 
 /// The client applications use.
 ///
@@ -60,6 +61,7 @@ class ImClient {
     moderation = ImModerationApi(_connection);
     diag = ImDiagApi(_connection);
     desk = ImDeskApi(_connection);
+    room = ImRoomApi(_connection);
 
     // Defaulted rather than required, unlike the cursor store, and the asymmetry is deliberate:
     // losing cursors loses a user's messages, while losing logs loses a diagnostic (ADR-003).
@@ -150,6 +152,10 @@ class ImClient {
   /// agent taking, transferring and closing sessions. The conversation itself is an ordinary chat;
   /// see [ImDeskApi].
   late final ImDeskApi desk;
+
+  /// `room.*` — chat rooms (T4): join, quit, send, onlineCount, memberList, mute, kick. A room's
+  /// messages arrive on [messages] with `seq` 0 and never touch a cursor; see [ImRoomApi].
+  late final ImRoomApi room;
 
   /// The SDK's own runtime log: written here, read when the server asks this device for it.
   ///
@@ -242,6 +248,22 @@ class ImClient {
       .map(ImDeskEvent.tryParse)
       .where((ImDeskEvent? event) => event != null)
       .cast<ImDeskEvent>();
+
+  /// The `room.*` events, decoded: `room.muted`, `room.kicked`, `room.destroyed`, and any `room.`
+  /// name a newer server adds (delivered with its body rather than dropped).
+  ///
+  /// They arrive inside `evt.system`, which also carries events that are not about rooms — the
+  /// device-log request this client answers by itself. This stream is a second listener on that
+  /// target and keeps only names starting with `room.`; it never consumes or reorders anything
+  /// another listener needs. A room's *messages* are not here: they arrive on [messages] with
+  /// `seq` 0.
+  ///
+  /// 聊天室事件经 evt.system 到达。这里是该目标上的另一个监听者，只保留 `room.` 开头的事件，
+  /// 不影响设备日志等其他处理；聊天室消息本身在 messages 里（seq 为 0）。
+  Stream<ImRoomEvent> get roomEvents => events(ImPushTarget.system)
+      .map(ImRoomEvent.tryParse)
+      .where((ImRoomEvent? event) => event != null)
+      .cast<ImRoomEvent>();
 
   /// Loads the cursor store, then opens the socket. Idempotent.
   Future<void> connect() async {
