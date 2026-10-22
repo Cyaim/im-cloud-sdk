@@ -184,6 +184,7 @@ namespace Cyaim.Im
             Diag = new ImDiagApi(this);
             Desk = new ImDeskApi(this);
             Room = new ImRoomApi(this);
+            Keys = new ImKeysApi(this);
 
             // Defaulted rather than required, unlike the cursor store: losing cursors loses a
             // player's messages, while losing logs loses a diagnostic (ADR-003).
@@ -255,6 +256,13 @@ namespace Cyaim.Im
         /// touches a cursor or the gap repair; see <see cref="ImRoomApi"/>.
         /// </summary>
         public ImRoomApi Room { get; private set; }
+
+        /// <summary>
+        /// <c>keys.*</c> — the end-to-end encryption key directory (T4). The SDK moves opaque public-key
+        /// strings and performs no cryptography; <c>keys.claim</c> consumes a one-time prekey. See
+        /// <see cref="ImKeysApi"/>.
+        /// </summary>
+        public ImKeysApi Keys { get; private set; }
 
         /// <summary>
         /// The SDK's own runtime log: written here, read when the server asks this device for it.
@@ -845,7 +853,8 @@ namespace Cyaim.Im
         // ------------------------------------------------------------------- invoke
 
         /// <summary>
-        /// Escape hatch for any endpoint the typed surface does not cover yet.
+        /// Escape hatch for any endpoint the typed surface does not cover — one a newer server added
+        /// after this build, say.
         /// </summary>
         /// <remarks>
         /// It shares one code path with every typed method, so timeouts, cancellation and error
@@ -855,9 +864,9 @@ namespace Cyaim.Im
         /// </remarks>
         /// <example>
         /// <code>
-        /// // keys.remaining is tier 4 and not typed yet
-        /// var left = (await im.InvokeAsync("keys.remaining", JsonValue.NewObject()
-        ///     .Set("deviceId", deviceId))).AsInt();
+        /// // An endpoint a newer server ships before this SDK types it (the name is illustrative):
+        /// var reply = await im.InvokeAsync("feature.newCall", JsonValue.NewObject()
+        ///     .Set("id", id));
         /// </code>
         /// </example>
         public Task<JsonValue> InvokeAsync(

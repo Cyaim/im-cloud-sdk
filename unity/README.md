@@ -213,10 +213,11 @@ its target — so if you know the endpoint you know the call, in this SDK and in
 | `im.Diag` | `LogRequestsAsync` `LogUploadedAsync` — the client drives both; ordinary games never call them |
 | `im.Desk` | `RequestAsync` `AcceptAsync` `TransferAsync` `CloseAsync` `StatusAsync` `QueueAsync` `RateAsync` `CannedAsync` `SuggestAsync` — T4, the customer-service desk |
 | `im.Room` | `JoinAsync` `QuitAsync` `SendAsync` `OnlineCountAsync` `MemberListAsync` `MuteAsync` `KickAsync` — T4, chat rooms |
+| `im.Keys` | `PublishAsync` `UploadAsync` `RemainingAsync` `ClaimAsync` `DevicesAsync` `RevokeAsync` `SafetyNumberAsync` — T4, the end-to-end encryption key directory |
 
 That is tiers **T0**, **T1**, **T2** and **T3** of `sdk/CONTRACT.md`, plus the nine `desk.*`, the
-seven `room.*`, the four `msg.stream*`, the three scheduled-message calls, the three folder calls and
-`msg.translate` of T4 — 100 of the server's 107 endpoints: the session floor, everything a two-person chat app needs to launch, the contacts,
+seven `room.*`, the four `msg.stream*`, the three scheduled-message calls, the three folder calls,
+`msg.translate` and the seven `keys.*` of T4 — all 107 of the server's endpoints: the session floor, everything a two-person chat app needs to launch, the contacts,
 blocking, groups, presence and reporting that turn it into a messenger a store will accept, and the
 competitive-parity tier on top — pins, favourites, search, read-receipt detail, burn-after-reading
 and group administration. The names after the first `·` are T3; the groups marked T4 are T4.
@@ -400,7 +401,9 @@ await im.Msg.CancelScheduledAsync(s.ScheduleId);
   `ImScheduledMessage.CancelledBySender` ("cancelled by sender") means cancelled — **a cancelled schedule
   stays listed**; any other `Error` means the send failed for good; neither means still waiting.
   `IsPending` / `IsSent` / `IsCancelled` / `IsFailed` spell that out. Cancelling answers `1002` for an
-  unknown or someone else's schedule and `1006` once it is already being sent.
+  unknown or someone else's schedule. `1006` means nothing is left to cancel — it is being sent, was
+  already cancelled, or was already sent or failed; only the server's message tells which, so branch
+  on the code. For one that was sent, the remedy is `msg.recall` on the message it became.
 
 ### Conversation folders
 
@@ -457,6 +460,71 @@ catch (ImException e) when (e.Code == ImErrorCode.FeatureNotEnabled || e.Code ==
   (`1003`). One message that cannot be translated does not fail the call — its `Error` is set and the
   others carry their `Text`; `Cached` says the server answered from its cache.
 
+### Key directory (end-to-end encryption)
+
+The directory where each device publishes its **public** keys and a sender fetches a peer's to open
+a session (X3DH-style: identity key, signed prekey, one-time prekeys). `im.Keys` types its seven calls.
+
+**What the SDK does and does not do.** It moves the key material, unchanged. **It performs no
+cryptography**: generating key pairs, signing the signed prekey, running the key agreement and
+encrypting messages are your crypto library's. Every key and signature is an opaque **standard-base64**
+string (not base64url); pass it exactly as your library produced it — the server compares identity
+keys by exact string and hashes the strings into the safety number, so a re-encoded key is a different
+key. No private key can cross this surface, and the SDK writes no key material to any log (even the
+`Verbose` frame trace leaves `keys.*` bodies out).
+
+```csharp
+// Once per device, and again whenever you rotate the signed prekey:
+await im.Keys.PublishAsync(new ImPublishKeysRequest(
+    identity.PublicBase64,
+    new ImSignedPreKey("spk-7", spk.PublicBase64, spkSignatureBase64),
+    batch.Select(k => new ImOneTimePreKey(k.Id, k.PublicBase64)).ToArray())
+{
+    Algorithm = "x3dh-ed25519-aes256gcm-v1",   // null keeps the server default, x3dh-curve25519-aes256gcm-v1
+});
+if (await im.Keys.RemainingAsync() < 20) await im.Keys.UploadAsync(new ImUploadOneTimeKeysRequest(NextBatch()));
+
+// Sending to bob: one ciphertext per device.
+foreach (var device in await im.Keys.DevicesAsync(new ImDeviceKeysRequest("bob")))
+{
+    var bundle = await im.Keys.ClaimAsync("bob", device.DeviceId);   // consumes one of that device's one-time prekeys
+    OpenSession(bundle);                                               // bundle.OneTimePreKey may be null
+}
+var fingerprint = await im.Keys.SafetyNumberAsync("bob");           // 12 groups of 5 digits
+```
+
+- **`ClaimAsync` consumes.** Each claim hands out one one-time prekey and deletes it (first in, first
+  out), so `RemainingAsync` drops by one. It is **not idempotent: never retry it after a lost reply as
+  if it were, and never prefetch.** When the pool is empty the claim still succeeds, with
+  `OneTimePreKey` null. Claiming your own device is allowed and drains your own pool.
+- **`PublishAsync` replaces and keeps the pool.** Identity key, signed prekey and algorithm are
+  replaced; the one-time pool is kept and the new keys appended — unless the identity key changed,
+  which deletes the old pool first. The device and platform are the connection's; they are not on the
+  request. The signed prekey's `Signature` is the identity key's over the decoded bytes of its
+  `PublicKey` only; the server verifies it (`1001` when it does not) and picks the scheme from
+  `Algorithm` (`curve25519` / `x25519` / `xed25519`, `ed25519`, `p256`; anything else `1008`). A null
+  member of a signed or one-time prekey is refused before sending: inside those nested objects the
+  server requires every name, case-sensitively, and a body without one is `1000` for the whole call.
+- **`UploadAsync` appends** to the connected device's pool; `1002` before that device has published.
+  One-time prekeys with a blank or repeated `KeyId` or a `PublicKey` that is not base64 are dropped
+  without an error.
+- **`RevokeAsync(deviceId)`** forgets one of your own devices: after it, a claim is `1002`, the device
+  is gone from `DevicesAsync`, and both sides' safety numbers change. The id is required (never
+  defaulted to this device); **revoking an unknown device succeeds**.
+- **The safety number** is the same from either side, 12 groups of 5 digits separated by spaces. It
+  changes when a device is added or revoked or an identity key changes, not on signed-prekey rotation
+  or one-time-key use. `1002` when either side has nothing published.
+- **Limits:** 100 one-time prekeys per call and 100 held per device (the oldest kept); 10 devices per
+  user (an eleventh is `1202 QuotaExceeded`); identity keys up to 256 characters; a device's keys
+  expire 180 days after its last publish or upload.
+- **Callable whether or not the app's `e2ee.enabled` is set.** That switch constrains settings writes
+  and translation, not the directory; there is no `1203` / `1204` here.
+- **No events.** Nothing is pushed for a revoked device, a changed identity key or a pool running low —
+  call `DevicesAsync` and `RemainingAsync` again (on launch, before sending).
+- `DevicesAsync` comes back in no particular order; an unknown user is an empty list, and an unknown
+  device's `RemainingAsync` is 0. Neither is an error. `RemainingAsync()` and `DevicesAsync()` with no
+  request mean this device and yourself.
+
 ### Tier T3 — what the signatures do not say
 
 Every T3 method carries its full list of refusals in its doc comment. These are the ones that bite:
@@ -484,14 +552,14 @@ Every T3 method carries its full list of refusals in its doc comment. These are 
   Called with no request it lists across every group you manage.
 - **`friend.setRemark` without `Remark` clears the remark**, while leaving `Tags` null keeps them.
 
-Everything else — the seven `keys.*` endpoints of T4, the end-to-end-encryption key directory — is
-reachable today through the escape hatch, which shares one code path with the typed surface and is
-not going away:
+Every endpoint the server publishes today is typed. The escape hatch stays, for an endpoint a newer
+server ships before this SDK types it; it shares one code path with the typed surface and is not
+going away:
 
 ```csharp
-// keys.remaining is tier 4 and not typed yet
-var left = (await im.InvokeAsync("keys.remaining", JsonValue.NewObject()
-    .Set("deviceId", deviceId))).AsInt();
+// The name is illustrative:
+var reply = await im.InvokeAsync("feature.newCall", JsonValue.NewObject()
+    .Set("id", id));
 ```
 
 `InvokeAsync` never touches a cursor: `InvokeAsync("msg.sync", …)` returns messages and moves

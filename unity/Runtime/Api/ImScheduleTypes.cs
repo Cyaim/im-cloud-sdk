@@ -162,11 +162,12 @@ namespace Cyaim.Im
 
     /// <summary>Body of <c>msg.cancelScheduled</c>: which schedule.</summary>
     /// <remarks>
-    /// Refusals: <c>1002</c> for an unknown schedule or someone else's; <c>1006</c> once it is already
-    /// being sent and can no longer be cancelled. A cancelled schedule is not removed: it stays in
-    /// <c>msg.scheduled</c> for about 48 hours with <see cref="ImScheduledMessage.Error"/> set to
-    /// <see cref="ImScheduledMessage.CancelledBySender"/>.
-    /// 1002：不存在或不是你的；1006：已经在发送、取消不了。取消后不会从列表消失，约 48 小时内带着 "cancelled by sender" 列出。
+    /// Refusals: <c>1002</c> for an unknown schedule or someone else's; <c>1006</c> when nothing is left
+    /// to cancel — it is being sent, was already cancelled, or was already sent or failed (only the
+    /// server's message tells which; see <see cref="ImMsgApi.CancelScheduledAsync(ImScheduleIdRequest, System.Threading.CancellationToken)"/>).
+    /// A cancelled schedule is not removed: it stays in <c>msg.scheduled</c> for about 48 hours with
+    /// <see cref="ImScheduledMessage.Error"/> set to <see cref="ImScheduledMessage.CancelledBySender"/>.
+    /// 1002：不存在或不是你的；1006：已无可取消——正在发送、已取消、或已发出 / 已失败。取消后不会从列表消失，约 48 小时内带着 "cancelled by sender" 列出。
     /// </remarks>
     public sealed class ImScheduleIdRequest : IImRequest
     {

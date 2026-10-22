@@ -80,6 +80,7 @@ namespace Cyaim.Im.Tests
             typeof(ImDiagApi),
             typeof(ImDeskApi),
             typeof(ImRoomApi),
+            typeof(ImKeysApi),
         };
 
         /// <summary>
@@ -126,6 +127,7 @@ namespace Cyaim.Im.Tests
         {
             "room.", "msg.stream",
             "msg.schedule", "msg.cancelScheduled", "conv.folders", "conv.upsertFolder", "conv.deleteFolder", "msg.translate",
+            "keys.",
         };
 
         /// <summary>
@@ -137,6 +139,12 @@ namespace Cyaim.Im.Tests
             new KeyValuePair<string, string>(
                 "RecallMessageRequest.asAdmin",
                 "MsgController.Recall forces it false for every socket call; recalling as an admin is a server-API capability, so ImRecallMessageRequest has no member for it"),
+            new KeyValuePair<string, string>(
+                "PublishKeysRequest.deviceId",
+                "KeysController.Publish overwrites it with the connection's device, so a device can only publish for itself; ImPublishKeysRequest has no member for it"),
+            new KeyValuePair<string, string>(
+                "PublishKeysRequest.platform",
+                "KeysController.Publish overwrites it with the connection's platform; ImPublishKeysRequest has no member for it"),
         };
 
         private sealed class Row
@@ -698,6 +706,35 @@ namespace Cyaim.Im.Tests
                 R("room.mute", "Room.MuteAsync, one member until a time", c => c.Room.MuteAsync(new ImRoomMuteRequest("lobby", "bob", 1758499200000L))),
                 R("room.mute", "Room.MuteAsync, whole room, unmute", c => c.Room.MuteAsync(ImRoomMuteRequest.Unmute("lobby"))),
                 R("room.kick", "Room.KickAsync", c => c.Room.KickAsync(new ImRoomKickRequest("lobby", "bob"))),
+
+                // ------------------------------------------------------------- keys (T4)
+                // Key material is the recorder's own opaque standard-base64 strings: the SDK passes them
+                // through unchanged. The minimal publish sends an empty pool, createdAt 0 and no algorithm;
+                // remaining and devices are recorded both empty ({} = this device / yourself) and named.
+                // 密钥材料是本文件自己写的标准 base64 字符串，SDK 原样透传。最小发布：空池、createdAt 为 0、不带算法；
+                // remaining 与 devices 各录空请求体（当前设备 / 自己）与点名两种。
+                R("keys.publish", "Keys.PublishAsync, every member", c => c.Keys.PublishAsync(new ImPublishKeysRequest(
+                    "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=",
+                    new ImSignedPreKey("spk_1", "ISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0A=", "c2lnbmF0dXJl/+8=", 1758412800000L),
+                    new ImOneTimePreKey("otk_1", "b3RrLTE="),
+                    new ImOneTimePreKey("otk_2", "b3RrLTI="))
+                {
+                    Algorithm = "x3dh-ed25519-aes256gcm-v1",
+                })),
+                R("keys.publish", "Keys.PublishAsync, minimal", c => c.Keys.PublishAsync(new ImPublishKeysRequest(
+                    "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=",
+                    new ImSignedPreKey("spk_1", "ISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0A=", "c2lnbmF0dXJl/+8=")))),
+                R("keys.upload", "Keys.UploadAsync", c => c.Keys.UploadAsync(new ImUploadOneTimeKeysRequest(new ImOneTimePreKey("otk_3", "b3RrLTM=")))),
+                R("keys.remaining", "Keys.RemainingAsync, a named device", c => c.Keys.RemainingAsync(new ImRemainingKeysRequest("device-2"))),
+                R("keys.remaining", "Keys.RemainingAsync, the connected device", c => c.Keys.RemainingAsync()),
+                R("keys.claim", "Keys.ClaimAsync(ImClaimBundleRequest)", c => c.Keys.ClaimAsync(new ImClaimBundleRequest("bob", "device-9"))),
+                R("keys.claim", "Keys.ClaimAsync(string, string)", c => c.Keys.ClaimAsync("bob", "device-9")),
+                R("keys.devices", "Keys.DevicesAsync, a named user", c => c.Keys.DevicesAsync(new ImDeviceKeysRequest("bob"))),
+                R("keys.devices", "Keys.DevicesAsync, your own", c => c.Keys.DevicesAsync()),
+                R("keys.revoke", "Keys.RevokeAsync(ImRevokeDeviceRequest)", c => c.Keys.RevokeAsync(new ImRevokeDeviceRequest("device-2"))),
+                R("keys.revoke", "Keys.RevokeAsync(string)", c => c.Keys.RevokeAsync("device-2")),
+                R("keys.safetyNumber", "Keys.SafetyNumberAsync(ImSafetyNumberRequest)", c => c.Keys.SafetyNumberAsync(new ImSafetyNumberRequest("bob"))),
+                R("keys.safetyNumber", "Keys.SafetyNumberAsync(string)", c => c.Keys.SafetyNumberAsync("bob")),
 
                 // ------------------------------------------- frozen [Obsolete] aliases
                 R("msg.send", "ImClient.SendAsync [Obsolete]", c => c.SendAsync(FullSend(ImRecipient.Conversation("c_wire"), ImConversationType.Single, "cm-4"))),

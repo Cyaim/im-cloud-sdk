@@ -600,9 +600,24 @@ namespace Cyaim.Im
 
         /// <summary>Cancels a schedule that has not been sent yet.</summary>
         /// <remarks>
-        /// <c>1002</c> for an unknown schedule or someone else's; <c>1006</c> when it is already being sent.
+        /// <para>
+        /// <c>1002</c> for an unknown schedule or someone else's. <c>1006</c> means <b>nothing is left to
+        /// cancel</b>, in one of three states that differ only in the server's message:
+        /// </para>
+        /// <list type="bullet">
+        /// <item>in flight — "this message is already being sent and can no longer be cancelled";</item>
+        /// <item>already cancelled — "this scheduled message has already been cancelled";</item>
+        /// <item>already sent or failed — "this scheduled message has already been sent or has failed, and
+        /// can no longer be cancelled".</item>
+        /// </list>
+        /// <para>
+        /// Branch on the code, not the text. For one that was sent, the remedy is <c>msg.recall</c> on the
+        /// message it became (its <see cref="ImScheduledMessage.MessageId"/>).
         /// The entry is not removed: <c>msg.scheduled</c> keeps it for about 48 hours with
         /// <see cref="ImScheduledMessage.Error"/> = <see cref="ImScheduledMessage.CancelledBySender"/>.
+        /// 未知或别人的是 1002。1006 表示已无可取消：正在发送、已取消、已发出或已失败三种情况，只有消息文本不同；
+        /// 按码分支，不要按文本。已发出的那种，补救办法是对它变成的那条消息 msg.recall。
+        /// </para>
         /// </remarks>
         public Task CancelScheduledAsync(
             ImScheduleIdRequest request,

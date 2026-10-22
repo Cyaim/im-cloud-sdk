@@ -10,6 +10,37 @@ to ask which platform.
 
 ### Added
 
+- **The key directory — the seven `keys.*` endpoints of T4 (end-to-end encryption)** on the new
+  `im.Keys`: `PublishAsync`, `UploadAsync`, `RemainingAsync`, `ClaimAsync` (also `(userId, deviceId)`),
+  `DevicesAsync`, `RevokeAsync` (also `(deviceId)`), `SafetyNumberAsync` (also `(peerUserId)`), with
+  `ImPublishKeysRequest`, `ImSignedPreKey`, `ImOneTimePreKey`, `ImUploadOneTimeKeysRequest`,
+  `ImRemainingKeysRequest`, `ImClaimBundleRequest`, `ImDeviceKeysRequest`, `ImRevokeDeviceRequest`,
+  `ImSafetyNumberRequest`, `ImPreKeyBundle` and `ImDeviceKeyInfo`. **The SDK performs no cryptography**:
+  keys and signatures are opaque standard-base64 strings passed through unchanged. `ImPublishKeysRequest`
+  has no device id or platform (the server takes both from the connection); the nested `signedPreKey` /
+  `oneTimePreKeys[]` / `keys[]` names are written in the exact camelCase the binder requires, and a null
+  member there is refused before sending (it would be `1000` for the whole call). `RemainingAsync()` and
+  `DevicesAsync()` send `{}` (this device / yourself); `RemainingAsync` reads the bare number,
+  `DevicesAsync` the bare array, `SafetyNumberAsync` the bare string. `ClaimAsync` consumes a one-time
+  prekey and is documented as non-idempotent; an empty pool decodes as `OneTimePreKey == null`. No
+  `e2ee.enabled` gate, no event decoder: the server has neither.
+- **The `Verbose` frame trace leaves `keys.*` bodies out** (requests and their replies): the id and
+  target are traced, the key material is not. Every other frame is traced verbatim as before.
+- `KeysTests` (17): every call's whole frame by JSON kind with the nested names exact; replies with every
+  member decoded; request bodies and reply fixtures held to `endpoint-inventory.json` `payloadTypes`
+  (`PublishKeysRequest` less the two connection-owned members); the empty-pool claim; a claim sent
+  exactly once whether refused (`1005`, `1002`) or unanswered (`1004`); the `1001` / `1008` / `1202` /
+  `1002` refusals as ordinary `ImException`s with the server's words; argument checks before sending;
+  key material unchanged on the wire and absent from both logs even at `Verbose`. Rows for every new
+  method and overload in `WireSampleRecorderTests` (`keys.` joins `TypedFamilies`;
+  `PublishKeysRequest.deviceId` / `.platform` are declared omitted with the reason);
+  `wire-samples/unity.json` re-recorded (additions only).
+- README: a "Key directory (end-to-end encryption)" section, the `im.Keys` row and the tally (all 107);
+  the `InvokeAsync` example (README and `ImClient`) now names an illustrative future endpoint.
+- Docs fix: `msg.cancelScheduled` (`ImMsgApi`, `ImScheduleIdRequest`, README) said `1006` meant "already
+  being sent". It means nothing is left to cancel — in flight, already cancelled, or already sent / failed —
+  and only the server's message tells which; for a sent one the remedy is `msg.recall`.
+
 - **Scheduled messages — `msg.schedule` / `msg.scheduled` / `msg.cancelScheduled` (T4)** on `im.Msg`:
   `ScheduleAsync`, `ScheduledAsync`, `CancelScheduledAsync` (also `(scheduleId)`), with
   `ImScheduleRequest` (the server's flat `ScheduleRequest`: addressed by `ImRecipient`, `SendAt` in unix

@@ -1130,8 +1130,32 @@ namespace Cyaim.Im
                 .Set("body", body != null ? body : JsonValue.NewObject());
 
             var text = payload.ToJson();
-            ImLog.Verbose("→ " + text);
+            ImLog.Verbose("→ " + Traced(text, id, target));
             transport.Send(text);
+        }
+
+        /// <summary>
+        /// The frame as the Verbose trace writes it: verbatim, except a <c>keys.*</c> frame, whose body
+        /// is left out.
+        /// </summary>
+        /// <remarks>
+        /// The key directory's bodies are public key material only, but the SDK never writes key
+        /// material to a log: a trace pasted into a bug report should not carry a player's identity
+        /// key, and the safety number is computed from exactly those strings. The id and target stay,
+        /// so the trace still shows the call happened.
+        /// 密钥目录的帧体只有公钥材料，但 SDK 从不把密钥材料写进日志：贴进工单的追踪不该带着玩家的身份公钥。
+        /// id 与目标保留，追踪里仍看得出这次调用发生过。
+        /// </remarks>
+        private static string Traced(string text, string id, string target)
+        {
+            if (target == null || !target.StartsWith("keys.", StringComparison.OrdinalIgnoreCase))
+            {
+                return text;
+            }
+
+            return "{\"id\":\"" + id + "\",\"target\":\"" + target + "\"} ("
+                + text.Length.ToString(CultureInfo.InvariantCulture)
+                + " characters; a keys.* body is key material and is not traced)";
         }
 
         private string NextRequestId()
@@ -1169,11 +1193,11 @@ namespace Cyaim.Im
                 return;
             }
 
-            ImLog.Verbose("← " + text);
-
             JsonValue root;
             if (!ImJson.TryParse(text, out root))
             {
+                ImLog.Verbose("← " + text);
+
                 // A frame we cannot read is a frame we must drop rather than half-interpret.
                 ImLog.Warn("dropped an unparseable frame of " +
                            text.Length.ToString(CultureInfo.InvariantCulture) + " characters");
@@ -1183,7 +1207,14 @@ namespace Cyaim.Im
             var frame = ImFrame.FromJson(root);
 
             PendingRequest waiting = null;
-            if (!string.IsNullOrEmpty(frame.Id) && _pending.TryGetValue(frame.Id, out waiting))
+            var isReply = !string.IsNullOrEmpty(frame.Id) && _pending.TryGetValue(frame.Id, out waiting);
+
+            // Traced once the frame is read, so a reply is judged by the target it answers rather than
+            // by whatever target the reply itself carries.
+            // 解析之后再追踪：答复按它所答的请求的目标判断，而不是按答复自己带的目标。
+            ImLog.Verbose("← " + Traced(text, frame.Id, isReply ? waiting.Target : frame.Target));
+
+            if (isReply)
             {
                 _pending.Remove(frame.Id);
                 waiting.Release();

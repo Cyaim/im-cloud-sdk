@@ -53,6 +53,7 @@ namespace Cyaim.Im.Tests
             { typeof(ImDiagApi), "diag" },
             { typeof(ImDeskApi), "desk" },
             { typeof(ImRoomApi), "room" },
+            { typeof(ImKeysApi), "keys" },
         };
 
         /// <summary>
