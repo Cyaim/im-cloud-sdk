@@ -116,6 +116,16 @@
     {"target":"room.memberList","type":"RoomCursorRequest","via":"room.memberList #1","body":{"roomId":"live-wire","limit":50}},
     {"target":"room.mute","type":"RoomMuteRequest","via":"room.mute #0","body":{"roomId":"live-wire","userId":"bob","untilMs":1758412860000}},
     {"target":"room.mute","type":"RoomMuteRequest","via":"room.mute #1","body":{"roomId":"live-wire"}},
-    {"target":"room.kick","type":"RoomKickRequest","via":"room.kick #0","body":{"roomId":"live-wire","userId":"bob"}}
+    {"target":"room.kick","type":"RoomKickRequest","via":"room.kick #0","body":{"roomId":"live-wire","userId":"bob"}},
+    {"target":"msg.streamBegin","type":"BeginStreamRequest","via":"msg.streamBegin #0","body":{"conversationId":"s_alice_bob","receiverId":"bob","groupId":"team","clientMsgId":"generated","contentType":100,"placeholder":{"name":"Assistant","avatar":"https://cdn.test/a.png"},"options":{"persistent":false,"updateConversation":false,"countUnread":false,"offlinePush":false,"pushConfig":{"title":"New message","body":"Bob: invoice","sound":"chime","payload":{"route":"/chat/g_wire"},"badgeCount":false,"channelId":"im_messages"},"needReceipt":true,"priority":2,"onlineOnly":true,"noSelfSync":true,"expireIn":5000,"moderationBypass":true},"extensions":{"model":"house-7b"}}},
+    {"target":"msg.streamBegin","type":"BeginStreamRequest","via":"msg.streamBegin #1","body":{"receiverId":"bob","clientMsgId":"generated","contentType":1}},
+    {"target":"msg.streamAppend","type":"StreamAppendRequest","via":"msg.streamAppend #0","body":{"streamId":"st_wire","delta":"Hel"}},
+    {"target":"msg.streamAppend","type":"StreamAppendRequest","via":"msg.streamAppend #1","body":{"streamId":"st_wire","delta":"lo"}},
+    {"target":"msg.streamComplete","type":"CompleteStreamRequest","via":"msg.streamComplete #0","body":{"streamId":"st_wire","content":{"text":"Hello, world."},"extensions":{"tokens":42}}},
+    {"target":"msg.streamComplete","type":"CompleteStreamRequest","via":"msg.streamComplete #1","body":{"streamId":"st_wire"}},
+    {"target":"msg.streamComplete","type":"CompleteStreamRequest","via":"msg.streamComplete #2","body":{"streamId":"st_wire","content":{"text":"Hello."},"extensions":{"n":1}}},
+    {"target":"msg.streamAbort","type":"StreamAbortRequest","via":"msg.streamAbort #0","body":{"streamId":"st_wire","reason":"the user pressed stop"}},
+    {"target":"msg.streamAbort","type":"StreamAbortRequest","via":"msg.streamAbort #1","body":{"streamId":"st_wire"}},
+    {"target":"msg.streamAbort","type":"StreamAbortRequest","via":"msg.streamAbort #2","body":{"streamId":"st_wire","reason":"model timed out"}}
   ]
 }

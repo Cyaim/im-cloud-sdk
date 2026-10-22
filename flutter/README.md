@@ -231,7 +231,7 @@ endpoint greps straight to the call.
 | Namespace | Methods |
 |---|---|
 | `im.conn` | `heartbeat` `reauth` `sync` |
-| `im.msg` | `send` `sync` `history` `recall` `delete` `typing` `edit` `forward` `react` `receipt` · `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search` `receiptDetail` |
+| `im.msg` | `send` `sync` `history` `recall` `delete` `typing` `edit` `forward` `react` `receipt` · `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search` `receiptDetail` — and T4's `streamBegin` `streamAppend` `streamComplete` `streamAbort` (see below) |
 | `im.conv` | `list` `get` `read` `unreadTotal` `setting` `delete` `clear` · `markUnread` |
 | `im.user` | `me` `profile` `batchProfile` `updateProfile` `presence` `subscribePresence` `unsubscribePresence` · `setStatus` |
 | `im.friend` | `list` `add` `handleRequest` `requestList` `delete` `blockList` `block` `unblock` · `setRemark` |
@@ -244,8 +244,9 @@ endpoint greps straight to the call.
 | `im.room` | `join` `quit` `send` `onlineCount` `memberList` `mute` `kick` — T4, chat rooms (see below) |
 
 That is contract tiers **T0, T1, T2 and T3 complete** — session floor, 1:1 chat MVP, social graph
-and groups, and competitive parity — plus the nine `desk.*` and seven `room.*` of T4: 89 of the
-server's 107 endpoints. The names after the `·` are T3. The other 18 endpoints of T4 go through
+and groups, and competitive parity — plus the nine `desk.*`, seven `room.*` and four `msg.stream*`
+of T4: 93 of the server's 107 endpoints. The names after the `·` are T3. The other 14 endpoints of T4
+go through
 `invoke()` until they are typed. Every method takes exactly one request object named for the server DTO, so the
 server adding an optional field stays additive instead of breaking your call sites.
 
@@ -310,6 +311,79 @@ im.roomEvents.listen((ImRoomEvent e) {       // room.muted / room.kicked / room.
 - `im.roomEvents` keeps only `evt.system` events whose name starts with `room.`, so the device-log
   request on the same target is left to the client. A `room.` event this build does not type is
   delivered with its `body` intact.
+
+### Streaming replies — fragments are not messages; the finished stream is
+
+An AI assistant (or any generator) types its reply out while it produces it. The platform calls no
+model: the producer opens a stream, appends fragments, and completes it. Anyone who may `msg.send`
+in a conversation may stream into it, as themselves; there is no app setting or add-on behind it.
+Single chats (self-chat included) and groups of up to 200 members only — a chat room, system or
+assistant conversation is `1008`.
+
+**Sender** — the four calls are `msg.*` endpoints, so they are on `im.msg` under their own names;
+`ImStreamWriter` holds the stream id for you:
+
+```dart
+final ImStreamWriter writer = await ImStreamWriter.begin(im.msg, ImBeginStreamRequest(
+  receiverId: 'bob',                                   // or conversationId / groupId, as for msg.send
+  placeholder: <String, dynamic>{'name': 'Assistant'}, // drawn by the receivers before the first token
+));
+for (final String token in tokens) {
+  await writer.append(token);                          // one at a time: the server numbers by arrival
+}
+final ImSendResult sent = await writer.complete();     // or writer.abort('the user pressed stop')
+```
+
+- `clientMsgId` is the idempotency key of the **finished message**, required by the server (`1001`)
+  and generated here when you leave it out. Keep it: if complete is rejected, re-sending the text as
+  an ordinary `msg.send` with the same key gives the one message, not a duplicate.
+- `options` are checked at **begin**: a client may not set `pushConfig.title` / `body` (`1103`), nor
+  stream unstored media (`persistent: false` / `onlineOnly` image, voice, video or file) while the app
+  moderates (`1103`). The begin-time refusals are `msg.send`'s (`1104`, `1408`, `1303`, `1302`,
+  `1500`, `1501`, `1503`, `1506`, `1505`); `1003` past 60 begins a minute.
+- `append`: up to 4096 characters per fragment and 16384 in all (less on an app with a small
+  message size), else `1401` — **and the stream stays open**, so abort or complete it. `1003` past
+  100 appends a second. An empty fragment is accepted and dropped.
+- `complete` with no `content` stores `{"text": <every fragment, joined>}`; with `content` it stores
+  that instead. It returns `msg.send`'s result and can fail as `msg.send` does — the stream is over
+  either way. A second complete or abort, or any call after the idle limit, is `1002`; another
+  producer's stream id is `1103`.
+- A stream with no append for `idleTimeoutSeconds` (30) is abandoned by the server 30–60 seconds
+  after the last append: the receivers get an aborted frame and no message is stored. There is no
+  limit on total length, only on pauses. Abort rather than going quiet.
+
+**Receiver** — `im.streamEvents` decodes `evt.stream` into `ImStreamEvent`; `ImStreamAssembler`
+puts the frames back together:
+
+```dart
+im.streamEvents.transform(ImStreamAssembler()).listen((ImStreamState s) {
+  switch (s.status) {
+    case ImStreamStatus.streaming: drawPlaceholder(s.streamId, s.placeholder, s.text);
+    case ImStreamStatus.completed: replaceWithMessage(s.streamId, s.messageId!); // from im.messages
+    case ImStreamStatus.aborted:   dropPlaceholder(s.streamId, s.abortReason);
+  }
+});
+```
+
+- Frames are numbered 0 (the opening frame: no text, the `placeholder`), 1, 2, … (fragments), and
+  the terminal frame is one past the last fragment: done, with `messageId` and `seq` when the stream
+  became a message, with `abortReason` when it did not (aborted, idle, or refused by the send
+  pipeline). Every frame goes to the participants online at that moment, the producer's own
+  connections included.
+- **Fragments are not messages**: no seq, never stored, never repaired, never in `msg.sync`, and
+  they move no cursor — `streamEvents` is a separate target and never touches the message path.
+  Fragments travel at low priority, so the server drops them under backpressure, and the opening
+  frame, terminal frame and finished message can overtake queued ones. The assembler orders by
+  index, ignores duplicates, lets a late fragment fill in a finished stream, and counts holes
+  (`hasGap`, `missingFragments`) **without repairing them**. On a hole, a midway join (no opening
+  frame) or after being offline, wait for the message.
+- **The finished stream is an ordinary message**: it arrives on `im.messages` with a real seq, the
+  begin call's `clientMsgId` and `sendTime` = when the stream started, and goes through the normal
+  cursor and gap-repair path like any other — the producer's own devices get it too. It may come
+  before or after the terminal frame; match the two on `messageId`. Render the message, not the
+  assembled text: a producer may have completed with different content.
+- A stream whose terminal frame was lost with the connection stays `streaming` in the assembler (the
+  server does not replay frames); call `forget` / `clear` when you stop drawing it.
 
 ### Tier T3 — what the signatures do not say
 

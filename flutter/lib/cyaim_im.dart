@@ -44,4 +44,5 @@ export 'src/requests.dart';
 export 'src/room.dart';
 export 'src/socket.dart'
     show ImSocket, ImSocketFactory, WebSocketChannelSocket, defaultImSocketFactory;
+export 'src/streaming.dart';
 export 'src/version.dart' show ImSdk;

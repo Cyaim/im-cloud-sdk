@@ -11,6 +11,23 @@ tiers T0 and T1 complete on all five platforms with §5 and §6 implemented ever
 
 ### Added (2026-10-22)
 
+- **The four streaming calls of T4 on `im.msg`**: `streamBegin`, `streamAppend`, `streamComplete`,
+  `streamAbort` — named for their endpoints (CONTRACT §4.2), with `ImBeginStreamRequest` (address
+  as for `msg.send`, `clientMsgId` generated when omitted, `contentType`, `placeholder`, nested
+  `ImMessageOptions`, `extensions`), `ImStreamAppendRequest`, `ImCompleteStreamRequest`,
+  `ImStreamAbortRequest` and `ImStreamHandle`; `streamComplete` returns `ImSendResult` and writes no
+  cursor. `ImStreamWriter` is an optional handle over the same four calls.
+- `im.streamEvents` decodes `evt.stream` into `ImStreamEvent` (`phase`: begin / delta / completed /
+  aborted; a `messageId` read as a string whether it arrives quoted or bare), and
+  `ImStreamAssembler` puts the frames back together by the server's rules: ordered by index,
+  duplicates ignored, a fragment that lands after the terminal frame filling in the finished stream
+  rather than opening a new one, holes counted (`hasGap`, `missingFragments`) and never repaired.
+- Tests prove the frames stay out of the message path (no `msg.sync`, no cursor, even when the
+  terminal frame names a seq past the cursor) while the finished message goes through it, gap repair
+  included, before or after its terminal frame. The four request bodies are in
+  `wire-samples/flutter.json`, one with every member (nested `options` and `options.pushConfig`
+  included) and one minimal; the README has a "Streaming replies" section.
+
 - **`im.room` — the seven `room.*` endpoints of T4**: `join`, `quit`, `send`, `onlineCount`,
   `memberList`, `mute`, `kick`, with `ImRoomIdRequest`, `ImRoomCursorRequest`, `ImRoomSendRequest`
   (an `ImRoomMessage` nested under `message` — the members of `SendMessageRequest` a room reads,

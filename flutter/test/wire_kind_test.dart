@@ -145,6 +145,7 @@ Map<String, List<Future<void> Function(ImClient im)>> recipes() {
       ImGroupCursorRequest(groupId: 'team', cursor: 'p2', limit: 100);
   const ImGroupMembersRequest members =
       ImGroupMembersRequest(groupId: 'team', userIds: <String>['bob', 'carol'], reason: 'wire');
+  const ImStreamHandle stream = ImStreamHandle(streamId: 'st_wire', conversationId: 's_alice_bob');
 
   return <String, List<Future<void> Function(ImClient im)>>{
     // conn
@@ -610,6 +611,49 @@ Map<String, List<Future<void> Function(ImClient im)>> recipes() {
     ],
     'room.kick': <Future<void> Function(ImClient)>[
       (ImClient im) => im.room.kick(const ImRoomKickRequest(roomId: 'live-wire', userId: 'bob')),
+    ],
+
+    // msg.stream* (T4) — one row with every member, nested options and options.pushConfig included,
+    // and a minimal row; ImStreamWriter builds the append / complete / abort bodies itself, so its
+    // call paths are judged too.
+    // 流式四条：一行全字段（含嵌套 options 与 options.pushConfig）、一行最小；ImStreamWriter
+    // 自己拼 append / complete / abort 的请求体，所以也单独判。
+    'msg.streamBegin': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.msg.streamBegin(ImBeginStreamRequest(
+            conversationId: 's_alice_bob',
+            receiverId: 'bob',
+            groupId: 'team',
+            clientMsgId: 'cm-stream-wire',
+            contentType: ImMessageContentType.custom,
+            placeholder: <String, dynamic>{'name': 'Assistant', 'avatar': 'https://cdn.test/a.png'},
+            options: options,
+            extensions: <String, dynamic>{'model': 'house-7b'},
+          )),
+      (ImClient im) =>
+          im.msg.streamBegin(ImBeginStreamRequest(receiverId: 'bob', clientMsgId: 'cm-stream-min')),
+    ],
+    'msg.streamAppend': <Future<void> Function(ImClient)>[
+      (ImClient im) =>
+          im.msg.streamAppend(const ImStreamAppendRequest(streamId: 'st_wire', delta: 'Hel')),
+      (ImClient im) => ImStreamWriter(im.msg, stream).append('lo'),
+    ],
+    'msg.streamComplete': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.msg.streamComplete(const ImCompleteStreamRequest(
+            streamId: 'st_wire',
+            content: <String, dynamic>{'text': 'Hello, world.'},
+            extensions: <String, dynamic>{'tokens': 42},
+          )),
+      (ImClient im) => im.msg.streamComplete(const ImCompleteStreamRequest(streamId: 'st_wire')),
+      (ImClient im) => ImStreamWriter(im.msg, stream).complete(
+            content: <String, dynamic>{'text': 'Hello.'},
+            extensions: <String, dynamic>{'n': 1},
+          ),
+    ],
+    'msg.streamAbort': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.msg.streamAbort(
+          const ImStreamAbortRequest(streamId: 'st_wire', reason: 'the user pressed stop')),
+      (ImClient im) => im.msg.streamAbort(const ImStreamAbortRequest(streamId: 'st_wire')),
+      (ImClient im) => ImStreamWriter(im.msg, stream).abort('model timed out'),
     ],
   };
 }

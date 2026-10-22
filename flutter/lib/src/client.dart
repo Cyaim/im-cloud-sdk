@@ -14,6 +14,7 @@ import 'options.dart';
 import 'protocol.dart';
 import 'requests.dart';
 import 'room.dart';
+import 'streaming.dart';
 
 /// The client applications use.
 ///
@@ -116,7 +117,8 @@ class ImClient {
   late final ImConnApi conn;
 
   /// `msg.*` — send, sync, history, recall, delete, typing, edit, forward, react, receipt; and
-  /// pin, unpin, pins, favourite, unfavourite, favourites, burn, search, receiptDetail (T3).
+  /// pin, unpin, pins, favourite, unfavourite, favourites, burn, search, receiptDetail (T3); and
+  /// streamBegin, streamAppend, streamComplete, streamAbort (T4) — see [streamEvents].
   late final ImMsgApi msg;
 
   /// `conv.*` — list, get, read, unreadTotal, setting, delete, clear, markUnread.
@@ -264,6 +266,25 @@ class ImClient {
       .map(ImRoomEvent.tryParse)
       .where((ImRoomEvent? event) => event != null)
       .cast<ImRoomEvent>();
+
+  /// `evt.stream`, decoded: the opening frame, each fragment, and the terminal frame of every
+  /// streamed reply in a conversation this user is in — including the ones this user produces, on
+  /// every one of their connections.
+  ///
+  /// **These frames are not messages and never go near the message path**: no seq, no cursor, no
+  /// gap repair, no `msg.sync`, and nothing replays them after a reconnect. Put them together with
+  /// [ImStreamAssembler]; on a hole, a midway join or a missed terminal frame, do not repair —
+  /// the completed stream arrives on [messages] as an ordinary message with a real seq, through the
+  /// normal cursor and repair path, before or after its terminal frame. Match the two on
+  /// [ImStreamEvent.messageId].
+  ///
+  /// 流式回复的帧不是消息，完全不进消息路径：没有 seq、不动游标、不补洞、重连后也不重放。
+  /// 用 ImStreamAssembler 拼；遇到洞、中途加入或漏了终帧都不要修——收流后的普通消息会经 messages
+  /// 照常到达（早于或晚于终帧），按 messageId 对上。
+  Stream<ImStreamEvent> get streamEvents => events(ImPushTarget.stream)
+      .map(ImStreamEvent.tryParse)
+      .where((ImStreamEvent? event) => event != null)
+      .cast<ImStreamEvent>();
 
   /// Loads the cursor store, then opens the socket. Idempotent.
   Future<void> connect() async {

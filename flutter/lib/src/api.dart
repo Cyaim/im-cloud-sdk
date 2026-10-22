@@ -29,6 +29,7 @@ import 'models.dart';
 import 'protocol.dart';
 import 'requests.dart';
 import 'room.dart';
+import 'streaming.dart';
 
 /// What a namespace needs from the connection, and nothing more.
 ///
@@ -314,6 +315,49 @@ final class ImMsgApi extends _Namespace {
     ImCancelToken? cancel,
   ]) =>
       decodeOne('msg.receiptDetail', request.toJson(), cancel, ImMessageReceipt.fromJson);
+
+  // -------------------------------------------------------------------------- streaming (T4)
+  //
+  // A reply typed out while it is generated. The four calls are `msg.*` endpoints, so they live
+  // here under their own names (CONTRACT §4.2); [ImStreamWriter] wraps them for a producer that
+  // would rather hold a handle. The receivers' half is `ImClient.streamEvents`.
+  // 流式回复的四个调用是 msg.* 端点，按 §4.2 原名放在这里；ImStreamWriter 是可选的句柄封装，
+  // 接收方看 ImClient.streamEvents。
+
+  /// `msg.streamBegin` (T4). Opens a stream and tells every participant online now to draw a
+  /// placeholder (`evt.stream`, index 0, carrying [ImBeginStreamRequest.placeholder]).
+  ///
+  /// Anyone who may `msg.send` in the conversation may stream into it, as themselves; there is no
+  /// app setting or add-on behind it. Single chats and groups only — a chat room, system or
+  /// assistant conversation, or a group over 200 members, is `1008`. The begin-time refusals are
+  /// `msg.send`'s; see [ImBeginStreamRequest]. The stream is abandoned after
+  /// [ImStreamHandle.idleTimeoutSeconds] without an append.
+  /// 能 msg.send 的人就能以自己的身份开流，没有任何开关；只限单聊与群（≤200 人），其余 1008。
+  Future<ImStreamHandle> streamBegin(ImBeginStreamRequest request, [ImCancelToken? cancel]) =>
+      decodeOne('msg.streamBegin', request.toJson(), cancel, ImStreamHandle.fromJson);
+
+  /// `msg.streamAppend` (T4). Pushes the next fragment to the stream's audience. Await each append
+  /// before the next: the server numbers fragments in the order they arrive. The refusals
+  /// (`1401`, after which the stream stays open; `1003`; `1002`; `1103`) are on
+  /// [ImStreamAppendRequest].
+  Future<void> streamAppend(ImStreamAppendRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('msg.streamAppend', request.toJson(), cancel);
+
+  /// `msg.streamComplete` (T4). Finishes the stream into one ordinary stored message and returns
+  /// `msg.send`'s result for it.
+  ///
+  /// The message reaches every participant — this connection included — on [ImClient.messages] with
+  /// a real seq, and goes through the normal cursor and gap-repair path there; nothing here writes
+  /// a cursor from this result. If the send pipeline refuses it, this throws what `msg.send` would
+  /// and the stream is over anyway: the receivers get an aborted terminal frame.
+  /// 最终消息照常经 messages 到达（含本连接），走正常的游标与补洞路径；这里不据结果写游标。
+  Future<ImSendResult> streamComplete(ImCompleteStreamRequest request, [ImCancelToken? cancel]) =>
+      decodeOne('msg.streamComplete', request.toJson(), cancel, ImSendResult.fromJson);
+
+  /// `msg.streamAbort` (T4). Ends the stream without a message; the receivers get a terminal frame
+  /// with the [ImStreamAbortRequest.reason]. `1002` once the stream is already over.
+  Future<void> streamAbort(ImStreamAbortRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('msg.streamAbort', request.toJson(), cancel);
 }
 
 // ---------------------------------------------------------------------------- conv
