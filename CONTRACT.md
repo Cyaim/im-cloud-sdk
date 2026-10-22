@@ -319,7 +319,9 @@ removing seven published endpoints did not force a MAJOR bump, and when that sto
 Swift, Flutter and Unity together on 2026-10-09, each with the nine verbs, every payload type they
 reference, the `evt.desk` frame decoded, and its change values asserted against `deskChanges`
 (§4.5). That makes the family done by §3.1's definition and the tier still not: the other 25 T4
-targets are untyped everywhere, which is why the row above reads `9` rather than a tick. Two things
+targets are typed on TypeScript, Flutter, Kotlin and Unity as of 2026-10-22 (`room.*`, `msg.stream*`,
+scheduling, folders, `msg.translate`, `keys.*`) but not yet on Swift, which is why the row above reads
+`9` rather than a tick. Two things
 remain TypeScript's alone and are worth naming rather than discovering: `readDeskNotification`
 (the 1801–1807 notice read out of an ordinary message) and `DeskContextKeys` — the other four read
 those notices from the message content and the context keys from SPEC-06 directly. Swift's nine
