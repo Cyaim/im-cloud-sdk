@@ -122,7 +122,11 @@ namespace Cyaim.Im.Tests
         /// or not the inventory has caught up; once it has, the entry is redundant and harmless.
         /// implementedIn 由平台仓库重新生成清单时才翻转；在这里登记的家族不论清单是否跟上都要求有行。
         /// </remarks>
-        private static readonly string[] TypedFamilies = { "room.", "msg.stream" };
+        private static readonly string[] TypedFamilies =
+        {
+            "room.", "msg.stream",
+            "msg.schedule", "msg.cancelScheduled", "conv.folders", "conv.upsertFolder", "conv.deleteFolder", "msg.translate",
+        };
 
         /// <summary>
         /// Server request fields no Unity body carries, each with the reason. The platform repository
@@ -269,6 +273,25 @@ namespace Cyaim.Im.Tests
         }
 
         /// <summary>
+        /// A <c>msg.schedule</c> with every member set: the server's flat <c>ScheduleRequest</c>, which has
+        /// no options and no sendTime. <paramref name="type"/> is chosen as for <see cref="FullSend"/>.
+        /// </summary>
+        private static ImScheduleRequest FullSchedule(ImRecipient recipient, ImConversationType type, string clientMsgId)
+        {
+            return new ImScheduleRequest(recipient, 1758416390000L, JsonValue.NewObject().Set("objectKey", "demo/alice/a.png").Set("width", 640L))
+            {
+                ConversationType = type,
+                ClientMsgId = clientMsgId,
+                ContentType = ImMessageContentType.Image,
+                MentionAll = true,
+                MentionedUserIds = new[] { "bob", "carol" },
+                QuoteMessageId = BigValue,
+                ThreadRootId = BigValue,
+                Extensions = Obj("campaign", "birthday"),
+            };
+        }
+
+        /// <summary>
         /// One row per public typed method, overload, defaulted call and frozen alias, each with
         /// every member its request type has set to a value that is neither empty nor the default.
         /// </summary>
@@ -392,6 +415,21 @@ namespace Cyaim.Im.Tests
                 R("msg.streamAbort", "Msg.StreamAbortAsync, with a reason", c => c.Msg.StreamAbortAsync(new ImStreamAbortRequest("st_wire", "the model failed"))),
                 R("msg.streamAbort", "Msg.StreamAbortAsync, no reason", c => c.Msg.StreamAbortAsync(new ImStreamAbortRequest("st_wire"))),
 
+                // ------------------------------------------- msg.schedule* and msg.translate (T4)
+                // The schedule body is flat (no options, no sendTime), so nothing here is pinned. One
+                // address per every-member row, as on msg.send: the three together cover the type.
+                // 定时请求是平铺的，没有需要钉住的时钟字段；每条全字段行只带一种地址，三条合起来覆盖整个类型。
+                R("msg.schedule", "Msg.ScheduleAsync(ImRecipient.User), every member", c => c.Msg.ScheduleAsync(FullSchedule(ImRecipient.User("bob"), ImConversationType.Single, "sched-1"))),
+                R("msg.schedule", "Msg.ScheduleAsync(ImRecipient.Group), every member", c => c.Msg.ScheduleAsync(FullSchedule(ImRecipient.Group("team"), ImConversationType.Group, "sched-2"))),
+                R("msg.schedule", "Msg.ScheduleAsync(ImRecipient.Conversation), every member", c => c.Msg.ScheduleAsync(FullSchedule(ImRecipient.Conversation("c_wire"), ImConversationType.Single, "sched-3"))),
+                R("msg.schedule", "Msg.ScheduleAsync, minimal", c => c.Msg.ScheduleAsync(ImScheduleRequest.Text(ImRecipient.User("bob"), 1758416390000L, "later"))),
+                R("msg.scheduled", "Msg.ScheduledAsync, every member", c => c.Msg.ScheduledAsync(new ImPageRequest { Cursor = "sch:2", Limit = 50 })),
+                R("msg.scheduled", "Msg.ScheduledAsync, minimal", c => c.Msg.ScheduledAsync()),
+                R("msg.cancelScheduled", "Msg.CancelScheduledAsync(ImScheduleIdRequest)", c => c.Msg.CancelScheduledAsync(new ImScheduleIdRequest("sch_wire"))),
+                R("msg.cancelScheduled", "Msg.CancelScheduledAsync(string)", c => c.Msg.CancelScheduledAsync("sch_wire")),
+                R("msg.translate", "Msg.TranslateAsync, every member", c => c.Msg.TranslateAsync(new ImTranslateRequest("c_wire", "zh-CN", Big, "7") { SourceLanguage = "en" })),
+                R("msg.translate", "Msg.TranslateAsync, minimal", c => c.Msg.TranslateAsync(new ImTranslateRequest("c_wire", "ja", Big))),
+
                 // ------------------------------------------------------------------ conv
                 R("conv.list", "Conv.ListAsync(ImListConversationsRequest)", c => c.Conv.ListAsync(new ImListConversationsRequest
                 {
@@ -420,6 +458,22 @@ namespace Cyaim.Im.Tests
                 R("conv.delete", "Conv.DeleteAsync", c => c.Conv.DeleteAsync(new ImConversationIdRequest("c_wire"))),
                 R("conv.clear", "Conv.ClearAsync", c => c.Conv.ClearAsync(new ImConversationIdRequest("c_wire"))),
                 R("conv.markUnread", "Conv.MarkUnreadAsync", c => c.Conv.MarkUnreadAsync(new ImMarkUnreadRequest("c_wire", true))),
+
+                // ------------------------------------------------------- conv folders (T4)
+                // conv.folders takes no request. upsertFolder writes every member but types even when
+                // minimal, because the call replaces the folder.
+                // conv.folders 没有请求体；upsertFolder 是整份替换，最小行也写出除 types 外的全部字段。
+                R("conv.folders", "Conv.FoldersAsync()", c => c.Conv.FoldersAsync()),
+                R("conv.upsertFolder", "Conv.UpsertFolderAsync, every member", c => c.Conv.UpsertFolderAsync(new ImUpsertFolderRequest("Work", "work", "clients")
+                {
+                    FolderId = "f_work",
+                    Order = 2,
+                    UnreadOnly = true,
+                    Types = new List<ImConversationType> { ImConversationType.Single, ImConversationType.Group },
+                })),
+                R("conv.upsertFolder", "Conv.UpsertFolderAsync, minimal", c => c.Conv.UpsertFolderAsync(new ImUpsertFolderRequest("Work"))),
+                R("conv.deleteFolder", "Conv.DeleteFolderAsync(ImFolderIdRequest)", c => c.Conv.DeleteFolderAsync(new ImFolderIdRequest("f_work"))),
+                R("conv.deleteFolder", "Conv.DeleteFolderAsync(string)", c => c.Conv.DeleteFolderAsync("f_work")),
 
                 // ------------------------------------------------------------------ diag
                 R("diag.logRequests", "Diag.LogRequestsAsync()", c => c.Diag.LogRequestsAsync()),

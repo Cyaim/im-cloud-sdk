@@ -855,9 +855,9 @@ namespace Cyaim.Im
         /// </remarks>
         /// <example>
         /// <code>
-        /// // msg.cancelScheduled is tier 4 and not typed yet
-        /// await im.InvokeAsync("msg.cancelScheduled", JsonValue.NewObject()
-        ///     .Set("scheduleId", scheduleId));
+        /// // keys.remaining is tier 4 and not typed yet
+        /// var left = (await im.InvokeAsync("keys.remaining", JsonValue.NewObject()
+        ///     .Set("deviceId", deviceId))).AsInt();
         /// </code>
         /// </example>
         public Task<JsonValue> InvokeAsync(

@@ -448,7 +448,7 @@ namespace Cyaim.Im
         }
     }
 
-    /// <summary>Body of <c>msg.favourites</c>: cursor paging over one of the caller's own lists.</summary>
+    /// <summary>Body of <c>msg.favourites</c> and <c>msg.scheduled</c>: cursor paging over one of the caller's own lists.</summary>
     public sealed class ImPageRequest : IImRequest
     {
         /// <summary>Paging cursor from the previous page's <c>nextCursor</c>. A malformed one restarts at page one.</summary>

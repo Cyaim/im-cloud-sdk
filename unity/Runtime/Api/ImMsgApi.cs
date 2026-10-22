@@ -528,6 +528,132 @@ namespace Cyaim.Im
             return ExecuteAsync("msg.streamAbort", request, cancellationToken);
         }
 
+        // ------------------------------------------------------------------------- T4: scheduled messages
+        //
+        // A schedule is not a message until it fires: no seq, no history, nothing pushed when it is created
+        // or cancelled. When it fires, receivers get an ordinary evt.message with an ordinary seq, which
+        // goes through MessageReceived, the cursors and gap repair like any other. See ImScheduleTypes.cs.
+        // 发出之前它不是消息，创建与取消都没有推送；发出时接收方收到普通的 evt.message，照常走游标与补洞。
+
+        /// <summary>
+        /// Queues a message to be sent at <see cref="ImScheduleRequest.SendAt"/> and returns the schedule —
+        /// a schedule id, not a message id.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The body is the server's flat <c>ScheduleRequest</c>: the members of <c>msg.send</c> beside
+        /// <c>sendAt</c>, no <c>options</c>, no <c>sendTime</c>. A null <see cref="ImScheduleRequest.ClientMsgId"/>
+        /// is <i>not</i> generated here: the server uses <c>sch-&lt;scheduleId&gt;</c>.
+        /// </para>
+        /// <para>
+        /// It fires on the first dispatcher pass at or after <c>sendAt</c> — every 15 seconds by default — so
+        /// expect it up to about 15 s late. Refusals: <c>1001</c> (no content, no address, <c>sendAt</c> less
+        /// than 10 s ahead or more than 90 days), the access errors of <c>msg.send</c>, <c>1006</c> at 100
+        /// pending, <c>1003</c> past 120 an hour. <b>Not idempotent</b>: a retry makes a second schedule.
+        /// Nothing here moves a cursor.
+        /// </para>
+        /// <para>
+        /// 服务端每 15 秒（默认）扫一次，到点后的第一次扫描发出，可能晚到约 15 秒。ClientMsgId 留空不在这里生成，服务端用
+        /// sch-&lt;scheduleId&gt;。本调用不幂等，也不动任何游标。
+        /// </para>
+        /// </remarks>
+        public Task<ImScheduledMessage> ScheduleAsync(
+            ImScheduleRequest request,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            RequireRequest(request);
+            if (request.Recipient.IsEmpty)
+            {
+                throw new ArgumentException(
+                    "ImScheduleRequest.Recipient is required; build one with ImRecipient.User/Group/Conversation.",
+                    "request");
+            }
+
+            if (request.Content == null || !request.Content.IsObject || request.Content.Count == 0)
+            {
+                throw new ArgumentException("ImScheduleRequest.Content must be a non-empty object", "request");
+            }
+
+            return RequestAsync<ImScheduledMessage>("msg.schedule", request, cancellationToken);
+        }
+
+        /// <summary>
+        /// This user's schedules, a page at a time: the pending ones <b>and</b> those settled in about the
+        /// last 48 hours — sent, cancelled or failed. <see cref="ImScheduledMessage"/> says how to tell them
+        /// apart.
+        /// </summary>
+        /// <remarks>
+        /// A cancelled schedule stays listed, with <see cref="ImScheduledMessage.IsCancelled"/>. Page on
+        /// <see cref="ImPage{T}.NextCursor"/>; <see cref="ImPage{T}.Total"/> is always null. Default page 20,
+        /// at most 100. Another device learns of a schedule only through this call.
+        /// 已取消的仍在列表里（IsCancelled）。其他设备只能靠这个调用得知定时消息的变化。
+        /// </remarks>
+        public Task<ImPage<ImScheduledMessage>> ScheduledAsync(
+            ImPageRequest request = null,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            return RequestPageAsync<ImScheduledMessage>(
+                "msg.scheduled",
+                request != null ? request : new ImPageRequest(),
+                cancellationToken);
+        }
+
+        /// <summary>Cancels a schedule that has not been sent yet.</summary>
+        /// <remarks>
+        /// <c>1002</c> for an unknown schedule or someone else's; <c>1006</c> when it is already being sent.
+        /// The entry is not removed: <c>msg.scheduled</c> keeps it for about 48 hours with
+        /// <see cref="ImScheduledMessage.Error"/> = <see cref="ImScheduledMessage.CancelledBySender"/>.
+        /// </remarks>
+        public Task CancelScheduledAsync(
+            ImScheduleIdRequest request,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            RequireRequest(request);
+            Require(request.ScheduleId, "scheduleId");
+            return ExecuteAsync("msg.cancelScheduled", request, cancellationToken);
+        }
+
+        /// <summary>Shorthand for <see cref="CancelScheduledAsync(ImScheduleIdRequest, CancellationToken)"/>.</summary>
+        public Task CancelScheduledAsync(
+            string scheduleId,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            return CancelScheduledAsync(new ImScheduleIdRequest(scheduleId), cancellationToken);
+        }
+
+        // ------------------------------------------------------------------------- T4: translation
+
+        /// <summary>
+        /// Translates messages this user can already read into <see cref="ImTranslateRequest.TargetLanguage"/>.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <b>Expect a refusal on most deployments</b>: <see cref="ImErrorCode.PlanExpired"/> (<c>1204</c>)
+        /// when the plan lacks the translation add-on, <see cref="ImErrorCode.FeatureNotEnabled"/>
+        /// (<c>1203</c>) when no provider is configured. Both arrive as an ordinary <see cref="ImException"/>
+        /// carrying the code and the server's message — show a "translation unavailable" state, and do not
+        /// cache it. A message that alone could not be translated has
+        /// <see cref="ImTranslatedMessage.Error"/> set; the others still carry their text.
+        /// </para>
+        /// <para>
+        /// 大多数部署会拒绝：缺翻译增值项回 1204，没配翻译服务回 1203，都以普通 ImException（码 + 服务端原文）抛出，别缓存。
+        /// 单条翻译失败只体现在那一条的 Error 上。
+        /// </para>
+        /// </remarks>
+        public Task<ImTranslationResult> TranslateAsync(
+            ImTranslateRequest request,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            RequireRequest(request);
+
+            // Both are required members of the server's type: a body without one fails to bind and comes
+            // back 1000, not a 1001 naming the field.
+            // 两者在服务端类型上都是 required：缺了会在绑定阶段失败、回 1000，而不是点名字段的 1001。
+            Require(request.ConversationId, "conversationId");
+            Require(request.TargetLanguage, "targetLanguage");
+            return RequestAsync<ImTranslationResult>("msg.translate", request, cancellationToken);
+        }
+
         // There is deliberately no SendTextAsync here.
         //
         // `msg.sendText` is not an endpoint — it is not in sdk/endpoint-inventory.json and never

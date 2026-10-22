@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -149,6 +151,70 @@ namespace Cyaim.Im
             RequireRequest(request);
             Require(request.ConversationId, "conversationId");
             return ExecuteAsync("conv.markUnread", request, cancellationToken);
+        }
+
+        // ------------------------------------------------------------------------- T4: folders
+        //
+        // A folder holds tags, not conversations: filter conv.list with them. See ImFolderTypes.cs.
+        // 文件夹装的是标签，不是会话：用它们过滤 conv.list。
+
+        /// <summary>This user's folders — a plain list, not a page (at most 20).</summary>
+        /// <remarks>
+        /// Folder changes are not pushed, so this is how another device sees them. An empty list is no
+        /// folders, not an error.
+        /// 文件夹的变化没有推送，其他设备靠这个调用看到。
+        /// </remarks>
+        public Task<List<ImConversationFolder>> FoldersAsync(CancellationToken cancellationToken = default(CancellationToken))
+        {
+            return RequestListAsync<ImConversationFolder>("conv.folders", null, cancellationToken);
+        }
+
+        /// <summary>
+        /// Creates a folder (no <see cref="ImUpsertFolderRequest.FolderId"/>) or replaces one, and returns it
+        /// as saved.
+        /// </summary>
+        /// <remarks>
+        /// A replace, not a patch: every member is written. Each tag must already be on one of this user's
+        /// conversations (<see cref="SettingAsync"/> with <see cref="ImConversationSetting.Tags"/>), else
+        /// <c>1001</c>; at most 16 tags, and 20 folders (<c>1006</c>). Creating without an id is not
+        /// idempotent — choose the id to make a retry safe.
+        /// 整份替换。每个标签都必须已在本人的某个会话上（先 SettingAsync 打标签），否则 1001。不带 id 新建不幂等。
+        /// </remarks>
+        public Task<ImConversationFolder> UpsertFolderAsync(
+            ImUpsertFolderRequest request,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            RequireRequest(request);
+
+            // Blank, not only empty: the server refuses a whitespace name with 1001 as well.
+            // 空白名字服务端同样回 1001。
+            if (string.IsNullOrWhiteSpace(request.Name))
+            {
+                throw new ArgumentException("name is required and must not be blank", "name");
+            }
+
+            return RequestAsync<ImConversationFolder>("conv.upsertFolder", request, cancellationToken);
+        }
+
+        /// <summary>
+        /// Deletes a folder and nothing else: the conversations keep their tags and stay in the list.
+        /// <c>1002</c> for an unknown folder.
+        /// </summary>
+        public Task DeleteFolderAsync(
+            ImFolderIdRequest request,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            RequireRequest(request);
+            Require(request.FolderId, "folderId");
+            return ExecuteAsync("conv.deleteFolder", request, cancellationToken);
+        }
+
+        /// <summary>Shorthand for <see cref="DeleteFolderAsync(ImFolderIdRequest, CancellationToken)"/>.</summary>
+        public Task DeleteFolderAsync(
+            string folderId,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            return DeleteFolderAsync(new ImFolderIdRequest(folderId), cancellationToken);
         }
     }
 }

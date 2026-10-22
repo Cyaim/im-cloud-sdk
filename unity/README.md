@@ -202,8 +202,8 @@ its target — so if you know the endpoint you know the call, in this SDK and in
 | | endpoints |
 |---|---|
 | `im.Conn` | `HeartbeatAsync` `ReauthAsync` `SyncAsync` |
-| `im.Msg` | `SendAsync` `SyncAsync` `HistoryAsync` `RecallAsync` `DeleteAsync` `TypingAsync` `EditAsync` `ForwardAsync` `ReactAsync` `ReceiptAsync` · `PinAsync` `UnpinAsync` `PinsAsync` `FavouriteAsync` `UnfavouriteAsync` `FavouritesAsync` `BurnAsync` `SearchAsync` `ReceiptDetailAsync` · `StreamBeginAsync` `StreamAppendAsync` `StreamCompleteAsync` `StreamAbortAsync` (T4, streaming replies) |
-| `im.Conv` | `ListAsync` `GetAsync` `ReadAsync` `UnreadTotalAsync` `SettingAsync` `DeleteAsync` `ClearAsync` · `MarkUnreadAsync` |
+| `im.Msg` | `SendAsync` `SyncAsync` `HistoryAsync` `RecallAsync` `DeleteAsync` `TypingAsync` `EditAsync` `ForwardAsync` `ReactAsync` `ReceiptAsync` · `PinAsync` `UnpinAsync` `PinsAsync` `FavouriteAsync` `UnfavouriteAsync` `FavouritesAsync` `BurnAsync` `SearchAsync` `ReceiptDetailAsync` · `StreamBeginAsync` `StreamAppendAsync` `StreamCompleteAsync` `StreamAbortAsync` (T4, streaming replies) · `ScheduleAsync` `ScheduledAsync` `CancelScheduledAsync` (T4, scheduled messages) · `TranslateAsync` (T4) |
+| `im.Conv` | `ListAsync` `GetAsync` `ReadAsync` `UnreadTotalAsync` `SettingAsync` `DeleteAsync` `ClearAsync` · `MarkUnreadAsync` · `FoldersAsync` `UpsertFolderAsync` `DeleteFolderAsync` (T4, folders) |
 | `im.User` | `MeAsync` `ProfileAsync` `BatchProfileAsync` `UpdateProfileAsync` `PresenceAsync` `SubscribePresenceAsync` `UnsubscribePresenceAsync` · `SetStatusAsync` |
 | `im.Friend` | `ListAsync` `AddAsync` `HandleRequestAsync` `RequestListAsync` `DeleteAsync` `BlockListAsync` `BlockAsync` `UnblockAsync` · `SetRemarkAsync` |
 | `im.Group` | `CreateAsync` `InfoAsync` `UpdateAsync` `DismissAsync` `MemberListAsync` `JoinedAsync` `InviteAsync` `KickAsync` `QuitAsync` `JoinAsync` · `TransferAsync` `ApplicationListAsync` `HandleApplicationAsync` `SetRoleAsync` `MuteAsync` `MuteMemberAsync` `SetNicknameAsync` `AnnouncementAsync` |
@@ -215,11 +215,11 @@ its target — so if you know the endpoint you know the call, in this SDK and in
 | `im.Room` | `JoinAsync` `QuitAsync` `SendAsync` `OnlineCountAsync` `MemberListAsync` `MuteAsync` `KickAsync` — T4, chat rooms |
 
 That is tiers **T0**, **T1**, **T2** and **T3** of `sdk/CONTRACT.md`, plus the nine `desk.*`, the
-seven `room.*` and the four `msg.stream*` of T4 — 93 of the server's 107 endpoints: the session floor, everything a two-person chat app needs to launch, the contacts,
+seven `room.*`, the four `msg.stream*`, the three scheduled-message calls, the three folder calls and
+`msg.translate` of T4 — 100 of the server's 107 endpoints: the session floor, everything a two-person chat app needs to launch, the contacts,
 blocking, groups, presence and reporting that turn it into a messenger a store will accept, and the
 competitive-parity tier on top — pins, favourites, search, read-receipt detail, burn-after-reading
-and group administration. The names after the `·` are T3, except the four `Stream…Async` on `im.Msg`,
-which are T4.
+and group administration. The names after the first `·` are T3; the groups marked T4 are T4.
 
 The desk is how an in-game "contact support" screen reaches a person: `RequestAsync` and
 `RateAsync` are the player's, the rest an agent's, `CloseAsync` either side's, and the conversation
@@ -369,6 +369,94 @@ im.OnStreamEvent(e =>
 - An aborted stream leaves nothing behind. Streams in flight when the connection drops are settled by
   the stored message or not at all — `assembler.Clear()` on reconnect.
 
+### Scheduled messages
+
+"Send this at 9:00 tomorrow." `im.Msg.ScheduleAsync` queues it and answers an `ImScheduledMessage` — a
+schedule id, not a message id; `ScheduledAsync` lists, `CancelScheduledAsync` cancels.
+
+```csharp
+var s = await im.Msg.ScheduleAsync(ImScheduleRequest.Text(ImRecipient.User("bob"), sendAtUnixMs, "happy birthday"));
+// …later, on any device:
+var page = await im.Msg.ScheduledAsync();
+await im.Msg.CancelScheduledAsync(s.ScheduleId);
+```
+
+- **The body is flat and narrower than a send**: the members of `msg.send` beside `SendAt` (unix ms), and
+  no `Options` or `SendTime` — the server's `ScheduleRequest` has neither, so `ImScheduleRequest` does
+  not offer them. `Recipient` and a non-empty `Content` are required (checked before sending). A null
+  `ClientMsgId` is not generated: the server uses `sch-<scheduleId>`.
+- **Limits**: `SendAt` at least 10 seconds ahead and at most 90 days (`1001`); 100 pending per user
+  (`1006`); 120 created per user per hour (`1003`); the access rules of `msg.send` (not a member,
+  blocked…). No app setting or add-on gates it. **`msg.schedule` is not idempotent** — a retry after a
+  lost reply makes a second schedule; list before retrying.
+- **Firing granularity**: the server's dispatcher runs every 15 seconds (by default), so a schedule goes
+  out on the first pass at or after `SendAt` — up to about 15 s late.
+- **A schedule is not a message until it fires**: no seq, invisible to the recipient, and nothing is
+  pushed when one is created, cancelled or sent — another device sees it only by listing. When it
+  fires, every receiver (the sender's other devices too) gets an ordinary `evt.message` with an ordinary
+  seq on `MessageReceived`. Scheduling moves no cursor.
+- **There is no state field.** `ScheduledAsync` lists pending schedules *and* those settled in about the
+  last 48 hours: `MessageId` set means sent (match it against `ImMessage.MessageId`); `Error` equal to
+  `ImScheduledMessage.CancelledBySender` ("cancelled by sender") means cancelled — **a cancelled schedule
+  stays listed**; any other `Error` means the send failed for good; neither means still waiting.
+  `IsPending` / `IsSent` / `IsCancelled` / `IsFailed` spell that out. Cancelling answers `1002` for an
+  unknown or someone else's schedule and `1006` once it is already being sent.
+
+### Conversation folders
+
+A folder holds **tags, not conversations**: filing a conversation is tagging it
+(`im.Conv.SettingAsync` with `ImConversationSetting.Tags`), and the client filters `conv.list` with the
+folder's `Tags`, `UnreadOnly` and `Types`. So a folder never disagrees with the list, and
+`DeleteFolderAsync` removes a name and nothing else — the conversations keep their tags.
+
+```csharp
+await im.Conv.SettingAsync(new ImUpdateConversationSettingRequest
+{
+    ConversationId = convId,
+    Setting = new ImConversationSetting { Tags = new List<string> { "work" } },
+});
+var work = await im.Conv.UpsertFolderAsync(new ImUpsertFolderRequest("Work", "work") { FolderId = "f_work" });
+List<ImConversationFolder> folders = await im.Conv.FoldersAsync();   // a plain list, not a page
+```
+
+- **`UpsertFolderAsync` replaces the whole folder** (every member is written); no `FolderId` creates one
+  with a server-chosen id, which is **not idempotent** — choose the id yourself to make a save safe to
+  repeat. `FolderId`: 1–64 letters, digits, `-`, `_`, `.`.
+- **Limits** (`1001` unless noted): a non-blank `Name` of at most 64 characters; at most 16 tags of at
+  most 64 characters, and **every tag must already be on one of your conversations** — tag first, then
+  file; at most 20 folders per user (`1006`). `Types` go out as integers; a folder read back with
+  `Types` null shows every kind. Deleting an unknown folder answers `1002`.
+- Folder changes are not pushed: other devices call `FoldersAsync` again.
+
+### Translation
+
+`im.Msg.TranslateAsync(new ImTranslateRequest(conversationId, "zh-CN", messageIds))` translates up to
+50 messages the caller can already read and answers an `ImTranslationResult`; message ids go out as
+strings and come back with every digit.
+
+```csharp
+try
+{
+    var result = await im.Msg.TranslateAsync(new ImTranslateRequest(convId, "zh-CN", "360381357961969667"));
+    foreach (var item in result.Items)
+        if (item.Error == null) ShowTranslation(item.MessageId, item.Text);
+}
+catch (ImException e) when (e.Code == ImErrorCode.FeatureNotEnabled || e.Code == ImErrorCode.PlanExpired)
+{
+    HideTranslateButton(e.Message);             // the ordinary answer on most deployments
+}
+```
+
+- **Most deployments refuse it, and that is an ordinary answer**: `1204` (`PlanExpired`) when the plan
+  lacks the translation add-on (Enterprise and up, or a trial), checked first; `1203`
+  (`FeatureNotEnabled`) when the app has translation off or no provider is configured. Both arrive as
+  an `ImException` carrying the code and the server's message. Do not cache either — a tenant can turn
+  it on at runtime.
+- After those: BCP-47 `TargetLanguage` (required) and `SourceLanguage` (optional; null lets the
+  provider detect it), 1–50 ids (`1001`), the conversation's access errors, 60 calls a minute per user
+  (`1003`). One message that cannot be translated does not fail the call — its `Error` is set and the
+  others carry their `Text`; `Cached` says the server answered from its cache.
+
 ### Tier T3 — what the signatures do not say
 
 Every T3 method carries its full list of refusals in its doc comment. These are the ones that bite:
@@ -396,14 +484,14 @@ Every T3 method carries its full list of refusals in its doc comment. These are 
   Called with no request it lists across every group you manage.
 - **`friend.setRemark` without `Remark` clears the remark**, while leaving `Tags` null keeps them.
 
-Everything else — E2EE, AI streaming, scheduling, conversation folders: the other 18 endpoints of
-T4 — is reachable today through the escape hatch, which shares one code path with the
-typed surface and is not going away:
+Everything else — the seven `keys.*` endpoints of T4, the end-to-end-encryption key directory — is
+reachable today through the escape hatch, which shares one code path with the typed surface and is
+not going away:
 
 ```csharp
-// msg.cancelScheduled is tier 4 and not typed yet
-await im.InvokeAsync("msg.cancelScheduled", JsonValue.NewObject()
-    .Set("scheduleId", scheduleId));
+// keys.remaining is tier 4 and not typed yet
+var left = (await im.InvokeAsync("keys.remaining", JsonValue.NewObject()
+    .Set("deviceId", deviceId))).AsInt();
 ```
 
 `InvokeAsync` never touches a cursor: `InvokeAsync("msg.sync", …)` returns messages and moves

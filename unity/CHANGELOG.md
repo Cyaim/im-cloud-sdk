@@ -10,6 +10,31 @@ to ask which platform.
 
 ### Added
 
+- **Scheduled messages — `msg.schedule` / `msg.scheduled` / `msg.cancelScheduled` (T4)** on `im.Msg`:
+  `ScheduleAsync`, `ScheduledAsync`, `CancelScheduledAsync` (also `(scheduleId)`), with
+  `ImScheduleRequest` (the server's flat `ScheduleRequest`: addressed by `ImRecipient`, `SendAt` in unix
+  ms, `ContentType` and `ConversationType` as integers, quote and thread ids as decimal strings, no
+  `Options` and no `SendTime`; a null `ClientMsgId` is left to the server, which uses `sch-<scheduleId>`),
+  `ImScheduleIdRequest` and `ImScheduledMessage`. The reply has no state field; `IsPending` / `IsSent` /
+  `IsCancelled` / `IsFailed` read it off `MessageId` and `Error` (`CancelledBySender`), and a cancelled
+  schedule stays listed for about 48 hours. `msg.scheduled` reuses `ImPageRequest`. Scheduling moves no
+  cursor; the fired message is an ordinary `evt.message`, so nothing new is decoded.
+- **Conversation folders — `conv.folders` / `conv.upsertFolder` / `conv.deleteFolder` (T4)** on `im.Conv`:
+  `FoldersAsync` (a plain list), `UpsertFolderAsync`, `DeleteFolderAsync` (also `(folderId)`), with
+  `ImUpsertFolderRequest` (a replace: every member written, `Types` as integers), `ImFolderIdRequest` and
+  `ImConversationFolder` (`Types` null means every kind).
+- **`msg.translate` (T4)** on `im.Msg`: `TranslateAsync` with `ImTranslateRequest` (message ids as strings;
+  `ConversationId` and `TargetLanguage` checked before sending, as the server's type requires both),
+  `ImTranslationResult` and `ImTranslatedMessage` (ids read past 2^53, per-item `Error`). `1203` (no
+  provider) and `1204` (plan lacks the add-on) reach the caller as an ordinary `ImException` with the
+  code and the server's message, also from an envelope with no `data`.
+- `ScheduleTests` (19): every call's whole frame by JSON kind, replies with every member decoded, request
+  bodies and reply fixtures held to `endpoint-inventory.json` `payloadTypes`, refusals by code, argument
+  checks before sending, the four schedule states, the fired message arriving as an ordinary one, and the
+  1203 / 1204 path. Rows for every new method and overload in `WireSampleRecorderTests`;
+  `wire-samples/unity.json` re-recorded (additions only). The README has sections for scheduled
+  messages, folders and translation; the `InvokeAsync` example now uses `keys.remaining`.
+
 - **Streaming replies — the four `msg.stream*` endpoints of T4** on `im.Msg`: `StreamBeginAsync`,
   `StreamAppendAsync` (also `(streamId, delta)`), `StreamCompleteAsync`, `StreamAbortAsync`, with
   `ImBeginStreamRequest` (addressed by `ImRecipient`; a null `ClientMsgId` is generated and written back
