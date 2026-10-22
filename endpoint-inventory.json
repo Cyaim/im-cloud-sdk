@@ -29,11 +29,11 @@
     "endpoints": 107,
     "controllers": 13,
     "implemented": {
-      "typescript": 100,
-      "kotlin": 100,
+      "typescript": 107,
+      "kotlin": 107,
       "swift": 82,
-      "flutter": 100,
-      "unity": 100
+      "flutter": 107,
+      "unity": 107
     }
   },
   "tiers": {
@@ -176,11 +176,11 @@
       "rule": "Load-bearing for a minority of tenants and dead weight for the rest: calls, service desk, end-to-end encryption, live chat rooms, AI streaming, scheduling, folders. Correctly typed when a customer asks; never a reason to delay T0–T3.",
       "endpoints": 34,
       "implemented": {
-        "typescript": 27,
-        "kotlin": 27,
+        "typescript": 34,
+        "kotlin": 34,
         "swift": 9,
-        "flutter": 27,
-        "unity": 27
+        "flutter": 34,
+        "unity": 34
       },
       "targets": [
         "msg.streamAbort",
@@ -1592,11 +1592,11 @@
       "responseType": "string",
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1608,11 +1608,11 @@
       "responseType": null,
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1624,11 +1624,11 @@
       "responseType": "int",
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1640,11 +1640,11 @@
       "responseType": null,
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1656,11 +1656,11 @@
       "responseType": "List<DeviceKeyInfo>",
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1672,11 +1672,11 @@
       "responseType": "PreKeyBundle",
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1689,11 +1689,11 @@
       "tier": "T4",
       "note": "E2EE key directory. The SDK stores and transports keys; it performs no cryptography.",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {

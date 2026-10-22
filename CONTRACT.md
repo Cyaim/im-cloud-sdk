@@ -33,22 +33,24 @@ SDK's published sources (`sdk/typescript/src`, `sdk/kotlin/src/main`, `sdk/swift
 
 | | T0–T2 typed | typed overall, of 107 | remaining, reachable via `invoke()` |
 |---|---|---|---|
-| `sdk/typescript` | **53 / 53** | 100 (93.5%) | T3 (0) + T4 (7) |
-| `sdk/kotlin` | **53 / 53** | 100 (93.5%) | T3 (0) + T4 (7) |
+| `sdk/typescript` | **53 / 53** | 107 (100.0%) | T3 (0) + T4 (0) |
+| `sdk/kotlin` | **53 / 53** | 107 (100.0%) | T3 (0) + T4 (0) |
 | `sdk/swift` | **53 / 53** | 82 (76.6%) | T3 (0) + T4 (25) |
-| `sdk/flutter` | **53 / 53** | 100 (93.5%) | T3 (0) + T4 (7) |
-| `sdk/unity` | **53 / 53** | 100 (93.5%) | T3 (0) + T4 (7) |
+| `sdk/flutter` | **53 / 53** | 107 (100.0%) | T3 (0) + T4 (0) |
+| `sdk/unity` | **53 / 53** | 107 (100.0%) | T3 (0) + T4 (0) |
 
 Every row adds up to 107 — what is typed, plus what is left. The nine above T0–T3 on every row are
 the `desk.*` family, typed for 客服云 — in TypeScript since 2026-09-07, and on the other four since
-2026-10-09, which is when the five rows became one row again. Since 2026-10-22 four rows carry eighteen
+2026-10-09, which is when the five rows became one row again. Since 2026-10-22 four rows carry twenty-five
 more: the `room.*` family (seven), message streaming (`msg.streamBegin` / `streamAppend` /
 `streamComplete` / `streamAbort`, four), scheduled messages (`msg.schedule` / `msg.scheduled` /
 `msg.cancelScheduled`, three), conversation folders (`conv.folders` / `conv.upsertFolder` /
-`conv.deleteFolder`, three) and `msg.translate`, typed in TypeScript, Kotlin, Dart and Unity. Swift's row still reads 82
+`conv.deleteFolder`, three), `msg.translate`, and the `keys.*` family (`keys.publish` / `upload` /
+`remaining` / `claim` / `devices` / `revoke` / `safetyNumber`, seven), the end-to-end encryption key
+directory, typed in TypeScript, Kotlin, Dart and Unity. Those four rows now type all 107; nothing on them is
+left to `invoke()`. Swift's row still reads 82
 because no Swift toolchain was available to build and record any of them; until they are typed there, §3's
-"all five" column counts none of them, since that column is the intersection. What is left on the four rows is
-`keys.*` (seven), the end-to-end encryption key directory. All eighteen are T4 work, which is why the
+"all five" column counts none of them, since that column is the intersection. All twenty-five are T4 work, which is why the
 first column still reads 53 on all five; §3 explains why one family typed everywhere does not make
 T4 partly done.
 
@@ -64,7 +66,7 @@ score the same on this table and still fail every customer who ships on two plat
 
 Since 2026-09-21 only **T4 is deliberately untyped** — not missing; T3 is typed on all five. A
 customer can call all 107 endpoints today;
-25 of them without types on the weakest SDK (Swift, at 82) and 7 on the other four, which type the same 100 — against payload shapes they must read out of the server's C# source. Say
+25 of them without types on the weakest SDK (Swift, at 82) and none on the other four, which type all 107 — against payload shapes they must read out of the server's C# source. Say
 that plainly in a sales conversation — it is a real cost, and it is one the buyer discovers in
 their first sprint if you do not.
 
