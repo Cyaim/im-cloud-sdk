@@ -68,6 +68,10 @@
     {"type":"RoomCursorRequest","via":"asBody(RoomCursorRequest)","body":{"roomId":"lobby","cursor":"1","limit":20}},
     {"type":"RoomSendRequest","via":"asBody(RoomSendRequest)","body":{"roomId":"lobby","message":{"content":{"text":"hi"},"contentType":2,"clientMsgId":"cid","mentionAll":true,"mentionedUserIds":["bob"],"options":{"persistent":false,"updateConversation":false,"countUnread":false,"offlinePush":false,"pushConfig":{"title":"t","body":"b","sound":"s","payload":{"k":"v"},"badgeCount":false,"channelId":"ch"},"needReceipt":true,"priority":2,"onlineOnly":true,"noSelfSync":true,"expireIn":5000,"moderationBypass":true},"sendTime":1700000000000,"extensions":{"k":"v"}}}},
     {"type":"RoomMuteRequest","via":"asBody(RoomMuteRequest)","body":{"roomId":"lobby","userId":"bob","untilMs":1758499200000}},
-    {"type":"RoomKickRequest","via":"asBody(RoomKickRequest)","body":{"roomId":"lobby","userId":"bob"}}
+    {"type":"RoomKickRequest","via":"asBody(RoomKickRequest)","body":{"roomId":"lobby","userId":"bob"}},
+    {"type":"BeginStreamRequest","via":"asBody(BeginStreamRequest)","body":{"conversationId":"s_alice_bob","receiverId":"bob","groupId":"team","clientMsgId":"cid","contentType":2,"placeholder":{"name":"Assistant"},"options":{"persistent":false,"updateConversation":false,"countUnread":false,"offlinePush":false,"pushConfig":{"title":"t","body":"b","sound":"s","payload":{"k":"v"},"badgeCount":false,"channelId":"ch"},"needReceipt":true,"priority":2,"onlineOnly":true,"noSelfSync":true,"expireIn":5000,"moderationBypass":true},"extensions":{"k":"v"}}},
+    {"type":"StreamAppendRequest","via":"asBody(StreamAppendRequest)","body":{"streamId":"st_1","delta":"Hel"}},
+    {"type":"CompleteStreamRequest","via":"asBody(CompleteStreamRequest)","body":{"streamId":"st_1","content":{"text":"Hello"},"extensions":{"k":"v"}}},
+    {"type":"StreamAbortRequest","via":"asBody(StreamAbortRequest)","body":{"streamId":"st_1","reason":"the model failed"}}
   ]
 }

@@ -13,6 +13,25 @@ published as `ImSdk.contractVersion`.
 First published release. The version is deliberately below 1.0.0: `1.0.0` is reserved for contract
 tiers T0 and T1 complete on **all five** SDKs. Nothing before this was ever published.
 
+### Added (2026-10-22, streaming)
+
+- **The four `msg.stream*` endpoints of T4** on `im.msg`: `streamBegin`, `streamAppend`,
+  `streamComplete`, `streamAbort`, with `BeginStreamRequest` / `StreamAppendRequest` /
+  `CompleteStreamRequest` / `StreamAbortRequest` and `StreamHandle`. `streamBegin` fills a blank
+  `clientMsgId` (the server makes none up); `streamComplete` answers the stored message's
+  `SendMessageResult` and, unlike `msg.send`, moves no cursor — the stored message reaches the
+  producer's own connection on `evt.message` and is delivered through the ordinary path.
+  `StreamWriter.begin(im.msg, request)` holds the stream id and key for a producer.
+- **`im.streamEvents`** decodes `evt.stream` into `StreamEvent` (`Begin` / `Delta` / `Completed` /
+  `Aborted`; the message id read as a string or a number). `StreamAssembler` and
+  `Flow<StreamEvent>.assemble()` join the pieces by index — duplicates ignored, the text stopping at
+  a missing piece, a hole or a mid-stream join marked not `intact` and never repaired, nothing
+  reopening a finished stream.
+- Tests: every call's frame, replies with every field set held to `payloadTypes`, each phase, the
+  assembly in every order the server produces, the terminal frame before and after the stored
+  message, and the pieces proven to stay out of `messages`, cursors and `msg.sync`.
+- `wire-samples/kotlin.json` records the four stream request bodies.
+
 ### Added (2026-10-22)
 
 - **`im.room` — the seven `room.*` endpoints of T4**: `join`, `quit`, `send`, `onlineCount`,

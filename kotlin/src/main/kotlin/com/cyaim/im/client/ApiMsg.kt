@@ -288,4 +288,59 @@ public class MsgApi internal constructor(
     /** [receiptDetail] for the two-field case. */
     public suspend fun receiptDetail(conversationId: String, messageId: Long): MessageReceipt =
         receiptDetail(ReceiptDetailRequest(conversationId, messageId))
+
+    // ------------------------------------------------------------------- streaming (T4)
+
+    /**
+     * Opens a stream — a reply that arrives a piece at a time — and pushes its opening `evt.stream`
+     * frame to every online member of the conversation, the producer's own connection included.
+     *
+     * A blank [BeginStreamRequest.clientMsgId] is filled in, as [send] fills one: the server makes
+     * none up, and it is the key the finished message is stored under. Every permission `msg.send`
+     * checks is checked here, at the opening (see [BeginStreamRequest] for the codes); `1003` is more
+     * than 60 openings a minute. Then [streamAppend] the pieces and [streamComplete] or [streamAbort]
+     * within [StreamHandle.idleTimeoutSeconds] of the last call, or the server reaps the stream.
+     *
+     * 开流。clientMsgId 留空由这里补上（服务端不生成，最终消息以它为幂等键）。msg.send 的全部权限检查都在开流时做。
+     */
+    public suspend fun streamBegin(request: BeginStreamRequest): StreamHandle =
+        connection.request("msg.streamBegin", keyed(request).asBody())
+
+    /**
+     * Sends the next piece; the server numbers it and pushes it as an `evt.stream` frame. See
+     * [StreamAppendRequest] for the refusals — `1401` leaves the stream open.
+     */
+    public suspend fun streamAppend(request: StreamAppendRequest) {
+        connection.execute("msg.streamAppend", request.asBody())
+    }
+
+    /**
+     * Finishes the stream: the server stores it as one ordinary message, delivers that on
+     * `evt.message`, pushes the terminal `evt.stream` frame, and answers the message's identity.
+     *
+     * **Unlike [send], this does not move the delivered cursor.** The stored message is pushed to the
+     * producer's own connection too, and arrives on [ImClient.messages] through the ordinary path —
+     * cursors, ordering and gap repair included. Moving the cursor here would make that delivery look
+     * like a duplicate and drop it.
+     *
+     * Can be refused as `msg.send` can (moderation, a webhook, the store), and the stream is consumed
+     * either way; a second complete answers `1002`.
+     *
+     * 与 send 不同，这里不推进 delivered 游标：存下来的消息也会推给生产者自己的连接，经普通路径进 messages；
+     * 在这里推进游标会让那次投递被当成重复而丢掉。
+     */
+    public suspend fun streamComplete(request: CompleteStreamRequest): SendMessageResult =
+        connection.request("msg.streamComplete", request.asBody())
+
+    /**
+     * Ends the stream without a message. Receivers get a terminal frame carrying the reason; nothing
+     * is stored. A second abort, or one after [streamComplete], answers `1002`.
+     */
+    public suspend fun streamAbort(request: StreamAbortRequest) {
+        connection.execute("msg.streamAbort", request.asBody())
+    }
+
+    /** [request] with a client message id, filled in when blank. Shared by [StreamWriter]. */
+    internal fun keyed(request: BeginStreamRequest): BeginStreamRequest =
+        if (request.clientMsgId.isNotBlank()) request else request.copy(clientMsgId = newClientMsgId())
 }

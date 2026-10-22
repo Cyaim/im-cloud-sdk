@@ -166,15 +166,15 @@ peer will never send.
 
 ## The typed surface
 
-89 endpoints — contract tiers T0, T1, T2 and T3 in full, plus the nine `desk.*` and the seven
-`room.*` of T4 — grouped into namespaces named for the target prefix, so a reader who knows the endpoint name knows the call
+93 endpoints — contract tiers T0, T1, T2 and T3 in full, plus the nine `desk.*`, the seven
+`room.*` and the four `msg.stream*` of T4 — grouped into namespaces named for the target prefix, so a reader who knows the endpoint name knows the call
 without a lookup table. `msg.recall` is `im.msg.recall`; there are no synonyms. The names after the
 `·` are T3.
 
 | Namespace | Endpoints |
 |---|---|
 | `im.conn` | `heartbeat` `reauth` `sync` |
-| `im.msg` | `send` `sync` `history` `recall` `edit` `delete` `forward` `react` `receipt` `typing` · `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search` `receiptDetail` |
+| `im.msg` | `send` `sync` `history` `recall` `edit` `delete` `forward` `react` `receipt` `typing` · `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search` `receiptDetail` · T4: `streamBegin` `streamAppend` `streamComplete` `streamAbort` |
 | `im.conv` | `list` `get` `read` `setting` `delete` `clear` `unreadTotal` · `markUnread` |
 | `im.user` | `me` `profile` `batchProfile` `updateProfile` `presence` `subscribePresence` `unsubscribePresence` · `setStatus` |
 | `im.friend` | `list` `add` `handleRequest` `requestList` `delete` `block` `unblock` `blockList` · `setRemark` |
@@ -276,9 +276,77 @@ for scale, and the client has to know which ones.
   and takes only names starting `room.`; one this build does not know still arrives, with its raw
   `body`. A `room.kicked` naming you means stop sending: the server answers `1602` from then on.
 
+### Streaming replies — `im.msg.stream*` (T4)
+
+An AI assistant typing out its reply: the producer opens a stream, appends pieces as its model
+produces them, and completes it into one ordinary message. The platform calls no model.
+
+**Sending.** `im.msg.streamBegin(BeginStreamRequest(…))` answers a `StreamHandle`; then
+`streamAppend(StreamAppendRequest(streamId, delta))` for each piece, and finally
+`streamComplete(CompleteStreamRequest(streamId))` (the stored message's `SendMessageResult`) or
+`streamAbort(StreamAbortRequest(streamId, reason))`. `StreamWriter.begin(im.msg, request)` holds the
+stream id and the `clientMsgId` for you; the four calls remain the surface.
+
+```kotlin
+val reply = StreamWriter.begin(im.msg, BeginStreamRequest(receiverId = "u_bob", placeholder = assistantCard))
+try {
+    model.generate(prompt).collect { token -> reply.append(token) }
+    reply.complete()                  // stored as {"text": every piece, joined}
+} catch (e: Exception) {
+    reply.abort("the model failed")   // a terminal frame for everyone; nothing stored
+    throw e
+}
+```
+
+- **Anyone signed in may stream, but only as themselves**, in a single chat (a chat with yourself
+  included) or a group of at most 200 — a chat room, system or assistant conversation answers
+  `1008`. Every permission `msg.send` checks is checked at `streamBegin`; no app setting gates it.
+  Name the conversation by `conversationId`, else `receiverId`, else `groupId`.
+- **`clientMsgId` is the finished message's idempotency key** and the server makes none up; a blank
+  one is filled in. `contentType` is what the finished message will carry. `options` is nested and
+  matched case-sensitively; a non-empty `pushConfig.title` / `body` is refused (`1103`).
+- **The stream dies of silence, not of age**: append or complete within
+  `StreamHandle.idleTimeoutSeconds` (30) of the last call, or the server reaps it — a terminal frame,
+  no message. Limits: 4096 characters a piece and 16384 in all (`1401`, and the stream stays open),
+  100 pieces a second (`1003`), 60 openings a minute.
+- **`streamComplete` without `content` stores `{"text": …}` of the pieces; with `content`, it
+  replaces them.** It can be refused like `msg.send`, and the stream is consumed either way: a
+  second complete or abort answers `1002`, as does any call after the stream was reaped.
+
+**Receiving.** `im.streamEvents` is `evt.stream`, decoded into `StreamEvent`s: the opening (index 0,
+with the producer's `placeholder`), pieces (index 1, 2, 3…), and one terminal frame (one past the
+last piece) — `Completed` with the stored message's `messageId` and `seq`, or `Aborted` with an
+`abortReason` (the producer aborted, went quiet, or its completion was refused). The producer's own
+connection receives all of them too. `assemble()` turns them into the `AssembledStream` to draw:
+
+```kotlin
+im.streamEvents.assemble().collect { stream ->
+    when (stream.status) {
+        StreamStatus.Streaming -> drawTyping(stream.streamId, stream.placeholder, stream.text)
+        StreamStatus.Completed -> swapForMessage(stream.streamId, stream.messageId!!)
+        StreamStatus.Aborted -> drawStopped(stream.streamId, stream.abortReason)
+    }
+}
+```
+
+- **The pieces are not messages.** No seq, online devices only, never stored, never resent — the
+  SDK keeps them away from every cursor and the gap repair, and there is nothing to commit. Pieces
+  are joined by index, a duplicate is ignored, and the text stops at a missing piece rather than
+  running past it. **A hole is not repaired** (there is no resend or catch-up): the stream is
+  marked not `intact`, as is one this device joined mid-way.
+- **The completed stream is an ordinary message**: a real seq, the `clientMsgId` it was opened with,
+  delivered on `im.messages` through cursors and gap repair like any other — to the producer too,
+  which is why `streamComplete`, unlike `msg.send`, does not move the delivered cursor. That message,
+  not the assembled text, is what to keep: the producer may have replaced the pieces, and a piece
+  this device missed is in it. **The terminal frame and the message can arrive in either order**;
+  match them by `messageId`. A device that was offline simply receives the message.
+- An aborted stream leaves nothing behind. Streams in flight when the connection drops are settled
+  by the stored message or not at all — reset a long-lived `StreamAssembler` with `clear()` on
+  reconnect (`assemble()` starts a fresh one per collection).
+
 ### Anything not yet typed
 
-The rest of tier T4 — E2EE keys, streaming, scheduling, folders, translation — goes through the
+The rest of tier T4 — E2EE keys, scheduling, folders, translation — goes through the
 escape hatch, which shares one code path with the typed methods:
 
 ```kotlin
@@ -301,6 +369,7 @@ Events are flows, calls are `suspend` functions, and everything is structured.
 | `kicks: Flow<KickEvent>` | Why the session ended, from the push or the close reason |
 | `deskEvents: Flow<DeskEvent>` | `evt.desk`, for a service-desk agent |
 | `roomEvents: Flow<RoomEvent>` | `room.muted` / `room.kicked` / `room.destroyed`, out of `evt.system` |
+| `streamEvents: Flow<StreamEvent>` | `evt.stream`: a reply arriving piece by piece; `.assemble()` for the text |
 | `conversationNeedsReload: Flow<String>` | Fell too far behind to backfill — reload it |
 | `cursorStoreState: StateFlow<…>` | Whether the cursor store loaded, and whether it persists |
 | `events<T>(target)` | Any other server event, decoded (`evt.typing`, `evt.read`, `evt.group`, …) |

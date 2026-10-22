@@ -301,6 +301,16 @@ class RequestWireKindTest {
             ),
             sample(RoomMuteRequest("lobby", userId = "bob", untilMs = 1_758_499_200_000L)),
             sample(RoomKickRequest("lobby", "bob")),
+            sample(
+                BeginStreamRequest(
+                    conversationId = "s_alice_bob", receiverId = "bob", groupId = "team", clientMsgId = "cid",
+                    contentType = MessageContentType.Image, placeholder = buildJsonObject { put("name", "Assistant") },
+                    options = options, extensions = ext,
+                ),
+            ),
+            sample(StreamAppendRequest("st_1", "Hel")),
+            sample(CompleteStreamRequest("st_1", content = textContent("Hello"), extensions = ext)),
+            sample(StreamAbortRequest("st_1", reason = "the model failed")),
         ).toMap()
     }
 

@@ -40,7 +40,7 @@ import kotlin.random.Random
 /**
  * The client applications actually use.
  *
- * Beyond wrapping the 89 typed endpoints — tiers T0–T3, and the nine `desk.*` and seven `room.*` of T4 — this owns the one thing every correct IM
+ * Beyond wrapping the 93 typed endpoints — tiers T0–T3, and the nine `desk.*`, seven `room.*` and four `msg.stream*` of T4 — this owns the one thing every correct IM
  * client must do and most hand-rolled ones do not: it keeps two cursors per conversation, notices
  * when an arriving message skips a number, and pulls the missing range before delivering.
  *
@@ -206,6 +206,10 @@ public class ImClient(
      * `r_<roomId>`, delivered the moment they arrive, never repaired, never deduplicated by seq, and
      * never to be committed — a room has no range to repair (see [RoomApi]).
      *
+     * A finished stream (`msg.streamComplete`) arrives here as the ordinary message it was stored as,
+     * with a real seq, and goes through cursors and repair like any other. Its pieces never do: they
+     * are on [streamEvents].
+     *
      * Hot and without replay, so start collecting before [connect]: a message emitted while
      * nothing is subscribed is dropped from the flow — the same thing that happens to a push with
      * no registered listener in the other SDKs. Keep the collector cheap; it applies back-pressure
@@ -294,6 +298,26 @@ public class ImClient(
     public val roomEvents: Flow<RoomEvent> = connection.frames
         .filter { it.target == PushTarget.System }
         .mapNotNull { frame -> RoomEvent.fromSystemData(frame.body?.data) }
+
+    /**
+     * `evt.stream`, decoded: the opening, the pieces and the end of every stream in a conversation
+     * this user is in — an AI assistant typing out a reply. Feed it to [assemble] (or a
+     * [StreamAssembler]) to get the text to draw.
+     *
+     * **These frames are not messages and never touch a cursor.** They have no seq, are pushed to
+     * online devices only, may be shed under load and are never resent: a missing index stays
+     * missing. The stream that completes arrives on [messages] as an ordinary stored message, with a
+     * real seq, through the ordinary path — that, not these frames, is what to keep. The terminal
+     * frame and that message can arrive in either order; match them by [StreamEvent.messageId].
+     *
+     * A frame this build cannot read (not an object, no stream id) is dropped here.
+     *
+     * 这些帧不是消息、不碰游标：没有 seq，只投在线设备，可能被丢弃，永不重发。完成的流作为一条普通消息、带真 seq
+     * 经普通路径从 messages 到来——要留下的是它。终止帧与那条消息的先后不保证，按 messageId 对上。
+     */
+    public val streamEvents: Flow<StreamEvent> = connection.frames
+        .filter { it.target == PushTarget.Stream }
+        .mapNotNull { frame -> StreamEvent.fromData(frame.body?.data) }
 
     /** Socket lifecycle. */
     public val state: StateFlow<ConnectionState> get() = connection.state
