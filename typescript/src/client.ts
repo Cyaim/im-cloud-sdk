@@ -23,6 +23,7 @@ import { readDeskEvent, type DeskEvent } from './desk.js';
 import { ImDeviceLogs } from './devicelogs.js';
 import { ImLog, inMemoryLogStore, type ImLogStore } from './logs.js';
 import { readRoomEvent, type RoomEvent } from './room.js';
+import { readStreamEvent, type StreamEvent } from './stream.js';
 import type {
   ConversationView,
   ImMessage,
@@ -331,6 +332,28 @@ export class ImClient {
   onRoomEvent(listener: (event: RoomEvent) => void): () => void {
     return this.connection.on(PushTarget.System, (frame) => {
       const event = readRoomEvent(frame.body?.data);
+      if (event) listener(event);
+    });
+  }
+
+  /**
+   * Subscribes to `evt.stream` — the frames of a streaming reply (`msg.streamBegin` … `streamComplete`
+   * / `streamAbort`), decoded and classified by {@link StreamEvent.phase}. Feed them to a
+   * `StreamAssembler` to get the text so far.
+   *
+   * **These frames are not messages and never become one here.** They carry no seq, are never stored
+   * or resent, and touch no cursor and no gap repair; a dropped fragment is simply missing. The
+   * finished message is delivered separately through {@link onMessage} — with a real seq, through the
+   * ordinary cursor and gap-repair path, to the producer's own connection as well — in either order
+   * relative to the terminal frame; pair them on `messageId`. Lives here rather than on `im.msg` for
+   * the reason {@link onDeskEvent} does: a method on a namespace names a target.
+   * 这些帧不是消息、也不会在这里变成消息：没有 seq、不落库、不重发，不碰游标与补洞。
+   * 最终消息另经 onMessage 到达（带真实 seq、走正常的游标与补洞，生产者自己的连接也会收到），
+   * 与终帧先后不定，按 messageId 配对。
+   */
+  onStreamEvent(listener: (event: StreamEvent) => void): () => void {
+    return this.connection.on(PushTarget.Stream, (frame) => {
+      const event = readStreamEvent(frame.body?.data);
       if (event) listener(event);
     });
   }

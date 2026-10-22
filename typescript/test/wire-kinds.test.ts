@@ -5,6 +5,7 @@ import { after, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import type { ImClient } from '../src/client.js';
+import { StreamWriter } from '../src/stream.js';
 import {
   AgentStatus,
   ConversationType,
@@ -23,8 +24,8 @@ import { FakeSocket, until } from './fake-socket.js';
 import { type Inventory, loadInventory } from './inventory.js';
 
 /**
- * Every request field of every typed endpoint — T0–T3, `desk.*` and `room.*` — in the JSON kind the
- * server's C# type binds from.
+ * Every request field of every typed endpoint — T0–T3, `desk.*`, `room.*` and `msg.stream*` — in the
+ * JSON kind the server's C# type binds from.
  *
  * **Why the kind, and why the server's type rather than this SDK's.** The socket binder does not go
  * through the platform's JSON options: it reads each request property with the C# type the DTO
@@ -68,6 +69,10 @@ interface Row {
 }
 
 const row = (target: string, send: Row['send'], via = target): Row => ({ via, target, send });
+
+/** A writer over an already open stream, as `StreamWriter.begin` would hand one back. */
+const writer = (c: ImClient): StreamWriter =>
+  new StreamWriter(c.msg, { streamId: 'st_1', conversationId: C, startedAt: 1758412790000, idleTimeoutSeconds: 30 });
 
 /**
  * One row per typed method, every field populated with a non-default value of the SDK's own declared
@@ -358,6 +363,57 @@ const rows: Row[] = [
   row('room.mute', (c, k) => c.room.mute(k({ roomId: 'lobby' })), 'room.mute, whole room, unmute'),
   row('room.kick', (c, k) => c.room.kick(k({ roomId: 'lobby', userId: 'bob' }))),
 
+  // ---- T4: msg.stream*, typed whole. Begin carries the only nested object (options, and inside it
+  // pushConfig) — every member set once, the way msg.send's first row does — and a minimal row with
+  // nothing the server would fill in. clientMsgId is never generated for a stream, so the minimal
+  // row is a pure pass-through too.
+  row(
+    'msg.streamBegin',
+    (c, k) =>
+      c.msg.streamBegin(
+        k({
+          conversationId: C,
+          receiverId: 'bob',
+          groupId: 'team',
+          clientMsgId: 'stream-1',
+          contentType: MessageContentType.Text,
+          placeholder: { name: 'Assistant', avatar: 'bots/assistant.png' },
+          options: {
+            persistent: false,
+            updateConversation: false,
+            countUnread: false,
+            offlinePush: false,
+            pushConfig: {
+              title: 'Assistant',
+              body: 'is replying',
+              sound: 'ding.caf',
+              payload: { deepLink: 'app://c_wire' },
+              badgeCount: false,
+              channelId: 'im_messages',
+            },
+            needReceipt: true,
+            priority: MessagePriority.High,
+            onlineOnly: true,
+            noSelfSync: true,
+            expireIn: 5000,
+            moderationBypass: true,
+          },
+          extensions: { model: 'house-7b' },
+        }),
+      ),
+    'msg.streamBegin, every field',
+  ),
+  row('msg.streamBegin', (c, k) => c.msg.streamBegin(k({ receiverId: 'bob', clientMsgId: 'stream-2' })), 'msg.streamBegin, minimal'),
+  row('msg.streamAppend', (c, k) => c.msg.streamAppend(k({ streamId: 'st_1', delta: 'Hel' }))),
+  row(
+    'msg.streamComplete',
+    (c, k) => c.msg.streamComplete(k({ streamId: 'st_1', content: { text: 'Hello.' }, extensions: { tokens: 3 } })),
+    'msg.streamComplete, every field',
+  ),
+  row('msg.streamComplete', (c, k) => c.msg.streamComplete(k({ streamId: 'st_1' })), 'msg.streamComplete, the appended text'),
+  row('msg.streamAbort', (c, k) => c.msg.streamAbort(k({ streamId: 'st_1', reason: 'the model timed out' })), 'msg.streamAbort, with a reason'),
+  row('msg.streamAbort', (c, k) => c.msg.streamAbort(k({ streamId: 'st_1' })), 'msg.streamAbort, no reason'),
+
   // ---- public methods that build their own body
   row('msg.send', (c) => c.sendText({ receiverId: 'bob' }, 'hi'), 'im.sendText'),
   row('msg.history', (c) => c.history(C, 40, 20), 'im.history'),
@@ -367,6 +423,9 @@ const rows: Row[] = [
   row('conv.list', (c) => c.conversations(1758412790000, 'conv:2', 50), 'im.conversations'),
   row('conv.read', (c) => c.markRead(C, 42), 'im.markRead'),
   row('push.register', (c) => c.push.setToken('apns', 'apns-token'), 'push.setToken'),
+  row('msg.streamAppend', (c) => writer(c).append('lo'), 'StreamWriter.append'),
+  row('msg.streamComplete', (c) => writer(c).complete({ extensions: { tokens: 3 } }), 'StreamWriter.complete'),
+  row('msg.streamAbort', (c) => writer(c).abort(), 'StreamWriter.abort'),
 ];
 
 /**
@@ -616,22 +675,24 @@ interface WireFrame {
 
 describe('request wire kinds: every field, as the server declares it', () => {
   const inventory = loadInventory();
-  // Every target this SDK types, whatever its tier: T0–T3, and the desk.* and room.* families of T4.
-  // A family typed outside the floor meets the same binder that every T1 call meets, and is held to
-  // the same rules.
+  // Every target this SDK types, whatever its tier: T0–T3, and the desk.*, room.* and msg.stream*
+  // families of T4. A family typed outside the floor meets the same binder that every T1 call meets,
+  // and is held to the same rules.
   //
-  // room.* is named from the tier list as well as read from `implementedIn`, the way
-  // coverage.test.ts names both families: `implementedIn` is computed by the platform repository's
+  // room.* and msg.stream* are named from the tier list as well as read from `implementedIn`, the way
+  // coverage.test.ts names every family: `implementedIn` is computed by the platform repository's
   // generator from these sources, so it flips only when the inventory is regenerated, and a family
   // typed in the commit before that would otherwise have no row asked of it. The union only ever
   // adds targets to check; once the inventory says true it changes nothing.
-  // room.* 同时从层级表点名：implementedIn 要等平台仓的生成器重新生成清单才会翻转，
+  // room.* 与 msg.stream* 同时从层级表点名：implementedIn 要等平台仓的生成器重新生成清单才会翻转，
   // 在那之前这一族不会被要求有行。并集只会多查、不会少查；清单翻成 true 之后它不改变任何东西。
   const roomFamily = inventory.tiers['T4']?.targets.filter((target) => target.startsWith('room.')) ?? [];
+  const streamFamily = inventory.tiers['T4']?.targets.filter((target) => target.startsWith('msg.stream')) ?? [];
   const shipped = [
     ...new Set([
       ...inventory.endpoints.filter((e) => e.implementedIn?.['typescript'] === true).map((e) => e.target),
       ...roomFamily,
+      ...streamFamily,
     ]),
   ];
   const requestTypes = new Map(inventory.endpoints.map((e) => [e.target, e.requestType ?? null]));

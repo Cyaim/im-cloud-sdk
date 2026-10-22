@@ -16,6 +16,27 @@ endpoints. `1.0.0` is reserved for T0 + T1 complete on all five SDKs.
 
 Implements [`sdk/CONTRACT.md`](../CONTRACT.md) contract version `1.0`.
 
+### Added (2026-10-22, streaming replies)
+
+- **`msg.stream*` typed whole — all four, and `evt.stream` decoded.** `im.msg.streamBegin`
+  `streamAppend` `streamComplete` `streamAbort`, with `BeginStreamRequest`, `StreamHandle`,
+  `StreamAppendRequest`, `CompleteStreamRequest` and `StreamAbortRequest`; `im.onStreamEvent` with
+  `readStreamEvent` / `StreamEvent` (phases `begin` / `delta` / `completed` / `aborted`, read from
+  `done`, `index` and `messageId`); `StreamAssembler` to put the fragments back together; and
+  `StreamWriter`, a thin producer handle over the three calls after begin. The typed surface is now
+  93 of 107 endpoints.
+  - **Fragments are not messages**: no seq, never stored, resent or repaired, and they touch no
+    cursor. The message a stream completes into is an ordinary one and reaches `onMessage` through
+    the normal cursor and gap-repair path — to the producer too, which is why `streamComplete`,
+    unlike `msg.send`, marks nothing delivered from its result.
+  - `StreamAssembler` places fragments by index: out of order is fine, a repeated index is ignored,
+    a fragment that arrives after an overtaking terminal frame still fills in, and `text` stops at the
+    first hole (`intact` says whether anything is missing). Nothing is repaired; on a hole, a late join
+    or a reconnect the finished message is the answer. A terminal frame without `messageId` is an
+    abort — by the producer, by the 30 s idle reap, or a completion the server refused.
+  - `streamBegin` sends `clientMsgId` as given and generates nothing: the reply does not echo it, and
+    it is the key for re-sending refused text as the same one message.
+
 ### Added (2026-10-22)
 
 - **`room.*` typed whole — all seven.** `im.room.join` `quit` `send` `onlineCount` `memberList` `mute`

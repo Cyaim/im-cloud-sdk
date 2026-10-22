@@ -19,8 +19,10 @@ import type { DeviceLogAnswer, PendingDeviceLog } from './devicelogs.js';
 import type {
   AddFriendRequest,
   AnnouncementRequest,
+  BeginStreamRequest,
   BlockEntry,
   BlockRequest,
+  CompleteStreamRequest,
   ConversationIdRequest,
   ConversationMessageRequest,
   ConversationView,
@@ -86,6 +88,9 @@ import type {
   SearchMessagesRequest,
   SendMessageRequest,
   SendMessageResult,
+  StreamAbortRequest,
+  StreamAppendRequest,
+  StreamHandle,
   SetGroupNicknameRequest,
   SetRemarkRequest,
   SetRoleRequest,
@@ -143,7 +148,7 @@ export class ConnApi {
   }
 }
 
-/** `msg.*` — send, backfill, and everything done to a message after it exists. */
+/** `msg.*` — send, backfill, everything done to a message after it exists, and streaming replies (T4). */
 export class MsgApi {
   constructor(
     private readonly io: ImInvoker,
@@ -374,6 +379,75 @@ export class MsgApi {
    */
   receiptDetail(request: ReceiptDetailRequest, options?: ImRequestOptions): Promise<MessageReceipt> {
     return this.io.request<MessageReceipt>('msg.receiptDetail', request, options);
+  }
+
+  // ---- T4: streaming replies ------------------------------------------------------------------
+  //
+  // An assistant typing out its answer: begin, append fragment after fragment, then complete into one
+  // ordinary message (or abort into none). The platform calls no model — the producer owns the
+  // generator and pushes what it produces. The audience reads the fragments on `evt.stream`
+  // (`im.onStreamEvent`, `StreamAssembler`); the finished message arrives on `onMessage` like any
+  // other, seq and all. `StreamWriter` wraps the three calls after begin around one stream id.
+  // 流式回复：开流、逐片追加、收尾成一条普通消息（或中止、不产生消息）。平台不调用模型，生成器归生产者。
+  // 接收方从 evt.stream 读分片，最终消息照常经 onMessage 到达、带 seq。
+
+  /**
+   * Opens a stream and tells every online member of the conversation to draw a placeholder (an
+   * `evt.stream` frame at index 0 carrying `placeholder`). The body goes out exactly as given:
+   * `clientMsgId` is required and **not** generated here — see {@link BeginStreamRequest.clientMsgId}.
+   *
+   * Refusals are `msg.send`'s, decided now rather than at completion — see {@link BeginStreamRequest}.
+   */
+  async streamBegin(request: BeginStreamRequest, options?: ImRequestOptions): Promise<StreamHandle> {
+    const handle = await this.io.request<StreamHandle>('msg.streamBegin', request, options);
+    handle.startedAt = asLong(handle.startedAt);
+    handle.idleTimeoutSeconds = asLong(handle.idleTimeoutSeconds);
+    return handle;
+  }
+
+  /**
+   * Pushes the next fragment to the audience. Fragments are never stored and go out at low priority:
+   * a congested receiver drops some and waits for the finished message instead. Await each one before
+   * sending the next if order matters to you — the server numbers fragments in the order it accepts
+   * them.
+   *
+   * `1002` once the stream has completed, been aborted or gone idle; `1103` on someone else's stream;
+   * `1401` for a fragment over 4096 characters or past the text budget (the stream stays open);
+   * `1003` above 100 a second.
+   * 已收尾、已中止或空闲过期之后是 1002；别人的流是 1103；超长是 1401（流仍开着）。
+   */
+  async streamAppend(request: StreamAppendRequest, options?: ImRequestOptions): Promise<void> {
+    await this.io.request<void>('msg.streamAppend', request, options);
+  }
+
+  /**
+   * Finishes the stream into one ordinary message with a real seq and returns its identity.
+   *
+   * **Unlike {@link send}, nothing is recorded against a cursor here.** The server completes through
+   * its ordinary send path with no originating connection, so the finished message comes back to
+   * this connection too, on `evt.message`, and is delivered through `onMessage` with every cursor and
+   * gap rule applied — marking its seq delivered first would make the client drop that echo as a
+   * duplicate.
+   * 与 send 不同，这里不推进任何游标：服务端收尾时没有来源连接，最终消息也会经 evt.message 回到本连接，
+   * 照常走游标与补洞；先标记为已投递会让客户端把它当重复丢掉。
+   *
+   * Fails with anything `msg.send` can; the stream is consumed either way and the audience is told
+   * with a terminal frame carrying `abortReason`. `1002` for a second complete.
+   */
+  async streamComplete(request: CompleteStreamRequest, options?: ImRequestOptions): Promise<SendMessageResult> {
+    const result = await this.io.request<SendMessageResult>('msg.streamComplete', request, options);
+    result.seq = asLong(result.seq);
+    result.messageId = asId(result.messageId);
+    result.createTime = asLong(result.createTime);
+    return result;
+  }
+
+  /**
+   * Ends the stream with no message; the audience gets a terminal frame with `abortReason` (yours, or
+   * "aborted by the producer"). `1002` if it already completed, was aborted, or went idle.
+   */
+  async streamAbort(request: StreamAbortRequest, options?: ImRequestOptions): Promise<void> {
+    await this.io.request<void>('msg.streamAbort', request, options);
   }
 }
 

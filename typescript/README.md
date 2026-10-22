@@ -167,7 +167,7 @@ report can be grepped rather than translated.
 | Namespace | Methods |
 |---|---|
 | `im.conn` | `heartbeat` `reauth` `sync` — the SDK drives all three; public for the odd case |
-| `im.msg` | `send` `sync` `history` `recall` `delete` `edit` `forward` `react` `receipt` `typing` · `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search` `receiptDetail` |
+| `im.msg` | `send` `sync` `history` `recall` `delete` `edit` `forward` `react` `receipt` `typing` · `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search` `receiptDetail` · `streamBegin` `streamAppend` `streamComplete` `streamAbort` |
 | `im.conv` | `list` `get` `read` `setting` `delete` `clear` `unreadTotal` · `markUnread` |
 | `im.user` | `me` `profile` `batchProfile` `updateProfile` `presence` `subscribePresence` `unsubscribePresence` · `setStatus` |
 | `im.friend` | `list` `add` `handleRequest` `requestList` `delete` `blockList` `block` `unblock` · `setRemark` |
@@ -179,10 +179,11 @@ report can be grepped rather than translated.
 | `im.desk` | `request` `accept` `transfer` `close` `status` `queue` `rate` `canned` `suggest` |
 | `im.room` | `join` `quit` `send` `onlineCount` `memberList` `mute` `kick` |
 
-That is tiers **T0, T1, T2 and T3 in full, plus the whole of `desk.*` and `room.*` from T4** — 89 of
-the server's 107 endpoints, verified against `sdk/endpoint-inventory.json` by the test suite rather
-than counted by hand. The names after the `·` are T3. The other 18 endpoints of T4 go through
-`invoke()` until they are typed.
+That is tiers **T0, T1, T2 and T3 in full, plus the whole of `desk.*`, `room.*` and the four
+`msg.stream*` calls from T4** — 93 of the server's 107 endpoints, verified against
+`sdk/endpoint-inventory.json` by the test suite rather than counted by hand. The names after the
+first `·` are T3, after the second T4 (see [Streaming replies](#streaming-replies)). The other 14
+endpoints of T4 go through `invoke()` until they are typed.
 
 ### Tier T3 — what the signatures do not say
 
@@ -216,6 +217,7 @@ Client-level:
 | `onConversationNeedsReload(fn)` | A conversation the SDK declined to backfill; reload it from history |
 | `onEvent(target, fn)` | Any other server event (`evt.typing`, `evt.read`, `evt.group`, …) |
 | `onDeskEvent(fn)` / `onRoomEvent(fn)` | `evt.desk`, and the `room.*` events on `evt.system`, decoded |
+| `onStreamEvent(fn)` | `evt.stream`, decoded — the fragments of a streaming reply, never messages |
 | `onState(fn)` | `idle` \| `connecting` \| `open` \| `reconnecting` \| `closed` |
 | `onError(fn)` | SDK-level failures with no caller to reject — cursor store, interrupted resume |
 | `deliveredSeq` / `committedSeq` / `cursorSnapshot()` | What the SDK believes, so you can check it |
@@ -372,6 +374,88 @@ Four things worth knowing:
 - **The send refusals are the ones to draw:** `1602 NotInRoom` (not joined, or kicked), `1603
   RoomMuted`, `1506 MemberMuted`, `1003` when the room is over its rate. `1600 RoomNotFound` on any
   call means the room is gone; `1601 RoomFull` refuses a join.
+
+## Streaming replies
+
+An assistant that types out its answer — a bot, an AI desk agent, a tenant's own model — streams it:
+`msg.streamBegin`, then `msg.streamAppend` fragment by fragment, then `msg.streamComplete` (or
+`msg.streamAbort`). **The platform calls no model**; the producer owns the generator and pushes what
+it produces. Any signed-in user may stream, as itself only, into a single chat or a group, under the
+same rules as `msg.send` — no app setting or add-on turns it on.
+
+**Sender:**
+
+```ts
+const writer = await StreamWriter.begin(im.msg, {
+  receiverId: 'bob',
+  clientMsgId,                                   // required, and yours to keep — not generated here
+  placeholder: { name: 'Assistant' },            // shown while it runs; not part of the message
+});
+try {
+  for await (const token of generate()) await writer.append(token);
+  const stored = await writer.complete();         // { messageId, seq, … } of one ordinary message
+} catch (error) {
+  await writer.abort('the model failed').catch(() => {});   // the placeholder clears now
+  throw error;
+}
+// The raw calls are the same thing: im.msg.streamBegin / streamAppend / streamComplete / streamAbort.
+```
+
+**Receiver:**
+
+```ts
+const streams = new StreamAssembler();
+
+im.onStreamEvent((event) => {
+  const stream = streams.apply(event);                       // fragments joined by index
+  if (stream.status === StreamStatus.Streaming) return drawTyping(stream.streamId, stream.placeholder, stream.text);
+  if (stream.status === StreamStatus.Aborted) return clearTyping(stream.streamId, stream.abortReason);
+  // Completed: the stored message comes on onMessage — maybe already did. Swap when both are in.
+  if (haveMessage(stream.messageId!)) { replaceTyping(stream.streamId, stream.messageId!); streams.forget(stream.streamId); }
+});
+
+im.onMessage((message) => {
+  const stream = streams.byMessageId(message.messageId);     // undefined if the terminal frame is still to come
+  if (stream) { replaceTyping(stream.streamId, message.messageId); streams.forget(stream.streamId); }
+  renderChat(message);                                       // an ordinary message: seq, cursor, commit
+});
+
+im.onState((state) => { if (state === 'reconnecting') streams.clear(); });
+```
+
+The rules, from the server:
+
+- **Fragments are not messages.** `evt.stream` frames go to the members online right now — the
+  producer's own connection too — and are never stored: no seq, no resend, no catch-up, no
+  `msg.sync`. The SDK keeps them away from cursors and gap repair entirely.
+- **They are numbered.** The opening frame is index 0 (with `placeholder`), fragments 1, 2, 3 … in the
+  order the server accepted them, and the terminal frame one past the last fragment. Fragments travel
+  at low priority and a congested connection sheds them; the opening and terminal frames are not
+  shed, so a terminal frame can overtake fragments still queued. `StreamAssembler` places each
+  fragment by index, ignores a repeated one, lets a late one fill in, and stops `text` at the first
+  hole — `intact` says whether anything is missing.
+- **Nothing is repaired.** On a hole, a late join (fragments with no opening frame) or a reconnect,
+  wait for the finished message: it has the whole text.
+- **Completed means one ordinary message**, with a real seq, `sendTime` set to when the stream started,
+  `clientMsgId` from begin, and content `{ text: <every fragment joined> }` — or whatever `content`
+  the producer passed to complete, which replaces the fragments. It arrives on `onMessage` through
+  the normal cursor and gap-repair path, **to the producer as well**, and in either order relative to
+  the terminal frame; pair them on `messageId`. That is also why `streamComplete`, unlike `msg.send`,
+  records nothing against a cursor: marking the seq first would drop that echo as a duplicate.
+- **Aborted means no message, ever.** The producer aborted, the stream was idle for 30 s (it is reaped
+  30–60 s after the last append, with no message stored), or the server refused the finished text —
+  moderation, a webhook — in which case `streamComplete` itself rejects with that code. The terminal
+  frame's `abortReason` says which. The producer still holds the text and the `clientMsgId`, so
+  re-sending with `msg.send` under the same key gives one message, not two.
+
+Limits and refusals: 4096 characters a fragment and about 16384 accumulated (`1401` — the stream stays
+open, so complete what you have), 100 appends a second (`1003`), 60 begins a minute per user (`1003`),
+an audience of 200 (`1008`, also for a chat room, system or assistant conversation). Only the user who
+opened a stream may append to, complete or abort it (`1103`); after it has ended every call is `1002`.
+At begin: `msg.send`'s refusals (`1104`, `1408`, `1303`, `1302`, `1500`, `1501`, `1503`, `1506`,
+`1505`), and `1103` for `options.pushConfig.title` / `body` or for unstored media while the app
+moderates. An empty `delta` succeeds and sends nothing. There is no limit on total duration, only on
+silence.
 
 ## Errors
 

@@ -104,6 +104,13 @@
     {"target":"room.mute","type":"RoomMuteRequest","via":"room.mute, one member until a time","body":{"roomId":"lobby","userId":"bob","untilMs":1758499200000}},
     {"target":"room.mute","type":"RoomMuteRequest","via":"room.mute, whole room, unmute","body":{"roomId":"lobby"}},
     {"target":"room.kick","type":"RoomKickRequest","via":"room.kick","body":{"roomId":"lobby","userId":"bob"}},
+    {"target":"msg.streamBegin","type":"BeginStreamRequest","via":"msg.streamBegin, every field","body":{"conversationId":"c_wire","receiverId":"bob","groupId":"team","clientMsgId":"stream-1","contentType":1,"placeholder":{"name":"Assistant","avatar":"bots/assistant.png"},"options":{"persistent":false,"updateConversation":false,"countUnread":false,"offlinePush":false,"pushConfig":{"title":"Assistant","body":"is replying","sound":"ding.caf","payload":{"deepLink":"app://c_wire"},"badgeCount":false,"channelId":"im_messages"},"needReceipt":true,"priority":2,"onlineOnly":true,"noSelfSync":true,"expireIn":5000,"moderationBypass":true},"extensions":{"model":"house-7b"}}},
+    {"target":"msg.streamBegin","type":"BeginStreamRequest","via":"msg.streamBegin, minimal","body":{"receiverId":"bob","clientMsgId":"stream-2"}},
+    {"target":"msg.streamAppend","type":"StreamAppendRequest","via":"msg.streamAppend","body":{"streamId":"st_1","delta":"Hel"}},
+    {"target":"msg.streamComplete","type":"CompleteStreamRequest","via":"msg.streamComplete, every field","body":{"streamId":"st_1","content":{"text":"Hello."},"extensions":{"tokens":3}}},
+    {"target":"msg.streamComplete","type":"CompleteStreamRequest","via":"msg.streamComplete, the appended text","body":{"streamId":"st_1"}},
+    {"target":"msg.streamAbort","type":"StreamAbortRequest","via":"msg.streamAbort, with a reason","body":{"streamId":"st_1","reason":"the model timed out"}},
+    {"target":"msg.streamAbort","type":"StreamAbortRequest","via":"msg.streamAbort, no reason","body":{"streamId":"st_1"}},
     {"target":"msg.send","type":"SendMessageRequest","via":"im.sendText","body":{"receiverId":"bob","content":{"text":"hi"},"contentType":1,"clientMsgId":"generated","sendTime":1758412790000}},
     {"target":"msg.history","type":"HistoryRequest","via":"im.history","body":{"conversationId":"c_wire","beforeSeq":40,"limit":20}},
     {"target":"msg.recall","type":"RecallMessageRequest","via":"im.recall","body":{"conversationId":"c_wire","messageId":"360381357961969667","reason":"wrong chat"}},
@@ -111,6 +118,9 @@
     {"target":"msg.typing","type":"TypingRequest","via":"im.setTyping","body":{"conversationId":"c_wire","typing":false}},
     {"target":"conv.list","type":"ListConversationsRequest","via":"im.conversations","body":{"updatedAfter":1758412790000,"cursor":"conv:2","limit":50}},
     {"target":"conv.read","type":"ReadRequest","via":"im.markRead","body":{"conversationId":"c_wire","readSeq":42}},
-    {"target":"push.register","type":"RegisterPushTokenRequest","via":"push.setToken","body":{"provider":"apns","token":"apns-token"}}
+    {"target":"push.register","type":"RegisterPushTokenRequest","via":"push.setToken","body":{"provider":"apns","token":"apns-token"}},
+    {"target":"msg.streamAppend","type":"StreamAppendRequest","via":"StreamWriter.append","body":{"streamId":"st_1","delta":"lo"}},
+    {"target":"msg.streamComplete","type":"CompleteStreamRequest","via":"StreamWriter.complete","body":{"streamId":"st_1","extensions":{"tokens":3}}},
+    {"target":"msg.streamAbort","type":"StreamAbortRequest","via":"StreamWriter.abort","body":{"streamId":"st_1"}}
   ]
 }

@@ -101,7 +101,8 @@ describe('tier coverage', () => {
    * The first deliberate exception to "T0–T3 and nothing else", and the reason it is an exception
    * rather than a hole: T4's rule is "correctly typed when a customer asks", and the customer
    * asked. `desk.*` is typed **whole** — all nine — which is what keeps the rule below meaningful.
-   * `room.*`, below, is the second; the other 18 endpoints of T4 stay behind `invoke()`.
+   * `room.*` and `msg.stream*`, below, are the second and third; the other 14 endpoints of T4 stay
+   * behind `invoke()`.
    * T4 的规则原话就是「有客户要的时候把它类型化」，而客户来了。desk.* 是整族做完的九条，
    * 这才让下面那条「不许做一半」的规矩仍然有意义。
    */
@@ -129,11 +130,33 @@ describe('tier coverage', () => {
     assert.deepEqual(missing, [], `room is not complete: ${missing.join(', ')}`);
   });
 
+  /**
+   * The third: the four streaming calls. Not a namespace of their own — they are `msg.*` endpoints,
+   * so they live on `im.msg` — but a family all the same, with a rule a signature cannot carry: the
+   * fragments on `evt.stream` are not messages and never touch a cursor, while the message the stream
+   * completes into is an ordinary one. All four, or none: half a stream is a placeholder that never
+   * clears.
+   * 第三族：四条流式调用。它们是 msg.* 端点，所以挂在 im.msg 上；分片不是消息、不碰游标，收尾得到的是普通消息。
+   * 四条全做，或者一条不做——只做一半的流，就是一个永远收不掉的占位符。
+   */
+  const streamTargets = inventory.tiers['T4']!.targets.filter((target) => target.startsWith('msg.stream'));
+
+  it('types every streaming endpoint in T4 msg.stream*', () => {
+    assert.deepEqual(
+      [...streamTargets].sort(),
+      ['msg.streamAbort', 'msg.streamAppend', 'msg.streamBegin', 'msg.streamComplete'],
+      'the server grew or lost a streaming endpoint',
+    );
+
+    const missing = streamTargets.filter((target) => !covered.has(target));
+    assert.deepEqual(missing, [], `streaming is not complete: ${missing.join(', ')}`);
+  });
+
   it('does not half-type a tier it has not committed to', () => {
     // A partially typed tier is worse than an untyped one: a developer cannot tell which half is
     // there, and finds out one endpoint at a time. Everything beyond T3 goes through `invoke()`,
-    // which is documented and obviously an escape hatch — except `desk.*` and `room.*`, which are
-    // committed to whole, above. T3 joined the committed set whole, all twenty at once, for the same reason.
+    // which is documented and obviously an escape hatch — except `desk.*`, `room.*` and `msg.stream*`,
+    // which are committed to whole, above. T3 joined the committed set whole, all twenty at once, for the same reason.
     // T3 是整层二十条一起加进来的，理由同上：不许做一半。
     const shipped = new Set([
       ...inventory.tiers['T0']!.targets,
@@ -142,10 +165,11 @@ describe('tier coverage', () => {
       ...inventory.tiers['T3']!.targets,
       ...deskTargets,
       ...roomTargets,
+      ...streamTargets,
     ]);
 
     const strays = [...covered].filter((target) => !shipped.has(target));
-    assert.deepEqual(strays, [], `typed but not in T0–T3, desk.* or room.*: ${strays.join(', ')}`);
+    assert.deepEqual(strays, [], `typed but not in T0–T3, desk.*, room.* or msg.stream*: ${strays.join(', ')}`);
     assert.equal(covered.size, shipped.size);
   });
 });
