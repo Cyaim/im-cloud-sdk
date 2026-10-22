@@ -370,8 +370,10 @@ public class MsgApi internal constructor(
         connection.request("msg.scheduled", request.asBody())
 
     /**
-     * Cancels one of the caller's pending schedules. `1002` for an unknown id or someone else's,
-     * `1006` once it is being sent. The entry stays listed, marked cancelled, for about 48 hours.
+     * Cancels one of the caller's pending schedules. `1002` for an unknown id or someone else's;
+     * `1006` when nothing is left to cancel — it is being sent, was already cancelled, or was
+     * already sent or failed (the server's message says which; a sent one is `msg.recall`'s). The
+     * entry stays listed, marked cancelled, for about 48 hours.
      */
     public suspend fun cancelScheduled(request: ScheduleIdRequest) {
         connection.execute("msg.cancelScheduled", request.asBody())

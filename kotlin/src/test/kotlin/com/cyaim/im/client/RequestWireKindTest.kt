@@ -163,6 +163,10 @@ class RequestWireKindTest {
      */
     private val omitted = mapOf(
         "RecallMessageRequest.asAdmin" to "forced false for client calls; admin recall is a server-API capability",
+        "PublishKeysRequest.deviceId" to
+            "KeysController.Publish overwrites it with the connection's device, so a device can only publish for itself; no client type carries it",
+        "PublishKeysRequest.platform" to
+            "KeysController.Publish overwrites it with the connection's platform; no client type carries it",
     )
 
     /**
@@ -328,22 +332,49 @@ class RequestWireKindTest {
             ),
             sample(FolderIdRequest("f_work")),
             sample(TranslateRequest("s_alice_bob", listOf(bigId, 7L), targetLanguage = "zh-CN", sourceLanguage = "en")),
+            sample(
+                PublishKeysRequest(
+                    identityKey = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=",
+                    signedPreKey = SignedPreKey(
+                        keyId = "spk_1", publicKey = "ISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0A=",
+                        signature = "c2lnbmF0dXJl", createdAt = 1_758_412_800_000L,
+                    ),
+                    oneTimePreKeys = listOf(OneTimePreKey("otk_1", "b3RrLTE=")),
+                    algorithm = "x3dh-ed25519-aes256gcm-v1",
+                ),
+            ),
+            sample(UploadOneTimeKeysRequest(listOf(OneTimePreKey("otk_2", "b3RrLTI=")))),
+            sample(RemainingKeysRequest("device-2")),
+            sample(ClaimBundleRequest("bob", "device-9")),
+            sample(DeviceKeysRequest("bob")),
+            sample(RevokeDeviceRequest("device-2")),
+            sample(SafetyNumberRequest("bob")),
         ).toMap()
     }
 
     /**
-     * The shortest body each request type of the round-77 calls leaves as — what a caller who sets
+     * The shortest body each request type of the round-77 and round-78 (keys.*) calls leaves as — what a caller who sets
      * only what the server requires puts on the wire. Not swept above (that sweep wants every member
      * present); recorded so the platform's binder also judges the bodies that omit the optional ones,
      * which is where a member the server marks required would throw instead of defaulting.
      *
-     * 第 77 轮那几条调用各自最短的请求体：只填服务端必需的成员时发出去的样子。不进上面的扫描（它要求每个成员都在），
+     * 第 77、78 轮那几条调用各自最短的请求体：只填服务端必需的成员时发出去的样子。不进上面的扫描（它要求每个成员都在），
      * 只录下来，让平台的绑定器也判一遍省掉可选成员的请求体。
      */
     private fun minimalSamples(): List<Pair<String, JsonObject>> = listOf(
         sample(ScheduleRequest(sendAt = 1_758_499_200_000L, content = textContent("later"), receiverId = "bob")),
         sample(UpsertFolderRequest("Work")),
         sample(TranslateRequest("s_alice_bob", listOf(bigId), targetLanguage = "zh-CN")),
+        // keys.*: no one-time prekeys, no algorithm, the default createdAt; and the two requests whose
+        // only member is optional, sent empty — "the connected device" / "the caller's own".
+        sample(
+            PublishKeysRequest(
+                identityKey = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=",
+                signedPreKey = SignedPreKey("spk_1", "ISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0A=", "c2lnbmF0dXJl"),
+            ),
+        ),
+        sample(RemainingKeysRequest()),
+        sample(DeviceKeysRequest()),
     )
 
     /** Encoded by `asBody()`, the one encoder every typed method hands its request to. */

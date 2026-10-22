@@ -13,6 +13,29 @@ published as `ImSdk.contractVersion`.
 First published release. The version is deliberately below 1.0.0: `1.0.0` is reserved for contract
 tiers T0 and T1 complete on **all five** SDKs. Nothing before this was ever published.
 
+### Added (2026-10-22, key directory)
+
+- **`im.keys` — the end-to-end encryption key directory** (T4): `publish`, `upload`, `remaining`,
+  `claim`, `devices`, `revoke`, `safetyNumber` (one-field overloads, and `claim(userId, deviceId)`),
+  with `PublishKeysRequest` / `SignedPreKey` / `OneTimePreKey` / `UploadOneTimeKeysRequest` /
+  `RemainingKeysRequest` / `ClaimBundleRequest` / `DeviceKeysRequest` / `RevokeDeviceRequest` /
+  `SafetyNumberRequest`, and `PreKeyBundle` / `DeviceKeyInfo`. **The SDK performs no cryptography**:
+  keys and signatures are opaque standard-base64 strings passed through unchanged and never logged.
+  `PublishKeysRequest` has no device id or platform — the server takes both from the connection.
+  `remaining` and `devices` default to the connected device / the caller's own (an empty body).
+  `claim` consumes a one-time prekey and is documented as non-idempotent; an empty pool decodes as
+  `oneTimePreKey == null`. No `e2ee.enabled` gate and no events, as the server has none.
+- Tests (`KeysTest`, 15): every call's whole frame on both overloads, nested `signedPreKey` /
+  `oneTimePreKeys[]` / `keys[]` names exact; replies with every field set held to `payloadTypes`;
+  the empty-pool claim; a claim sent exactly once whether refused (`1005`) or unanswered (`1004`);
+  the 1001 / 1008 / 1202 / 1002 refusals; key material unchanged on the wire and absent from the log.
+- `wire-samples/kotlin.json` records the seven request bodies in full, plus a minimal publish and
+  the empty `remaining` / `devices` bodies; `PublishKeysRequest.deviceId` / `.platform` are declared
+  omitted with the reason.
+- README section "Key directory (end-to-end encryption)"; the escape-hatch example now names an
+  illustrative future endpoint. The `msg.cancelScheduled` docs say what `1006` means in full: in
+  flight, already cancelled, or already sent / failed.
+
 ### Added (2026-10-22, scheduling, folders, translation)
 
 - **Scheduled messages on `im.msg`**: `schedule`, `scheduled`, `cancelScheduled` (with a one-field

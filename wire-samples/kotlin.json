@@ -2,7 +2,9 @@
   "$comment": "RECORDED by SDK/kotlin/src/test/kotlin/com/cyaim/im/client/RequestWireKindTest.kt from asBody(), the encoder every typed method hands its request to. Do not edit by hand; re-record with IM_RECORD_WIRE_SAMPLES=1 ./gradlew test --tests \"*RequestWireKindTest*\" (in SDK/kotlin). Judged against the server's real socket binder by IM.Server/tests/IM.Tests.Unit/SdkWireSampleBindingTests.cs in the platform repository.",
   "sdk": "kotlin",
   "omitted": {
-    "RecallMessageRequest.asAdmin": "forced false for client calls; admin recall is a server-API capability"
+    "RecallMessageRequest.asAdmin": "forced false for client calls; admin recall is a server-API capability",
+    "PublishKeysRequest.deviceId": "KeysController.Publish overwrites it with the connection's device, so a device can only publish for itself; no client type carries it",
+    "PublishKeysRequest.platform": "KeysController.Publish overwrites it with the connection's platform; no client type carries it"
   },
   "samples": [
     {"type":"ResumeRequest","via":"asBody(ResumeRequest)","body":{"convSeqs":{"s_alice_bob":42},"conversationCursor":1700000000000,"cursor":"c","limit":100}},
@@ -78,8 +80,18 @@
     {"type":"UpsertFolderRequest","via":"asBody(UpsertFolderRequest)","body":{"name":"Work","folderId":"f_work","order":3,"tags":["work"],"unreadOnly":true,"types":[1,2]}},
     {"type":"FolderIdRequest","via":"asBody(FolderIdRequest)","body":{"folderId":"f_work"}},
     {"type":"TranslateRequest","via":"asBody(TranslateRequest)","body":{"conversationId":"s_alice_bob","messageIds":["360381357961969667","7"],"targetLanguage":"zh-CN","sourceLanguage":"en"}},
+    {"type":"PublishKeysRequest","via":"asBody(PublishKeysRequest)","body":{"identityKey":"AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=","signedPreKey":{"keyId":"spk_1","publicKey":"ISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0A=","signature":"c2lnbmF0dXJl","createdAt":1758412800000},"oneTimePreKeys":[{"keyId":"otk_1","publicKey":"b3RrLTE="}],"algorithm":"x3dh-ed25519-aes256gcm-v1"}},
+    {"type":"UploadOneTimeKeysRequest","via":"asBody(UploadOneTimeKeysRequest)","body":{"keys":[{"keyId":"otk_2","publicKey":"b3RrLTI="}]}},
+    {"type":"RemainingKeysRequest","via":"asBody(RemainingKeysRequest)","body":{"deviceId":"device-2"}},
+    {"type":"ClaimBundleRequest","via":"asBody(ClaimBundleRequest)","body":{"userId":"bob","deviceId":"device-9"}},
+    {"type":"DeviceKeysRequest","via":"asBody(DeviceKeysRequest)","body":{"userId":"bob"}},
+    {"type":"RevokeDeviceRequest","via":"asBody(RevokeDeviceRequest)","body":{"deviceId":"device-2"}},
+    {"type":"SafetyNumberRequest","via":"asBody(SafetyNumberRequest)","body":{"peerUserId":"bob"}},
     {"type":"ScheduleRequest","via":"asBody(ScheduleRequest) minimal","body":{"sendAt":1758499200000,"content":{"text":"later"},"contentType":1,"receiverId":"bob","mentionAll":false,"mentionedUserIds":[]}},
     {"type":"UpsertFolderRequest","via":"asBody(UpsertFolderRequest) minimal","body":{"name":"Work","order":0,"tags":[],"unreadOnly":false}},
-    {"type":"TranslateRequest","via":"asBody(TranslateRequest) minimal","body":{"conversationId":"s_alice_bob","messageIds":["360381357961969667"],"targetLanguage":"zh-CN"}}
+    {"type":"TranslateRequest","via":"asBody(TranslateRequest) minimal","body":{"conversationId":"s_alice_bob","messageIds":["360381357961969667"],"targetLanguage":"zh-CN"}},
+    {"type":"PublishKeysRequest","via":"asBody(PublishKeysRequest) minimal","body":{"identityKey":"AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=","signedPreKey":{"keyId":"spk_1","publicKey":"ISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0A=","signature":"c2lnbmF0dXJl","createdAt":0},"oneTimePreKeys":[]}},
+    {"type":"RemainingKeysRequest","via":"asBody(RemainingKeysRequest) minimal","body":{}},
+    {"type":"DeviceKeysRequest","via":"asBody(DeviceKeysRequest) minimal","body":{}}
   ]
 }

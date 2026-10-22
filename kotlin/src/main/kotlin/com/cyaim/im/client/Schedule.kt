@@ -87,12 +87,19 @@ public data class ScheduleRequest(
 /**
  * `msg.cancelScheduled`: one of the caller's schedules, by [ScheduledMessage.scheduleId].
  *
- * `1001` for an empty id; `1002` for one that does not exist **or is someone else's**; `1006` once
- * the dispatcher has started sending it ("already being sent and can no longer be cancelled").
+ * `1001` for an empty id; `1002` for one that does not exist **or is someone else's**. `1006` means
+ * **nothing is left to cancel**, three ways, told apart only by the server's message:
+ *
+ * - in flight — "this message is already being sent and can no longer be cancelled";
+ * - already cancelled — "this scheduled message has already been cancelled";
+ * - already sent or failed — "this scheduled message has already been sent or has failed, and can
+ *   no longer be cancelled". For one that was sent, the remedy is `msg.recall`.
+ *
  * A cancelled schedule stays in `msg.scheduled` for about 48 hours, with
  * [ScheduledMessage.error] "cancelled by sender".
  *
- * 不存在或不是自己的都回 1002；已经在发送中回 1006。取消之后它仍在 msg.scheduled 里留约 48 小时，error 为 "cancelled by sender"。
+ * 不存在或不是自己的都回 1002。1006 表示已经没有可取消的了：正在发送、已经取消过、或已经发出 / 失败，三者只有消息文字不同；
+ * 已经发出的要撤回请用 msg.recall。取消之后它仍在 msg.scheduled 里留约 48 小时，error 为 "cancelled by sender"。
  */
 @Serializable
 public data class ScheduleIdRequest(

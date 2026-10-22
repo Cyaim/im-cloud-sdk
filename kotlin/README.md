@@ -166,8 +166,8 @@ peer will never send.
 
 ## The typed surface
 
-100 endpoints — contract tiers T0, T1, T2 and T3 in full, plus, of T4, the nine `desk.*`, the seven
-`room.*`, the four `msg.stream*`, the three schedule calls, the three folder calls and `msg.translate` — grouped into namespaces named for the target prefix, so a reader who knows the endpoint name knows the call
+107 endpoints — contract tiers T0, T1, T2 and T3 in full, plus, of T4, the nine `desk.*`, the seven
+`room.*`, the four `msg.stream*`, the three schedule calls, the three folder calls, `msg.translate` and the seven `keys.*` — grouped into namespaces named for the target prefix, so a reader who knows the endpoint name knows the call
 without a lookup table. `msg.recall` is `im.msg.recall`; there are no synonyms. The names after the
 `·` are T3.
 
@@ -185,6 +185,7 @@ without a lookup table. `msg.recall` is `im.msg.recall`; there are no synonyms. 
 | `im.diag` | `logRequests` `logUploaded` — the client drives both; ordinary applications never call them |
 | `im.desk` | `request` `accept` `transfer` `close` `status` `queue` `rate` `canned` `suggest` — T4, the customer-service desk |
 | `im.room` | `join` `quit` `send` `onlineCount` `memberList` `mute` `kick` — T4, chat rooms |
+| `im.keys` | `publish` `upload` `remaining` `claim` `devices` `revoke` `safetyNumber` — T4, the end-to-end encryption key directory |
 
 Every method takes exactly one request object, named for the server DTO. That is not a style
 preference: with positional parameters, the server adding one optional field is a source-breaking
@@ -376,8 +377,9 @@ im.msg.cancelScheduled(entry.scheduleId)
   `messageId` set. Cancelled: `error == "cancelled by sender"`. Failed: `error` is the reason.
   **Cancelled, sent and failed entries stay listed for about 48 hours**, so a cancel is not followed
   by an empty list. `msg.scheduled` runs in `sendAt` order, 20 a page by default (100 at most).
-- `msg.cancelScheduled`: `1002` for an unknown schedule or someone else's, `1006` once the dispatcher
-  has started sending it.
+- `msg.cancelScheduled`: `1002` for an unknown schedule or someone else's. `1006` means nothing is
+  left to cancel — it is being sent, was already cancelled, or was already sent or failed; only the
+  server's message tells which. For one that was sent, the remedy is `msg.recall`.
 
 ### Conversation folders — `im.conv.folders` (T4)
 
@@ -421,15 +423,75 @@ try {
 
 Neither is retryable; do not latch either beyond the session, since both are runtime settings.
 
-### Anything not yet typed
+### Key directory (end-to-end encryption) — `im.keys` (T4)
 
-The rest of tier T4 — the E2EE key directory (`keys.*`) — goes through the escape hatch, which
-shares one code path with the typed methods:
+The directory where each device publishes its **public** keys and a sender fetches a peer's to
+open a session (X3DH-style: identity key, signed prekey, one-time prekeys).
+
+**What the SDK does and does not do.** It types the seven calls and moves the key material
+unchanged. **It performs no cryptography**: generating key pairs, signing the signed prekey,
+running the key agreement and encrypting messages are your crypto library's. Every key and
+signature is an opaque **standard-base64** string (not base64url); pass it exactly as your library
+produced it — the server compares identity keys by exact string and hashes the strings into the
+safety number, so a re-encoded key is a different key. No private key ever crosses this surface,
+and the SDK never logs key material.
 
 ```kotlin
-// keys.remaining is tier T4 and not typed yet:
-val left = im.invoke<Int>("keys.remaining", buildJsonObject {
-    put("deviceId", deviceId)
+// Once per device, and again whenever you rotate the signed prekey:
+im.keys.publish(PublishKeysRequest(
+    identityKey = identity.publicBase64,
+    signedPreKey = SignedPreKey(keyId = "spk-7", publicKey = spk.publicBase64, signature = spkSignatureBase64),
+    oneTimePreKeys = batch.map { OneTimePreKey(it.id, it.publicBase64) },
+    algorithm = "x3dh-ed25519-aes256gcm-v1",   // null keeps the server default, x3dh-curve25519-aes256gcm-v1
+))
+if (im.keys.remaining() < 20) im.keys.upload(nextBatch())
+
+// Sending to bob: one ciphertext per device.
+for (device in im.keys.devices("bob")) {
+    val bundle = im.keys.claim("bob", device.deviceId)   // consumes one of that device's one-time prekeys
+    openSession(bundle)                                   // bundle.oneTimePreKey may be null
+}
+val fingerprint = im.keys.safetyNumber("bob")             // "12345 67890 … " — 12 groups of 5 digits
+```
+
+- **`keys.claim` consumes.** Each claim hands out one one-time prekey and deletes it (first in,
+  first out), so `remaining` drops by one. It is **not idempotent: never retry it after a lost
+  reply as if it were, and never prefetch.** When the pool is empty the claim still succeeds, with
+  `oneTimePreKey` null. Claiming your own device is allowed and drains your own pool.
+- **`keys.publish` replaces and keeps the pool.** Identity key, signed prekey and algorithm are
+  replaced; the one-time pool is kept and the new keys appended — unless the identity key changed,
+  which deletes the old pool first. The device and platform are the connection's; they are not on
+  the request. The signed prekey's signature is the identity key's over the decoded bytes of its
+  `publicKey` only; the server verifies it (`1001` when it does not) and picks the scheme from
+  `algorithm` (`curve25519`/`x25519`/`xed25519`, `ed25519`, `p256`; anything else `1008`).
+- **`keys.upload` appends** to the connected device's pool; `1002` before that device has
+  published. One-time prekeys with a blank or repeated `keyId` or a `publicKey` that is not base64
+  are dropped without an error.
+- **`keys.revoke(deviceId)`** forgets one of your own devices: after it, a claim is `1002`, the
+  device is gone from `devices`, and both sides' safety numbers change. The id is required (`1001`
+  when blank, never defaulted to this device); **revoking an unknown device succeeds**.
+- **The safety number** is the same from either side, 12 groups of 5 digits. It changes when a
+  device is added or revoked or an identity key changes, not on signed-prekey rotation or
+  one-time-key use. `1002` when either side has nothing published.
+- **Limits:** 100 one-time prekeys per call and 100 held per device (the oldest kept); 10 devices
+  per user (an eleventh is `1202 QuotaExceeded`); identity keys up to 256 characters; a device's
+  keys expire 180 days after its last publish or upload.
+- **Callable whether or not the app's `e2ee.enabled` is set.** That switch constrains settings
+  writes and translation, not the directory; there is no `1203` / `1204` here.
+- **No events.** Nothing is pushed for a revoked device, a changed identity key or a pool running
+  low — read `devices` and `remaining` again (on launch, before sending).
+- `devices` comes back in no particular order; an unknown user is an empty list, and an unknown
+  device's `remaining` is 0. Neither is an error.
+
+### Anything not yet typed
+
+The escape hatch shares one code path with the typed methods — for an endpoint a newer server
+ships before this SDK types it:
+
+```kotlin
+// The name is illustrative:
+val reply = im.invoke<JsonElement>("feature.newCall", buildJsonObject {
+    put("id", id)
 })
 ```
 

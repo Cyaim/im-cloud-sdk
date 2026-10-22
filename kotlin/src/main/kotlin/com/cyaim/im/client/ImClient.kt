@@ -40,7 +40,7 @@ import kotlin.random.Random
 /**
  * The client applications actually use.
  *
- * Beyond wrapping the 100 typed endpoints — tiers T0–T3, and of T4 the nine `desk.*`, seven `room.*`, four `msg.stream*`, three schedule, three folder calls and `msg.translate` — this owns the one thing every correct IM
+ * Beyond wrapping the 107 typed endpoints — tiers T0–T3, and of T4 the nine `desk.*`, seven `room.*`, four `msg.stream*`, three schedule, three folder calls, `msg.translate` and the seven `keys.*` — this owns the one thing every correct IM
  * client must do and most hand-rolled ones do not: it keeps two cursors per conversation, notices
  * when an arriving message skips a number, and pulls the missing range before delivering.
  *
@@ -192,6 +192,12 @@ public class ImClient(
      * repair; see [RoomApi].
      */
     public val room: RoomApi = RoomApi(connection, ::newClientMsgId)
+
+    /**
+     * `keys.*` — the end-to-end encryption key directory (T4). The SDK moves opaque public-key
+     * strings and performs no cryptography; `keys.claim` consumes a one-time prekey. See [KeysApi].
+     */
+    public val keys: KeysApi = KeysApi(connection)
 
     private val deviceLogs: ImDeviceLogs = ImDeviceLogs(diag, log, options.deviceId)
 
@@ -520,16 +526,16 @@ public class ImClient(
             .map { frame -> ImJson.decodeFromJsonElement<T>(frame.body?.data ?: JsonObject(emptyMap())) }
 
     /**
-     * Escape hatch for any endpoint the typed surface does not cover yet — tier T4 today.
+     * Escape hatch for any endpoint the typed surface does not cover — one a newer server added after this build, say.
      *
      * It shares one code path with every typed method, so timeouts, cancellation, reauth and error
      * mapping behave identically. It deliberately does **not** participate in cursor logic:
      * `invoke("msg.sync", …)` returns messages and moves nothing.
      *
      * ```kotlin
-     * // keys.remaining is tier T4 and not typed yet:
-     * val left = im.invoke<Int>("keys.remaining", buildJsonObject {
-     *     put("deviceId", deviceId)
+     * // An endpoint a newer server ships before this SDK types it (the name is illustrative):
+     * val reply = im.invoke<JsonElement>("feature.newCall", buildJsonObject {
+     *     put("id", id)
      * })
      * ```
      */
