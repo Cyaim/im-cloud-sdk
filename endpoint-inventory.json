@@ -29,11 +29,11 @@
     "endpoints": 107,
     "controllers": 13,
     "implemented": {
-      "typescript": 93,
-      "kotlin": 93,
+      "typescript": 100,
+      "kotlin": 100,
       "swift": 82,
-      "flutter": 93,
-      "unity": 93
+      "flutter": 100,
+      "unity": 100
     }
   },
   "tiers": {
@@ -176,11 +176,11 @@
       "rule": "Load-bearing for a minority of tenants and dead weight for the rest: calls, service desk, end-to-end encryption, live chat rooms, AI streaming, scheduling, folders. Correctly typed when a customer asks; never a reason to delay T0–T3.",
       "endpoints": 34,
       "implemented": {
-        "typescript": 20,
-        "kotlin": 20,
+        "typescript": 27,
+        "kotlin": 27,
         "swift": 9,
-        "flutter": 20,
-        "unity": 20
+        "flutter": 27,
+        "unity": 27
       },
       "targets": [
         "msg.streamAbort",
@@ -329,11 +329,11 @@
       "responseType": null,
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -345,11 +345,11 @@
       "responseType": "PagedResult<ScheduledMessage>",
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -361,11 +361,11 @@
       "responseType": "ScheduledMessage",
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -474,11 +474,11 @@
       "tier": "T4",
       "note": "IM.Modules.Ai; returns 1203 when no provider is configured.",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1297,11 +1297,11 @@
       "responseType": null,
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1313,11 +1313,11 @@
       "responseType": "ConversationFolder",
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {
@@ -1329,11 +1329,11 @@
       "responseType": "List<ConversationFolder>",
       "tier": "T4",
       "implementedIn": {
-        "typescript": false,
-        "kotlin": false,
+        "typescript": true,
+        "kotlin": true,
         "swift": false,
-        "flutter": false,
-        "unity": false
+        "flutter": true,
+        "unity": true
       }
     },
     {
