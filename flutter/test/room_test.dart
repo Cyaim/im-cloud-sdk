@@ -34,7 +34,9 @@ void main() {
     'historyBufferSize': 30,
     'rateLimitPerSecond': 250,
     'muteAll': true,
-    'destroyed': false,
+    // true, not the decode default false: a join of a destroyed room is `1600` on the real server,
+    // but here the value only has to prove fromJson reads the 'destroyed' key.
+    'destroyed': true,
     'createdAt': 1755000000000,
     'extensions': <String, dynamic>{'theme': 'dark'},
   };
@@ -115,7 +117,7 @@ void main() {
       expect(room.historyBufferSize, 30);
       expect(room.rateLimitPerSecond, 250);
       expect(room.muteAll, isTrue);
-      expect(room.destroyed, isFalse);
+      expect(room.destroyed, isTrue);
       expect(room.createdAt, 1755000000000);
       expect(room.extensions, <String, dynamic>{'theme': 'dark'});
 

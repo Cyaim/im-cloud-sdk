@@ -291,7 +291,10 @@ im.roomEvents.listen((ImRoomEvent e) {       // room.muted / room.kicked / room.
   does not rejoin by itself.
 - **Rooms are created and destroyed by the tenant's backend** (`POST /v1/rooms`,
   `DELETE /v1/rooms/{id}`); there is no socket call for either. An unknown or destroyed room is
-  `1600` on every call.
+  `1600` from `room.join`, `room.send`, `room.mute` and `room.kick`; `room.onlineCount` answers 0
+  and `room.memberList` an empty sample (the server skips the existence check on both), and
+  `room.quit` never fails. A viewer counter that polls `onlineCount` will not notice a destroyed
+  room — listen for `room.destroyed` instead.
 - `room.send` takes an `ImRoomMessage`, nested under `message`: the members of `msg.send`'s
   request a room actually reads — `clientMsgId` (required; generated when omitted), `contentType`,
   `content`, the mentions, `sendTime`, `extensions` and a `priority` (sent as `options.priority`).

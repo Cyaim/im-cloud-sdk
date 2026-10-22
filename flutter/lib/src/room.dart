@@ -387,7 +387,9 @@ class ImRoomEvent {
   /// has stopped accepting their sends (`1602`).
   static const String kicked = 'room.kicked';
 
-  /// The tenant's backend destroyed the room. Every further call on it is `1600`.
+  /// The tenant's backend destroyed the room. From now on `room.join`, `room.send`, `room.mute`
+  /// and `room.kick` on it are `1600`; `room.onlineCount` answers 0, `room.memberList` an empty
+  /// sample, and `room.quit` still succeeds — so this event, not a polled count, is how to notice.
   static const String destroyed = 'room.destroyed';
 
   /// The three names the server raises today.

@@ -1021,10 +1021,15 @@ final class ImDeskApi extends _Namespace {
 /// `room.kicked` and `room.destroyed` events arrive on `ImClient.roomEvents`.
 ///
 /// **Rooms are created and destroyed by the tenant's backend** (`POST /v1/rooms`,
-/// `DELETE /v1/rooms/{id}`). A room id nobody created, or one destroyed, is `1600` on every call.
+/// `DELETE /v1/rooms/{id}`). A room id nobody created, or one destroyed, is `1600` from [join],
+/// [send], [mute] and [kick] only: [onlineCount] answers 0 and [memberList] an empty sample, because
+/// the server skips the existence check on those two, and [quit] never fails. A counter that polls
+/// [onlineCount] will not notice a destroyed room; `room.destroyed` on `ImClient.roomEvents` does.
 ///
 /// 聊天室消息 seq 恒为 0：不入库、不补洞、不动游标，丢了就是丢了——这是聊天室换取规模的代价。
 /// 成员身份属于连接，重连后要重新 join。房间由租户后端经 REST 创建与销毁。
+/// 不存在或已销毁的房间只有 join / send / mute / kick 回 1600；onlineCount 回 0、memberList 回空抽样，
+/// quit 永不失败——靠轮询在线人数发现不了房间被销毁，要听 room.destroyed 事件。
 final class ImRoomApi extends _Namespace {
   const ImRoomApi(super.requester);
 
@@ -1050,14 +1055,16 @@ final class ImRoomApi extends _Namespace {
       decodeOne('room.send', request.toJson(), cancel, ImSendResult.fromJson);
 
   /// `room.onlineCount`. How many are in the room, across the cluster. The server answers a bare
-  /// number rather than an object.
+  /// number rather than an object. **An unknown or destroyed room answers 0, not `1600`**: this is
+  /// polled for a viewer counter and the server skips the existence check.
+  /// 不存在或已销毁的房间回 0，不回 1600。
   Future<int> onlineCount(ImRoomIdRequest request, [ImCancelToken? cancel]) async =>
       imIntOr(await rawData('room.onlineCount', request.toJson(), cancel));
 
   /// `room.memberList`. **A sample of user ids, one membership shard per page — not the roster.**
   /// Page on [ImPage.hasMore] / [ImPage.nextCursor] only; a page may be short, or empty, with
-  /// more to come.
-  /// 返回的是抽样，不是全量名单；只按 hasMore / nextCursor 翻页。
+  /// more to come. An unknown or destroyed room is an empty sample, not `1600`.
+  /// 返回的是抽样，不是全量名单；只按 hasMore / nextCursor 翻页。不存在的房间回空抽样，不回 1600。
   Future<ImPage<String>> memberList(ImRoomCursorRequest request, [ImCancelToken? cancel]) async {
     final Map<String, dynamic> json =
         imMap(await rawData('room.memberList', request.toJson(), cancel));
