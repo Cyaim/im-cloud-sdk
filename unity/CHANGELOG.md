@@ -10,6 +10,25 @@ to ask which platform.
 
 ### Added
 
+- **`im.Room` — the seven `room.*` endpoints of T4**: `JoinAsync`, `QuitAsync`, `SendAsync`,
+  `OnlineCountAsync`, `MemberListAsync`, `MuteAsync`, `KickAsync`, with `ImRoomIdRequest`,
+  `ImRoomCursorRequest`, `ImRoomSendRequest` + `ImRoomMessage` (the members of `SendMessageRequest` a
+  room reads, written in the exact camelCase the socket binder requires inside `message`),
+  `ImRoomMuteRequest`, `ImRoomKickRequest`, `ImChatRoom` and `ImRoomJoinResult`. `JoinAsync`,
+  `QuitAsync` and `OnlineCountAsync` also take a bare room id. `SendAsync` generates a missing
+  `ClientMsgId` and stamps `SendTime` as `msg.send` does, but does not go through it: the result's
+  `Seq` is always 0 and touches no cursor. `OnlineCountAsync` reads the bare number;
+  `MemberListAsync` returns an `ImPage<string>` sample. `ImRoomMuteRequest` takes room, user and
+  `untilMs` in its only constructor, because a null user is the whole room and a null `untilMs` lifts
+  the mute; `ImRoomMuteRequest.Unmute` names that half.
+- **`im.OnRoomEvent`** decodes `room.muted` / `room.kicked` / `room.destroyed` out of `evt.system` into
+  `ImRoomEvent`, as a second reader beside the device-log request; an unknown `room.*` name is
+  delivered with its raw `Body`.
+- **Room messages and gap repair, now under test.** A room message is an `ImMessage` with `Seq` 0 on
+  `MessageReceived`. The SDK already delivered seq 0 straight through; `RoomTests` now proves it asks
+  `msg.sync` for nothing, is not held behind another conversation's repair, moves no cursor, and that
+  committing it leaves `r_<roomId>` out of the next `conn.sync`. The room rows are in
+  `wire-samples/unity.json`.
 - **`im.Desk` — the nine `desk.*` endpoints of T4**, typed as TypeScript has typed them since
   2026-09-07: `RequestAsync`, `AcceptAsync`, `TransferAsync`, `CloseAsync`, `StatusAsync`,
   `QueueAsync`, `RateAsync`, `CannedAsync`, `SuggestAsync`, with their request and payload types

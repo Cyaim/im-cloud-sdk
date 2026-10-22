@@ -183,6 +183,7 @@ namespace Cyaim.Im
             Moderation = new ImModerationApi(this);
             Diag = new ImDiagApi(this);
             Desk = new ImDeskApi(this);
+            Room = new ImRoomApi(this);
 
             // Defaulted rather than required, unlike the cursor store: losing cursors loses a
             // player's messages, while losing logs loses a diagnostic (ADR-003).
@@ -247,6 +248,13 @@ namespace Cyaim.Im
         /// ordinary chat; see <see cref="ImDeskApi"/>.
         /// </summary>
         public ImDeskApi Desk { get; private set; }
+
+        /// <summary>
+        /// <c>room.*</c> — chat rooms (T4): join, quit, send, the head count, a member sample, mute and
+        /// kick. A room message arrives on <see cref="MessageReceived"/> with <c>Seq</c> 0 and never
+        /// touches a cursor or the gap repair; see <see cref="ImRoomApi"/>.
+        /// </summary>
+        public ImRoomApi Room { get; private set; }
 
         /// <summary>
         /// The SDK's own runtime log: written here, read when the server asks this device for it.
@@ -348,6 +356,13 @@ namespace Cyaim.Im
         /// durably and then call <see cref="Commit"/>: delivery is at-least-once, so be idempotent
         /// on <see cref="ImMessage.MessageId"/>, and a message that is never committed is delivered
         /// again after the next reconnect.
+        /// <para>
+        /// The exception is a message with <c>Seq</c> 0 — chat-room traffic (<c>ConversationId</c>
+        /// <c>r_&lt;roomId&gt;</c>, see <see cref="ImRoomApi"/>) and other online-only signals. It is
+        /// delivered the moment it arrives, never repaired, never replayed, and moves no cursor; there is
+        /// nothing to commit for it.
+        /// Seq 为 0 的消息（聊天室等）到达即交付，不补洞、不重放、不动游标，也无需 Commit。
+        /// </para>
         /// </remarks>
         public event Action<ImMessage> MessageReceived;
 
@@ -437,6 +452,36 @@ namespace Cyaim.Im
                 if (deskEvent.IsKnown)
                 {
                     handler(deskEvent);
+                }
+            });
+        }
+
+        /// <summary>
+        /// Subscribes to the <c>room.*</c> events inside <c>evt.system</c>, decoded: a mute set or
+        /// lifted, a member kicked, a room destroyed. Dispose to unsubscribe.
+        /// </summary>
+        /// <remarks>
+        /// Not an endpoint, so it lives here rather than on <see cref="Room"/>. It is a second reader
+        /// of <c>evt.system</c> beside the device-log runner, and takes only the events whose name
+        /// starts with <c>room.</c> — the device-log request and anything else on that target go on to
+        /// their own handlers untouched. A <c>room.*</c> name this build does not know is delivered
+        /// with its raw <see cref="ImRoomEvent.Body"/> rather than dropped. Room <i>messages</i> are not
+        /// here: they are ordinary <see cref="MessageReceived"/> messages with <c>Seq</c> 0.
+        /// evt.system 的第二个读者，只取 room.* 事件；设备日志请求等其余事件照旧交给各自的处理器。
+        /// </remarks>
+        public IDisposable OnRoomEvent(Action<ImRoomEvent> handler)
+        {
+            if (handler == null)
+            {
+                throw new ArgumentNullException("handler");
+            }
+
+            return On(ImPushTarget.System, delegate(JsonValue data)
+            {
+                var roomEvent = ImRoomEvent.FromSystemData(data);
+                if (roomEvent != null)
+                {
+                    handler(roomEvent);
                 }
             });
         }

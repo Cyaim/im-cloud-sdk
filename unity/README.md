@@ -212,9 +212,10 @@ its target — so if you know the endpoint you know the call, in this SDK and in
 | `im.Moderation` | `ReportAsync` |
 | `im.Diag` | `LogRequestsAsync` `LogUploadedAsync` — the client drives both; ordinary games never call them |
 | `im.Desk` | `RequestAsync` `AcceptAsync` `TransferAsync` `CloseAsync` `StatusAsync` `QueueAsync` `RateAsync` `CannedAsync` `SuggestAsync` — T4, the customer-service desk |
+| `im.Room` | `JoinAsync` `QuitAsync` `SendAsync` `OnlineCountAsync` `MemberListAsync` `MuteAsync` `KickAsync` — T4, chat rooms |
 
-That is tiers **T0**, **T1**, **T2** and **T3** of `sdk/CONTRACT.md`, plus the nine `desk.*` of T4 —
-82 of the server's 107 endpoints: the session floor, everything a two-person chat app needs to launch, the contacts,
+That is tiers **T0**, **T1**, **T2** and **T3** of `sdk/CONTRACT.md`, plus the nine `desk.*` and the
+seven `room.*` of T4 — 89 of the server's 107 endpoints: the session floor, everything a two-person chat app needs to launch, the contacts,
 blocking, groups, presence and reporting that turn it into a messenger a store will accept, and the
 competitive-parity tier on top — pins, favourites, search, read-receipt detail, burn-after-reading
 and group administration. The names after the `·` are T3.
@@ -231,6 +232,52 @@ notice only when `ContentType` is `ImMessageContentType.Notification` **and** th
 is 1801–1807: the same seven numbers are account error codes elsewhere on this platform, so a bare
 code check will one day draw "your account is locked" onto a support transcript. The TypeScript
 SDK's `readDeskNotification` documents the fields each code carries; this SDK has no reader yet.
+
+### Chat rooms
+
+A room is the live-stream comment wall, the world channel, the lobby everyone is in at once — and it
+trades **every delivery guarantee** for that scale. One rule follows, and it is not visible from any
+signature:
+
+**A room message has `Seq` 0, and it never enters gap repair.** It arrives on `MessageReceived` as an
+ordinary `ImMessage` with `ConversationId` `r_<roomId>` and `ConversationType.ChatRoom`, the moment it
+arrives — never held behind a repair in another conversation, never fetched with `msg.sync`, never
+replayed after a reconnect, and it moves no cursor. Nothing is stored per player and nothing is pushed
+offline: a frame dropped while the socket was down is gone, and there is no range to ask for. Do not
+order room messages by `Seq` (it is 0 on all of them — use arrival order or `CreateTime`), and there
+is nothing to `Commit`: `Commit` ignores a seq of 0, so a game that commits everything it stores does
+not register the room as a conversation to resume. `im.Room.SendAsync` answers `Seq` 0 too, which is
+why it does not go through `msg.send` and its cursor bookkeeping.
+
+```csharp
+var joined = await im.Room.JoinAsync("lobby");           // the room, its head count, its last few messages
+foreach (var m in joined.Recent) ShowComment(m);         // returned here only; not replayed on MessageReceived
+
+await im.Room.SendAsync(new ImRoomSendRequest("lobby", ImRoomMessage.Text("gg")));
+
+using (im.OnRoomEvent(e =>
+{
+    if (e.Event == ImRoomEvent.Kicked && e.UserId == myUserId) LeaveRoomScreen();
+}))
+{
+    // …
+}
+```
+
+- **Rooms are created by the tenant's backend** (`POST /v1/rooms`); there is no socket call for it.
+- **Joining belongs to the connection.** After a reconnect, call `JoinAsync` again for every room still
+  on screen — the SDK does not rejoin for you.
+- **`ImRoomMuteRequest` takes all three members in its constructor**, because both optional ones mean
+  something when absent: a null `userId` mutes the whole room, and a null or past `untilMs` *lifts*
+  the mute. `ImRoomMuteRequest.Unmute(roomId, userId)` says the lifting half out loud. Only the owner
+  and the room's admins may mute or kick (`1103`), and never the owner (`1511`).
+- **`MemberListAsync` returns a sample**, not the roster; page on `HasMore` / `NextCursor`.
+  `OnlineCountAsync` is a bare number. An unknown or destroyed room answers 0 and an empty sample
+  there, and `1600` from join, send, mute and kick.
+- **`im.OnRoomEvent(handler)`** decodes `room.muted`, `room.kicked` and `room.destroyed` out of
+  `evt.system`, beside — not instead of — the device-log request that rides the same target. A
+  `room.*` name this build does not know is delivered with its raw `Body`. A `room.muted` without
+  `UntilMs` is a lift; `IsMuteInForceAt(nowMs)` reads it for you.
 
 Every method takes exactly one request object, because with positional parameters the server adding
 one optional field is a source-breaking change in five languages at once. Convenience overloads
@@ -263,8 +310,8 @@ Every T3 method carries its full list of refusals in its doc comment. These are 
   Called with no request it lists across every group you manage.
 - **`friend.setRemark` without `Remark` clears the remark**, while leaving `Tags` null keeps them.
 
-Everything else — E2EE, live rooms, AI streaming, scheduling, conversation folders: the other 25
-endpoints of T4 — is reachable today through the escape hatch, which shares one code path with the
+Everything else — E2EE, AI streaming, scheduling, conversation folders: the other 18 endpoints of
+T4 — is reachable today through the escape hatch, which shares one code path with the
 typed surface and is not going away:
 
 ```csharp
@@ -444,6 +491,7 @@ token fetch, and `test-framework` for the tests below. The runtime itself needs 
 | `StateChanged` | `Idle` \| `Connecting` \| `Open` \| `Reconnecting` \| `Closed` |
 | `Kicked` | Kicked off, with whether it is terminal |
 | `On(target, fn)` | Any other server event (`evt.typing`, `evt.read`, `evt.group`, …) |
+| `OnDeskEvent(fn)` / `OnRoomEvent(fn)` | `evt.desk`, and the `room.*` events inside `evt.system`, decoded |
 | `Conn` `Msg` `Conv` `User` `Friend` `Group` `Media` `Push` | The typed surface |
 | `InvokeAsync<T>(target, body)` | Any endpoint not yet typed |
 | `Connection` | The socket underneath: `ReconnectNow()`, `SetToken()`, `ReauthAsync()`, raw frames |

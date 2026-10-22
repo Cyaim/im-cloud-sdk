@@ -79,6 +79,7 @@ namespace Cyaim.Im.Tests
             typeof(ImModerationApi),
             typeof(ImDiagApi),
             typeof(ImDeskApi),
+            typeof(ImRoomApi),
         };
 
         /// <summary>
@@ -110,6 +111,18 @@ namespace Cyaim.Im.Tests
         /// and judged the same way.
         /// </summary>
         private static readonly string[] ShippedTiers = { "T0", "T1", "T2", "T3", "T4" };
+
+        /// <summary>
+        /// Target families this SDK types whole although the inventory may not say so yet.
+        /// </summary>
+        /// <remarks>
+        /// <c>implementedIn</c> is computed in the platform repository, from this SDK's sources, when it
+        /// regenerates <c>endpoint-inventory.json</c> — so on the commit that types a family the
+        /// committed inventory still says false. A family listed here is expected to have rows whether
+        /// or not the inventory has caught up; once it has, the entry is redundant and harmless.
+        /// implementedIn 由平台仓库重新生成清单时才翻转；在这里登记的家族不论清单是否跟上都要求有行。
+        /// </remarks>
+        private static readonly string[] TypedFamilies = { "room." };
 
         /// <summary>
         /// Server request fields no Unity body carries, each with the reason. The platform repository
@@ -546,6 +559,34 @@ namespace Cyaim.Im.Tests
                 })),
                 R("desk.canned", "Desk.CannedAsync, no filter", c => c.Desk.CannedAsync()),
 
+                // ------------------------------------------------------------- room (T4)
+                // The nested message carries the members of SendMessageRequest a room reads; the
+                // address, quote and thread members are msg.send's, and its rows send them. The second
+                // mute row is the whole-room unmute: both optional keys absent.
+                R("room.join", "Room.JoinAsync(ImRoomIdRequest)", c => c.Room.JoinAsync(new ImRoomIdRequest("lobby"))),
+                R("room.join", "Room.JoinAsync(string)", c => c.Room.JoinAsync("lobby")),
+                R("room.quit", "Room.QuitAsync(ImRoomIdRequest)", c => c.Room.QuitAsync(new ImRoomIdRequest("lobby"))),
+                R("room.quit", "Room.QuitAsync(string)", c => c.Room.QuitAsync("lobby")),
+                R("room.send", "Room.SendAsync, every member", c => c.Room.SendAsync(new ImRoomSendRequest("lobby", new ImRoomMessage
+                {
+                    ContentType = ImMessageContentType.Custom,
+                    Content = JsonValue.NewObject().Set("gift", "rocket").Set("count", 3L),
+                    ClientMsgId = "room-wire",
+                    MentionAll = true,
+                    MentionedUserIds = new[] { "alice" },
+                    Options = JsonValue.NewObject().Set("priority", 0L),
+                    SendTime = PinnedTime,
+                    Extensions = Obj("combo", "7"),
+                }))),
+                Generated("room.send", "Room.SendAsync, defaults filled in", c => c.Room.SendAsync(new ImRoomSendRequest("lobby", ImRoomMessage.Text("hi")))),
+                R("room.onlineCount", "Room.OnlineCountAsync(ImRoomIdRequest)", c => c.Room.OnlineCountAsync(new ImRoomIdRequest("lobby"))),
+                R("room.onlineCount", "Room.OnlineCountAsync(string)", c => c.Room.OnlineCountAsync("lobby")),
+                R("room.memberList", "Room.MemberListAsync, every member", c => c.Room.MemberListAsync(new ImRoomCursorRequest("lobby") { Cursor = "members:2", Limit = 20 })),
+                R("room.memberList", "Room.MemberListAsync, first page", c => c.Room.MemberListAsync(new ImRoomCursorRequest("lobby"))),
+                R("room.mute", "Room.MuteAsync, one member until a time", c => c.Room.MuteAsync(new ImRoomMuteRequest("lobby", "bob", 1758499200000L))),
+                R("room.mute", "Room.MuteAsync, whole room, unmute", c => c.Room.MuteAsync(ImRoomMuteRequest.Unmute("lobby"))),
+                R("room.kick", "Room.KickAsync", c => c.Room.KickAsync(new ImRoomKickRequest("lobby", "bob"))),
+
                 // ------------------------------------------- frozen [Obsolete] aliases
                 R("msg.send", "ImClient.SendAsync [Obsolete]", c => c.SendAsync(FullSend(ImRecipient.Conversation("c_wire"), ImConversationType.Single, "cm-4"))),
                 Generated("msg.send", "ImClient.SendTextAsync [Obsolete]", c => c.SendTextAsync(ImRecipient.User("bob"), "hi")),
@@ -573,10 +614,13 @@ namespace Cyaim.Im.Tests
             var expected = new SortedSet<string>(StringComparer.Ordinal);
             foreach (var endpoint in Inventory()["endpoints"].Items)
             {
-                if (endpoint["implementedIn"]["unity"].AsBool()
-                    && Array.IndexOf(ShippedTiers, endpoint["tier"].AsString()) >= 0)
+                var target = endpoint["target"].AsString();
+                var typedHere = endpoint["implementedIn"]["unity"].AsBool()
+                    || Array.Exists(TypedFamilies, family => target.StartsWith(family, StringComparison.Ordinal));
+
+                if (typedHere && Array.IndexOf(ShippedTiers, endpoint["tier"].AsString()) >= 0)
                 {
-                    expected.Add(endpoint["target"].AsString());
+                    expected.Add(target);
                 }
             }
 
@@ -894,21 +938,34 @@ namespace Cyaim.Im.Tests
         /// </summary>
         private static JsonValue Pin(Row row, JsonValue body)
         {
-            if (row.Target != "msg.send")
+            // msg.send fills in its own members; room.send fills in its nested message's.
+            // msg.send 补的是自己的字段；room.send 补的是嵌套 message 里的。
+            JsonValue message;
+            if (row.Target == "msg.send")
+            {
+                message = body;
+            }
+            else if (row.Target == "room.send")
+            {
+                message = body["message"];
+                Assert.That(message.Kind, Is.EqualTo(JsonKind.Object),
+                    row.Via + ": message is a SendMessageRequest on the server; body was " + body.ToJson());
+            }
+            else
             {
                 return body;
             }
 
-            Assert.That(body["sendTime"].Kind, Is.EqualTo(JsonKind.Number),
+            Assert.That(message["sendTime"].Kind, Is.EqualTo(JsonKind.Number),
                 row.Via + ": sendTime is a long on the server; body was " + body.ToJson());
-            body.Set("sendTime", PinnedTime);
+            message.Set("sendTime", PinnedTime);
 
             if (row.GeneratedClientMsgId)
             {
-                Assert.That(body["clientMsgId"].Kind, Is.EqualTo(JsonKind.String),
+                Assert.That(message["clientMsgId"].Kind, Is.EqualTo(JsonKind.String),
                     row.Via + ": clientMsgId is a string on the server; body was " + body.ToJson());
-                Assert.That(body["clientMsgId"].AsString(), Is.Not.Empty, row.Via + ": clientMsgId");
-                body.Set("clientMsgId", PinnedId);
+                Assert.That(message["clientMsgId"].AsString(), Is.Not.Empty, row.Via + ": clientMsgId");
+                message.Set("clientMsgId", PinnedId);
             }
 
             return body;

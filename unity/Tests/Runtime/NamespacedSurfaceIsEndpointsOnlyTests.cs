@@ -52,6 +52,7 @@ namespace Cyaim.Im.Tests
             { typeof(ImModerationApi), "moderation" },
             { typeof(ImDiagApi), "diag" },
             { typeof(ImDeskApi), "desk" },
+            { typeof(ImRoomApi), "room" },
         };
 
         /// <summary>
