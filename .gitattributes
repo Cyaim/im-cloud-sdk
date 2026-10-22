@@ -23,3 +23,15 @@
 *.psm1    text eol=lf
 *.mjs     text eol=lf
 gradlew   text eol=lf
+
+# 许可证副本。每个包目录随包发出去一份,`SdkPublishedMetadataTests` 要求它们与根上那份**逐字节**相同。
+# 带 CRLF 提交的一份在 Windows 检出里(core.autocrlf=true)与 LF 的那份在磁盘上一模一样,
+# 到了 Linux 上就不一样——2026-10-09 swift/LICENSE 就是这样骗过了本机 CI,在 GitHub 上
+# 把单测套件弄红的。钉成 LF,两个平台上的字节才是同一份。
+#
+# Licence copies. Each package directory ships its own, and `SdkPublishedMetadataTests` wants every
+# one byte-identical to the root copy. A copy committed with CRLF is identical to the LF one on a
+# Windows checkout (core.autocrlf=true) and different on Linux — which is how swift/LICENSE passed
+# local CI and failed GitHub's unit suite on 2026-10-09. Pinned to LF, the bytes match everywhere.
+LICENSE     text eol=lf
+LICENSE.md  text eol=lf
