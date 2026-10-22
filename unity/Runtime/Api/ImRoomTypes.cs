@@ -360,7 +360,12 @@ namespace Cyaim.Im
         /// <summary>A room-wide mute is in force: only the owner and admins can send (<c>1603</c> for everyone else).</summary>
         public bool MuteAll { get; internal set; }
 
-        /// <summary>The tenant's backend destroyed it. Every call about it answers <c>1600</c>.</summary>
+        /// <summary>
+        /// The tenant's backend destroyed it. Only <c>room.join</c>, <c>room.send</c>, <c>room.mute</c>
+        /// and <c>room.kick</c> answer <c>1600</c> for it: <c>room.onlineCount</c> answers 0,
+        /// <c>room.memberList</c> an empty sample and <c>room.quit</c> succeeds, so polling the count
+        /// never notices — watch <see cref="ImRoomEvent.Destroyed"/> instead.
+        /// </summary>
         public bool Destroyed { get; internal set; }
 
         /// <summary>Unix ms.</summary>
