@@ -40,7 +40,7 @@ import kotlin.random.Random
 /**
  * The client applications actually use.
  *
- * Beyond wrapping the 82 typed endpoints — tiers T0–T3, and the nine `desk.*` of T4 — this owns the one thing every correct IM
+ * Beyond wrapping the 89 typed endpoints — tiers T0–T3, and the nine `desk.*` and seven `room.*` of T4 — this owns the one thing every correct IM
  * client must do and most hand-rolled ones do not: it keeps two cursors per conversation, notices
  * when an arriving message skips a number, and pulls the missing range before delivering.
  *
@@ -187,6 +187,12 @@ public class ImClient(
      */
     public val desk: DeskApi = DeskApi(connection)
 
+    /**
+     * `room.*` — chat rooms (T4). Their messages carry seq 0 and never touch a cursor or the gap
+     * repair; see [RoomApi].
+     */
+    public val room: RoomApi = RoomApi(connection, ::newClientMsgId)
+
     private val deviceLogs: ImDeviceLogs = ImDeviceLogs(diag, log, options.deviceId)
 
     // ------------------------------------------------------------------------- events
@@ -195,6 +201,10 @@ public class ImClient(
 
     /**
      * Every message, in `seq` order per conversation, gaps already repaired.
+     *
+     * Chat-room messages come through here too, and are the exception: `seq` **0**, `conversationId`
+     * `r_<roomId>`, delivered the moment they arrive, never repaired, never deduplicated by seq, and
+     * never to be committed — a room has no range to repair (see [RoomApi]).
      *
      * Hot and without replay, so start collecting before [connect]: a message emitted while
      * nothing is subscribed is dropped from the flow — the same thing that happens to a push with
@@ -271,6 +281,19 @@ public class ImClient(
                 .getOrNull()
                 ?.takeIf { it.event == DeskEvent.SESSION || it.event == DeskEvent.AGENT }
         }
+
+    /**
+     * The `room.*` events — mutes, kicks, a room destroyed — out of `evt.system`.
+     *
+     * A separate reader of that target from the device-log handler, and it takes only the events whose
+     * name starts `room.`: everything else on `evt.system` belongs to someone else and is left alone.
+     * A `room.*` name this build does not know is delivered rather than dropped (see [RoomEvent]).
+     *
+     * evt.system 的另一个读者，只取名字以 room. 开头的事件；其余的属于别人，不碰。
+     */
+    public val roomEvents: Flow<RoomEvent> = connection.frames
+        .filter { it.target == PushTarget.System }
+        .mapNotNull { frame -> RoomEvent.fromSystemData(frame.body?.data) }
 
     /** Socket lifecycle. */
     public val state: StateFlow<ConnectionState> get() = connection.state
@@ -426,8 +449,17 @@ public class ImClient(
      *
      * 在你自己的写入成功之后调用，而不是在 UI 收到消息时。回调返回只说明消息进了内存，
      * 而内存正是崩溃会丢掉的东西。
+     *
+     * A seq of 0 or below is ignored, as the TypeScript SDK ignores it: nothing at seq 0 was ever
+     * stored, and a chat-room message (`seq` 0, `r_<roomId>`) committed by an application that
+     * commits everything it stores would otherwise register the room as a conversation and send it in
+     * every `conn.sync`.
+     *
+     * seq ≤ 0 一律忽略：seq 0 的东西从来没有存储过；否则「存什么就 commit 什么」的应用会把聊天室登记成会话，
+     * 每次 conn.sync 都带上它。
      */
     public suspend fun commit(conversationId: String, seq: Long) {
+        if (seq <= 0L) return
         ensureCursorsLoaded()
         if (cursors.commit(conversationId, seq)) writer.schedule()
     }

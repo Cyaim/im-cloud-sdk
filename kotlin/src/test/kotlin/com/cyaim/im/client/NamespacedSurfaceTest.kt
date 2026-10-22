@@ -36,6 +36,7 @@ class NamespacedSurfaceTest {
         ModerationApi::class.java to "moderation",
         DiagApi::class.java to "diag",
         DeskApi::class.java to "desk",
+        RoomApi::class.java to "room",
     )
 
     /**

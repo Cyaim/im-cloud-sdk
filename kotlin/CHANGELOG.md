@@ -13,6 +13,25 @@ published as `ImSdk.contractVersion`.
 First published release. The version is deliberately below 1.0.0: `1.0.0` is reserved for contract
 tiers T0 and T1 complete on **all five** SDKs. Nothing before this was ever published.
 
+### Added (2026-10-22)
+
+- **`im.room` — the seven `room.*` endpoints of T4**: `join`, `quit`, `send`, `onlineCount`,
+  `memberList`, `mute`, `kick`, with `RoomIdRequest` / `RoomCursorRequest` / `RoomSendRequest` /
+  `RoomMuteRequest` / `RoomKickRequest`, `ChatRoom` and `RoomJoinResult`. `room.send` takes a
+  `RoomMessage` — the members of `SendMessageRequest` a room reads — and fills a blank `clientMsgId`.
+  `RoomMuteRequest` has no defaults: a null `userId` is the whole room and a null `untilMs` lifts the
+  mute, and neither should happen by omission. `im.roomEvents` decodes `room.muted` / `room.kicked` /
+  `room.destroyed` out of `evt.system`, beside the device-log handler and without touching it.
+- Tests prove a chat-room message (`seq` 0, `r_<roomId>`) is delivered at once, asks `msg.sync` for
+  nothing, is not held behind another conversation's repair and moves no cursor.
+- `wire-samples/kotlin.json` records the five room request bodies.
+
+### Changed (2026-10-22)
+
+- **`commit(conversationId, seq)` ignores a seq of 0 or below**, as the TypeScript SDK always has.
+  The quick start commits every message it stores; a room message committed that way registered the
+  room as a conversation at 0 and sent it in every `conn.sync`.
+
 ### Added (2026-10-09)
 
 - **`im.desk` — the nine `desk.*` endpoints of T4**, typed as TypeScript has typed them since

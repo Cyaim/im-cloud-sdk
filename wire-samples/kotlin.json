@@ -63,6 +63,11 @@
     {"type":"DeskStatusRequest","via":"asBody(DeskStatusRequest)","body":{"status":2,"maxConcurrent":4}},
     {"type":"DeskRateRequest","via":"asBody(DeskRateRequest)","body":{"sessionId":"ds_1","score":2,"resolved":false,"starTags":["slow"],"comment":"c"}},
     {"type":"DeskSuggestRequest","via":"asBody(DeskSuggestRequest)","body":{"sessionId":"ds_1"}},
-    {"type":"DeskCannedRequest","via":"asBody(DeskCannedRequest)","body":{"skill":"billing","scope":"personal","ownerMemberId":"m_1"}}
+    {"type":"DeskCannedRequest","via":"asBody(DeskCannedRequest)","body":{"skill":"billing","scope":"personal","ownerMemberId":"m_1"}},
+    {"type":"RoomIdRequest","via":"asBody(RoomIdRequest)","body":{"roomId":"lobby"}},
+    {"type":"RoomCursorRequest","via":"asBody(RoomCursorRequest)","body":{"roomId":"lobby","cursor":"1","limit":20}},
+    {"type":"RoomSendRequest","via":"asBody(RoomSendRequest)","body":{"roomId":"lobby","message":{"content":{"text":"hi"},"contentType":2,"clientMsgId":"cid","mentionAll":true,"mentionedUserIds":["bob"],"options":{"persistent":false,"updateConversation":false,"countUnread":false,"offlinePush":false,"pushConfig":{"title":"t","body":"b","sound":"s","payload":{"k":"v"},"badgeCount":false,"channelId":"ch"},"needReceipt":true,"priority":2,"onlineOnly":true,"noSelfSync":true,"expireIn":5000,"moderationBypass":true},"sendTime":1700000000000,"extensions":{"k":"v"}}}},
+    {"type":"RoomMuteRequest","via":"asBody(RoomMuteRequest)","body":{"roomId":"lobby","userId":"bob","untilMs":1758499200000}},
+    {"type":"RoomKickRequest","via":"asBody(RoomKickRequest)","body":{"roomId":"lobby","userId":"bob"}}
   ]
 }

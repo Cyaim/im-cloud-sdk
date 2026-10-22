@@ -166,8 +166,8 @@ peer will never send.
 
 ## The typed surface
 
-82 endpoints — contract tiers T0, T1, T2 and T3 in full, plus the nine `desk.*` of T4 — grouped
-into namespaces named for the target prefix, so a reader who knows the endpoint name knows the call
+89 endpoints — contract tiers T0, T1, T2 and T3 in full, plus the nine `desk.*` and the seven
+`room.*` of T4 — grouped into namespaces named for the target prefix, so a reader who knows the endpoint name knows the call
 without a lookup table. `msg.recall` is `im.msg.recall`; there are no synonyms. The names after the
 `·` are T3.
 
@@ -184,6 +184,7 @@ without a lookup table. `msg.recall` is `im.msg.recall`; there are no synonyms. 
 | `im.moderation` | `report` |
 | `im.diag` | `logRequests` `logUploaded` — the client drives both; ordinary applications never call them |
 | `im.desk` | `request` `accept` `transfer` `close` `status` `queue` `rate` `canned` `suggest` — T4, the customer-service desk |
+| `im.room` | `join` `quit` `send` `onlineCount` `memberList` `mute` `kick` — T4, chat rooms |
 
 Every method takes exactly one request object, named for the server DTO. That is not a style
 preference: with positional parameters, the server adding one optional field is a source-breaking
@@ -245,10 +246,40 @@ assignment around it.
   will one day draw "your account is locked" onto a support transcript. The TypeScript SDK's
   `readDeskNotification` documents the fields each code carries; this SDK has no reader yet.
 
+### Chat rooms — `im.room` (T4)
+
+A room is the live-stream comment wall and the broadcast lobby: it trades every delivery guarantee
+for scale, and the client has to know which ones.
+
+- **A room message has `seq` 0 and never enters gap repair.** It arrives on `im.messages` as an
+  ordinary `ImMessage` with `conversationId` `r_<roomId>` and `conversationType` `ChatRoom`,
+  delivered the moment it lands — not ordered, not deduplicated by seq, and never repaired: it is
+  not stored per user, so a dropped frame is simply gone and there is no range to ask `msg.sync`
+  for. The SDK keeps it out of every cursor; **do not commit it** (`commit` ignores seq 0, so the
+  quick start's "commit everything you store" loop is safe). `im.room.send` answers `seq` 0 too and
+  moves nothing.
+- **Rooms are created by the tenant's backend** (`POST /v1/rooms`); there is no socket call for it.
+- **Joining belongs to the connection.** After a reconnect, send `room.join` again for every room
+  still on screen — the SDK does not rejoin for you. `RoomJoinResult.recent` is the room's last few
+  messages for a newcomer, returned to the caller only and never replayed on `im.messages`.
+- **`RoomMuteRequest` has no defaults on purpose**: `userId = null` mutes the whole room, and
+  `untilMs = null` (or a time already past) *lifts* the mute. Only the owner and `ChatRoom.admins`
+  may mute or kick (`1103`), and nobody can mute or kick the owner (`1511`).
+- **`room.send` takes a `RoomMessage`**, not a `SendMessageRequest`: a room is addressed by
+  `roomId`, and quote, thread and receiver fields would be ignored. A blank `clientMsgId` is filled
+  in. Refusals: `1602` not joined (or kicked), `1603` the room is muted, `1506` you are muted,
+  `1003` the room is over its rate.
+- **`room.memberList` is a sample**, never the full list; page on `hasMore`. `room.onlineCount` is a
+  bare `Long`, and an unknown room answers 0 rather than `1600`.
+- `im.roomEvents` is the `room.*` events out of `evt.system` — `room.muted`, `room.kicked`,
+  `room.destroyed` — decoded into `RoomEvent`. It reads `evt.system` beside the device-log handler
+  and takes only names starting `room.`; one this build does not know still arrives, with its raw
+  `body`. A `room.kicked` naming you means stop sending: the server answers `1602` from then on.
+
 ### Anything not yet typed
 
-The rest of tier T4 — E2EE keys, chat rooms, streaming, scheduling, folders, translation — goes
-through the escape hatch, which shares one code path with the typed methods:
+The rest of tier T4 — E2EE keys, streaming, scheduling, folders, translation — goes through the
+escape hatch, which shares one code path with the typed methods:
 
 ```kotlin
 // msg.cancelScheduled is tier T4 and not typed yet:
@@ -268,6 +299,8 @@ Events are flows, calls are `suspend` functions, and everything is structured.
 | `messages: SharedFlow<ImMessage>` | Every message, in `seq` order per conversation, gaps repaired |
 | `state: StateFlow<ConnectionState>` | `Idle` \| `Connecting` \| `Open` \| `Reconnecting` \| `Closed` |
 | `kicks: Flow<KickEvent>` | Why the session ended, from the push or the close reason |
+| `deskEvents: Flow<DeskEvent>` | `evt.desk`, for a service-desk agent |
+| `roomEvents: Flow<RoomEvent>` | `room.muted` / `room.kicked` / `room.destroyed`, out of `evt.system` |
 | `conversationNeedsReload: Flow<String>` | Fell too far behind to backfill — reload it |
 | `cursorStoreState: StateFlow<…>` | Whether the cursor store loaded, and whether it persists |
 | `events<T>(target)` | Any other server event, decoded (`evt.typing`, `evt.read`, `evt.group`, …) |

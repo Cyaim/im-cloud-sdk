@@ -165,6 +165,18 @@ class RequestWireKindTest {
         "RecallMessageRequest.asAdmin" to "forced false for client calls; admin recall is a server-API capability",
     )
 
+    /**
+     * Members of a **nested** server type this SDK leaves off at one place it is used, keyed by the
+     * path from the request type. [omitted] cannot say this: it names a server type, and the same type
+     * is sent in full elsewhere (`SendMessageRequest` by `msg.send`). Not recorded into the wire
+     * samples — the platform's binder judges each type over every body, and `msg.send` covers these.
+     *
+     * 嵌套类型在某一处被刻意省掉的成员，按从请求类型起的路径登记。omitted 说不了这件事：它按服务端类型登记，
+     * 而同一个类型在别处整份发出（msg.send 的 SendMessageRequest）。不写进 wire samples。
+     */
+    private val omittedAt = listOf("conversationId", "receiverId", "groupId", "conversationType", "quoteMessageId", "threadRootId")
+        .associate { "RoomSendRequest.message.$it" to "a room is addressed by roomId and reads no quote or thread; RoomMessage leaves it out" }
+
     /** Every request object, fully populated, keyed by its class name — which is the server DTO's. */
     private fun samples(): Map<String, JsonObject> {
         val options = MessageOptions(
@@ -275,6 +287,20 @@ class RequestWireKindTest {
             sample(DeskRateRequest("ds_1", score = 2, resolved = false, starTags = listOf("slow"), comment = "c")),
             sample(DeskSuggestRequest("ds_1")),
             sample(DeskCannedRequest(skill = "billing", scope = DeskCannedReplyScope.Personal, ownerMemberId = "m_1")),
+            sample(RoomIdRequest("lobby")),
+            sample(RoomCursorRequest("lobby", cursor = "1", limit = 20)),
+            sample(
+                RoomSendRequest(
+                    "lobby",
+                    RoomMessage(
+                        content = textContent("hi"), contentType = MessageContentType.Image, clientMsgId = "cid",
+                        mentionAll = true, mentionedUserIds = listOf("bob"), options = options,
+                        sendTime = 1_700_000_000_000L, extensions = ext,
+                    ),
+                ),
+            ),
+            sample(RoomMuteRequest("lobby", userId = "bob", untilMs = 1_758_499_200_000L)),
+            sample(RoomKickRequest("lobby", "bob")),
         ).toMap()
     }
 
@@ -288,7 +314,7 @@ class RequestWireKindTest {
         val types = inventory.getValue("payloadTypes").jsonObject
         val enums = inventory.getValue("payloadEnums").jsonObject.keys
         val samples = samples()
-        val sweep = Sweep(types, enums, omitted.keys)
+        val sweep = Sweep(types, enums, omitted.keys, omittedAt.keys)
 
         val requestTypes = inventory.getValue("endpoints").jsonArray.map { it.jsonObject }
             .filter { it.getValue("implementedIn").jsonObject.getValue("kotlin").jsonPrimitive.booleanOrNull == true }
@@ -307,8 +333,17 @@ class RequestWireKindTest {
             val (type, field) = key.split('.', limit = 2)
             if (samples[type]?.containsKey(field) == true) sweep.problems += "$key is declared omitted ($reason) but is sent"
         }
+        for ((key, reason) in omittedAt) {
+            val path = key.split('.')
+            var node: JsonElement? = samples[path.first()]
+            for (step in path.drop(1)) node = (node as? JsonObject)?.get(step)
+            if (node != null) sweep.problems += "$key is declared omitted ($reason) but is sent"
+        }
 
-        println("RequestWireKindTest: ${requestTypes.size} request types, ${sweep.checked} fields checked, ${omitted.size} declared omitted")
+        println(
+            "RequestWireKindTest: ${requestTypes.size} request types, ${sweep.checked} fields checked, " +
+                "${omitted.size + omittedAt.size} declared omitted",
+        )
         assertTrue(
             sweep.problems.isEmpty(),
             "${sweep.problems.size} request field(s) do not leave as the kind the server binds " +
@@ -401,6 +436,7 @@ class RequestWireKindTest {
         private val types: JsonObject,
         private val enums: Set<String>,
         private val omitted: Set<String>,
+        private val omittedAt: Set<String>,
     ) {
         val problems = mutableListOf<String>()
         var checked = 0
@@ -423,7 +459,7 @@ class RequestWireKindTest {
                 val csType = property.getValue("type").jsonPrimitive.content
                 val element = value[name]
                 if (element == null || element is JsonNull) {
-                    if ("$type.$name" !in omitted) {
+                    if ("$type.$name" !in omitted && "$path.$name" !in omittedAt) {
                         problems += "$path.$name ($csType): not in the sample — populate it, or declare it omitted with a reason"
                     }
                     continue
