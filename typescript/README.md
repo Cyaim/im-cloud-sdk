@@ -177,11 +177,12 @@ report can be grepped rather than translated.
 | `im.moderation` | `report` |
 | `im.diag` | `logRequests` `logUploaded` — the client drives both; ordinary applications never call them |
 | `im.desk` | `request` `accept` `transfer` `close` `status` `queue` `rate` `canned` `suggest` |
+| `im.room` | `join` `quit` `send` `onlineCount` `memberList` `mute` `kick` |
 
-That is tiers **T0, T1, T2 and T3 in full, plus the whole of `desk.*` from T4** — 82 of the
-server's 107 endpoints, verified against `sdk/endpoint-inventory.json` by the test suite rather than
-counted by hand. The names after the `·` are T3. The other 25 endpoints of T4 go through `invoke()`
-until they are typed.
+That is tiers **T0, T1, T2 and T3 in full, plus the whole of `desk.*` and `room.*` from T4** — 89 of
+the server's 107 endpoints, verified against `sdk/endpoint-inventory.json` by the test suite rather
+than counted by hand. The names after the `·` are T3. The other 18 endpoints of T4 go through
+`invoke()` until they are typed.
 
 ### Tier T3 — what the signatures do not say
 
@@ -214,6 +215,7 @@ Client-level:
 | `commit(conversationId, seq)` | You have durably stored up to `seq`. Monotonic |
 | `onConversationNeedsReload(fn)` | A conversation the SDK declined to backfill; reload it from history |
 | `onEvent(target, fn)` | Any other server event (`evt.typing`, `evt.read`, `evt.group`, …) |
+| `onDeskEvent(fn)` / `onRoomEvent(fn)` | `evt.desk`, and the `room.*` events on `evt.system`, decoded |
 | `onState(fn)` | `idle` \| `connecting` \| `open` \| `reconnecting` \| `closed` |
 | `onError(fn)` | SDK-level failures with no caller to reject — cursor store, interrupted resume |
 | `deliveredSeq` / `committedSeq` / `cursorSnapshot()` | What the SDK believes, so you can check it |
@@ -244,7 +246,7 @@ await im.invoke<void>('msg.cancelScheduled', { scheduleId });
 
 ## Customer-service desk
 
-`desk.*` is the one tier-4 namespace that is typed, because a customer asked for it. Nine verbs move
+`desk.*` is the first tier-4 namespace that was typed, because a customer asked for it. Nine verbs move
 the *assignment* around a session; **everything either side actually says is an ordinary chat** in
 the single conversation between the customer and the desk account, sent with `msg.send` and read
 with `msg.history` like any other message.
@@ -313,6 +315,63 @@ Four things worth knowing before you build on it:
 `1205 ConcurrencyLimitExceeded` on `desk.accept` means this agent is at the capacity they declared;
 the fix is to finish a session, not to retry, which is why it is not in the retryable set. An empty
 queue is `1002`, not an empty success.
+
+## Chat rooms
+
+`room.*` is the second tier-4 family typed whole: live-stream style rooms that broadcast to whoever
+is in them right now. **Rooms trade every delivery guarantee for scale**, and that changes what a
+message is:
+
+- **A room message is an ordinary `ImMessage` with `seq: 0`**, conversation id `r_{roomId}` and
+  `conversationType` `ChatRoom`. It arrives on `onMessage` with everything else, **and never enters
+  gap repair or seq tracking**: no `msg.sync` is ever requested for it, no cursor moves, nothing is
+  written to your cursor store, and it is handed over at once rather than queued behind a repair. A
+  room message that went through gap repair would ask for a range that does not exist on every
+  arrival, or move a cursor and fabricate a gap for the next real message. Do not `commit` room
+  messages, and do not dedupe them on `seq` — there is none; use `messageId`.
+- **Nothing is stored and nothing is replayed.** No history, no offline push, no catch-up after a
+  reconnect. `join` hands back `recent` — a short ring buffer for whoever just walked in, oldest first,
+  every entry `seq: 0` — and that is the only look back there is. It is returned to you, not replayed
+  through `onMessage`.
+- **Membership belongs to the connection.** A reconnect leaves every room and the SDK does not rejoin
+  for you; call `join` again for the rooms still on screen.
+- **Rooms are created and destroyed by your backend** (`POST /v1/rooms`, `DELETE /v1/rooms/{roomId}`),
+  never from the socket.
+
+```ts
+const { room, onlineCount, recent } = await im.room.join({ roomId: 'lobby' });
+drawBacklog(recent);                                         // the buffer; not replayed via onMessage
+
+im.onMessage((message) => {
+  const roomId = roomIdOf(message);                          // null for anything that is not a room
+  if (roomId) return drawInRoom(roomId, message);            // seq 0: no repair, no cursor, no commit
+  renderChat(message);
+});
+
+await im.room.send({ roomId: 'lobby', message: { content: { text: 'hi' } } });   // clientMsgId filled in
+await im.room.send({
+  roomId: 'lobby',
+  message: { contentType: MessageContentType.Custom, content: { gift: 'rocket' }, options: { priority: MessagePriority.Low } },
+});                                                          // Low is shed first when the room is busy
+
+im.onRoomEvent((event) => {
+  if (event.event === RoomEventName.Kicked && event.userId === me) return leaveRoomScreen(event.roomId);
+  if (event.event === RoomEventName.Muted) return setMuted(event.roomId, event.userId, isRoomMuteActive(event));
+  if (event.event === RoomEventName.Destroyed) return closeRoom(event.roomId);
+});
+```
+
+Four things worth knowing:
+
+- **`room.mute` is also unmute.** `untilMs` in the future mutes until then; absent or past unmutes.
+  Without `userId` it is the whole room — the owner and admins still speak. The `room.muted` event
+  carries the same two fields, so `isRoomMuteActive(event)` is how to tell a mute from an unmute.
+- **Only the owner or an admin may mute or kick** (`1103` otherwise), and the owner cannot be muted
+  or kicked (`1511`). Admins are set by your backend.
+- **`memberList` is a sample, not the roster.** Page on `nextCursor`; for "how many", `onlineCount`.
+- **The send refusals are the ones to draw:** `1602 NotInRoom` (not joined, or kicked), `1603
+  RoomMuted`, `1506 MemberMuted`, `1003` when the room is over its rate. `1600 RoomNotFound` on any
+  call means the room is gone; `1601 RoomFull` refuses a join.
 
 ## Errors
 

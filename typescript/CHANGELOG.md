@@ -16,6 +16,24 @@ endpoints. `1.0.0` is reserved for T0 + T1 complete on all five SDKs.
 
 Implements [`sdk/CONTRACT.md`](../CONTRACT.md) contract version `1.0`.
 
+### Added (2026-10-22)
+
+- **`room.*` typed whole — all seven.** `im.room.join` `quit` `send` `onlineCount` `memberList` `mute`
+  `kick`, with `RoomIdRequest`, `RoomCursorRequest`, `RoomSendRequest` / `RoomMessage`,
+  `RoomMuteRequest`, `RoomKickRequest`, `ChatRoom` and `RoomJoinResult`, plus `im.onRoomEvent` for the
+  `room.muted` / `room.kicked` / `room.destroyed` events on `evt.system` (an unknown `room.*` name is
+  kept raw; the device log request on the same target is left to its own handler), `readRoomEvent`,
+  `isRoomMuteActive` and `roomIdOf`. The typed surface is now 89 of 107 endpoints.
+  - **A room message has `seq: 0` and never enters gap repair or seq tracking** — no `msg.sync`, no
+    cursor, no cursor-store write, and no waiting behind a repair. `room.send` records nothing from its
+    result either (unlike `msg.send`, which advances `deliveredSeq` so the echo reads as a duplicate).
+    The bypass already existed; the tests now pin it for room traffic.
+  - `room.send` fills in `clientMsgId`, `contentType` and `sendTime` like `msg.send`; the message
+    travels nested, and the server binds nested keys only in the camelCase published here.
+  - `room.mute` with `untilMs` absent or past is an **unmute**; without `userId` it is room-wide.
+  - Membership is per connection and is not rejoined after a reconnect — that is the application's
+    call. Rooms are created by the tenant backend (`POST /v1/rooms`); there is no socket call for it.
+
 ### Fixed (2026-09-28)
 
 - **`connect()` now resolves once the connection is open**, waiting out a failed first attempt and its

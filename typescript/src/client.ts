@@ -9,6 +9,7 @@ import {
   ModerationApi,
   MsgApi,
   PushApi,
+  RoomApi,
   UserApi,
 } from './api.js';
 import {
@@ -21,6 +22,7 @@ import { ImCursorScope, ImCursors, type ImCursorSnapshot, type ImCursorStore } f
 import { readDeskEvent, type DeskEvent } from './desk.js';
 import { ImDeviceLogs } from './devicelogs.js';
 import { ImLog, inMemoryLogStore, type ImLogStore } from './logs.js';
+import { readRoomEvent, type RoomEvent } from './room.js';
 import type {
   ConversationView,
   ImMessage,
@@ -179,12 +181,21 @@ export class ImClient {
   /**
    * `desk.*` — the customer-service desk (T4), typed because a customer asked for it.
    *
-   * The only tier-4 namespace on this client. It is here rather than behind `invoke()` because the
-   * desk is a product built on this platform rather than an optional endpoint group: a visitor
-   * widget and an agent workbench are both ordinary applications of this SDK, and neither should
-   * have to hand-write nine request shapes to be one.
+   * The first tier-4 namespace on this client (`room` is the second). It is here rather than behind
+   * `invoke()` because the desk is a product built on this platform rather than an optional endpoint
+   * group: a visitor widget and an agent workbench are both ordinary applications of this SDK, and
+   * neither should have to hand-write nine request shapes to be one.
    */
   readonly desk: DeskApi;
+
+  /**
+   * `room.*` — chat rooms (T4), typed whole: join, quit, send, onlineCount, memberList, mute, kick.
+   *
+   * Room messages carry `seq: 0` and reach `onMessage` without ever touching gap repair or a cursor;
+   * room events arrive through {@link ImClient.onRoomEvent}. Membership belongs to the connection, so
+   * rejoin after a reconnect — the SDK does not do it for you.
+   */
+  readonly room: RoomApi;
 
   readonly diag: DiagApi;
 
@@ -224,6 +235,7 @@ export class ImClient {
     this.push = new PushApi(io, () => this.connection.currentState === 'open');
     this.moderation = new ModerationApi(io);
     this.desk = new DeskApi(io);
+    this.room = new RoomApi(io, () => this.newClientMsgId());
     this.diag = new DiagApi(io);
 
     // Defaulted rather than required, unlike the cursor store, and the asymmetry is deliberate:
@@ -302,6 +314,23 @@ export class ImClient {
   onDeskEvent(listener: (event: DeskEvent) => void): () => void {
     return this.connection.on(PushTarget.Desk, (frame) => {
       const event = readDeskEvent(frame.body?.data);
+      if (event) listener(event);
+    });
+  }
+
+  /**
+   * Subscribes to the chat-room events on `evt.system` — `room.muted`, `room.kicked`,
+   * `room.destroyed`, and any `room.*` a newer server adds — decoded.
+   *
+   * An additional listener on that target, not a replacement: `evt.system` also carries the device
+   * log request, which the client answers on its own subscription, so this one keeps only `room.*`
+   * and leaves every other frame alone. Lives here rather than on `im.room` for the reason
+   * {@link onDeskEvent} does — a method on a namespace names a target, and `room.onEvent` is not one.
+   * 只是 evt.system 上多挂的一个监听者：那条通道还承载设备日志请求，由客户端自己的订阅处理，这里只认 room.*。
+   */
+  onRoomEvent(listener: (event: RoomEvent) => void): () => void {
+    return this.connection.on(PushTarget.System, (frame) => {
+      const event = readRoomEvent(frame.body?.data);
       if (event) listener(event);
     });
   }
@@ -561,7 +590,9 @@ export class ImClient {
     // seq 0 means the message was never persisted — typing, presence, chat-room traffic. It
     // bypasses the cursor machinery entirely: it has no position, so it cannot be a duplicate, it
     // cannot reveal a gap, and letting one move a cursor would fabricate a gap for the next real
-    // message.
+    // message. It skips the per-conversation chain too, so it is handed over the moment it arrives
+    // and never waits behind a repair (room.test.ts pins both halves).
+    // seq 为 0 的消息（输入状态、在线状态、聊天室）不进游标、不进补洞，也不排进会话队列——它没有位置可言。
     if (message.seq === 0) {
       this.emit(message);
       return;

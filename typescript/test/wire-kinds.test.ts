@@ -23,8 +23,8 @@ import { FakeSocket, until } from './fake-socket.js';
 import { type Inventory, loadInventory } from './inventory.js';
 
 /**
- * Every request field of every typed endpoint — T0–T3 and `desk.*` — in the JSON kind the server's C#
- * type binds from.
+ * Every request field of every typed endpoint — T0–T3, `desk.*` and `room.*` — in the JSON kind the
+ * server's C# type binds from.
  *
  * **Why the kind, and why the server's type rather than this SDK's.** The socket binder does not go
  * through the platform's JSON options: it reads each request property with the C# type the DTO
@@ -328,6 +328,36 @@ const rows: Row[] = [
   ),
   row('desk.canned', (c) => c.desk.canned(), 'desk.canned, no filter'),
 
+  // ---- T4: room.*, typed whole. The second mute row is the room-wide unmute — the same verb with
+  // both optional keys absent, which is what makes it an unmute of the whole room.
+  row('room.join', (c, k) => c.room.join(k({ roomId: 'lobby' }))),
+  row('room.quit', (c, k) => c.room.quit(k({ roomId: 'lobby' }))),
+  row('room.send', (c, k) =>
+    c.room.send(
+      k({
+        roomId: 'lobby',
+        message: {
+          clientMsgId: 'room-wire',
+          contentType: MessageContentType.Custom,
+          content: { gift: 'rocket', count: 3 },
+          mentionAll: true,
+          mentionedUserIds: ['alice'],
+          options: { priority: MessagePriority.Low },
+          sendTime: 1758412790000,
+          extensions: { combo: 7 },
+        },
+      }),
+    ),
+    'room.send, every field',
+  ),
+  row('room.send', (c) => c.room.send({ roomId: 'lobby', message: { content: { text: 'hi' } } }), 'room.send, defaults filled in'),
+  row('room.onlineCount', (c, k) => c.room.onlineCount(k({ roomId: 'lobby' }))),
+  row('room.memberList', (c, k) => c.room.memberList(k({ roomId: 'lobby', cursor: 'members:2', limit: 20 })), 'room.memberList, every field'),
+  row('room.memberList', (c, k) => c.room.memberList(k({ roomId: 'lobby' })), 'room.memberList, first page'),
+  row('room.mute', (c, k) => c.room.mute(k({ roomId: 'lobby', userId: 'bob', untilMs: 1758499200000 })), 'room.mute, one member until a time'),
+  row('room.mute', (c, k) => c.room.mute(k({ roomId: 'lobby' })), 'room.mute, whole room, unmute'),
+  row('room.kick', (c, k) => c.room.kick(k({ roomId: 'lobby', userId: 'bob' }))),
+
   // ---- public methods that build their own body
   row('msg.send', (c) => c.sendText({ receiverId: 'bob' }, 'hi'), 'im.sendText'),
   row('msg.history', (c) => c.history(C, 40, 20), 'im.history'),
@@ -375,12 +405,27 @@ const RECORDING_COMMENT =
 /**
  * Fields the SDK fills in from the clock or a random source, per row. Their values change every
  * run, so the recording keeps their JSON kind — which is all the binder decides on — and pins the
- * value: an integer stays an integer, a fraction stays a fraction, a string stays a string.
+ * value: an integer stays an integer, a fraction stays a fraction, a string stays a string. A dotted
+ * path reaches into a nested object (`room.send` fills in its message's fields, not its own).
  */
 const GENERATED: Record<string, readonly string[]> = {
   'msg.send by receiverId, defaults filled in': ['clientMsgId', 'sendTime'],
   'im.sendText': ['clientMsgId', 'sendTime'],
+  'room.send, defaults filled in': ['message.clientMsgId', 'message.sendTime'],
 };
+
+/** A copy of `body` with every generated path pinned; anything that is not an object passes through. */
+function pinGenerated(body: unknown, paths: readonly string[], prefix = ''): unknown {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) return body;
+  return Object.fromEntries(
+    Object.entries(body).map(([key, value]) => {
+      const path = prefix + key;
+      if (paths.includes(path)) return [key, pinned(value)];
+      if (paths.some((p) => p.startsWith(`${path}.`))) return [key, pinGenerated(value, paths, `${path}.`)];
+      return [key, value];
+    }),
+  );
+}
 
 function pinned(value: unknown): unknown {
   if (typeof value === 'number') return Number.isInteger(value) ? 1758412790000 : 0.5;
@@ -406,13 +451,9 @@ function recordingText(
     Object.entries(fields).map(([field, reason]) => `    ${JSON.stringify(`${type}.${field}`)}: ${JSON.stringify(reason)}`),
   );
   const samples = recorded.map((sample) => {
-    let body = sample.body ?? null;
+    let body: unknown = sample.body ?? null;
     const generated = GENERATED[sample.via];
-    if (generated && body !== null && typeof body === 'object' && !Array.isArray(body)) {
-      body = Object.fromEntries(
-        Object.entries(body).map(([key, value]) => [key, generated.includes(key) ? pinned(value) : value]),
-      );
-    }
+    if (generated) body = pinGenerated(body, generated);
     return (
       `    {"target":${JSON.stringify(sample.target)},"type":${JSON.stringify(requestTypes.get(sample.target) ?? null)},` +
       `"via":${JSON.stringify(sample.via)},"body":${JSON.stringify(body)}}`
@@ -575,9 +616,24 @@ interface WireFrame {
 
 describe('request wire kinds: every field, as the server declares it', () => {
   const inventory = loadInventory();
-  // Every target this SDK types, whatever its tier: T0–T3, and the desk.* family of T4. A family typed
-  // outside the floor meets the same binder that every T1 call meets, and is held to the same rules.
-  const shipped = inventory.endpoints.filter((e) => e.implementedIn?.['typescript'] === true).map((e) => e.target);
+  // Every target this SDK types, whatever its tier: T0–T3, and the desk.* and room.* families of T4.
+  // A family typed outside the floor meets the same binder that every T1 call meets, and is held to
+  // the same rules.
+  //
+  // room.* is named from the tier list as well as read from `implementedIn`, the way
+  // coverage.test.ts names both families: `implementedIn` is computed by the platform repository's
+  // generator from these sources, so it flips only when the inventory is regenerated, and a family
+  // typed in the commit before that would otherwise have no row asked of it. The union only ever
+  // adds targets to check; once the inventory says true it changes nothing.
+  // room.* 同时从层级表点名：implementedIn 要等平台仓的生成器重新生成清单才会翻转，
+  // 在那之前这一族不会被要求有行。并集只会多查、不会少查；清单翻成 true 之后它不改变任何东西。
+  const roomFamily = inventory.tiers['T4']?.targets.filter((target) => target.startsWith('room.')) ?? [];
+  const shipped = [
+    ...new Set([
+      ...inventory.endpoints.filter((e) => e.implementedIn?.['typescript'] === true).map((e) => e.target),
+      ...roomFamily,
+    ]),
+  ];
   const requestTypes = new Map(inventory.endpoints.map((e) => [e.target, e.requestType ?? null]));
 
   const samples: Sample[] = [];

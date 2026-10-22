@@ -12,6 +12,7 @@ import {
   ModerationApi,
   MsgApi,
   PushApi,
+  RoomApi,
   UserApi,
   type ImInvoker,
 } from '../src/api.js';
@@ -58,6 +59,7 @@ function typedTargets(): Set<string> {
     new PushApi(io, () => true),
     new ModerationApi(io),
     new DeskApi(io),
+    new RoomApi(io),
     new DiagApi(io),
   ];
 
@@ -96,10 +98,10 @@ describe('tier coverage', () => {
   }
 
   /**
-   * The one deliberate exception to "T0–T3 and nothing else", and the reason it is an exception
+   * The first deliberate exception to "T0–T3 and nothing else", and the reason it is an exception
    * rather than a hole: T4's rule is "correctly typed when a customer asks", and the customer
    * asked. `desk.*` is typed **whole** — all nine — which is what keeps the rule below meaningful.
-   * The other 25 endpoints of T4 stay behind `invoke()`.
+   * `room.*`, below, is the second; the other 18 endpoints of T4 stay behind `invoke()`.
    * T4 的规则原话就是「有客户要的时候把它类型化」，而客户来了。desk.* 是整族做完的九条，
    * 这才让下面那条「不许做一半」的规矩仍然有意义。
    */
@@ -112,11 +114,26 @@ describe('tier coverage', () => {
     assert.deepEqual(missing, [], `desk is not complete: ${missing.join(', ')}`);
   });
 
+  /**
+   * The second family of T4 typed whole, for the same reason and on the same terms: `room.*` carries
+   * a rule an integrator cannot guess — a room message has `seq: 0` and must stay out of gap repair —
+   * and a family whose rule matters is not one to leave behind `invoke()`. All seven, or none.
+   * T4 里第二个整族类型化的：聊天室消息 seq 为 0、必须绕开补洞，这条规矩集成方猜不出来。七条全做，或者一条不做。
+   */
+  const roomTargets = inventory.tiers['T4']!.targets.filter((target) => target.startsWith('room.'));
+
+  it('types every endpoint in T4 room.*', () => {
+    assert.equal(roomTargets.length, 7, 'the server grew or lost a room endpoint');
+
+    const missing = roomTargets.filter((target) => !covered.has(target));
+    assert.deepEqual(missing, [], `room is not complete: ${missing.join(', ')}`);
+  });
+
   it('does not half-type a tier it has not committed to', () => {
     // A partially typed tier is worse than an untyped one: a developer cannot tell which half is
     // there, and finds out one endpoint at a time. Everything beyond T3 goes through `invoke()`,
-    // which is documented and obviously an escape hatch — except `desk.*`, which is committed to
-    // whole, above. T3 joined the committed set whole, all twenty at once, for the same reason.
+    // which is documented and obviously an escape hatch — except `desk.*` and `room.*`, which are
+    // committed to whole, above. T3 joined the committed set whole, all twenty at once, for the same reason.
     // T3 是整层二十条一起加进来的，理由同上：不许做一半。
     const shipped = new Set([
       ...inventory.tiers['T0']!.targets,
@@ -124,10 +141,11 @@ describe('tier coverage', () => {
       ...inventory.tiers['T2']!.targets,
       ...inventory.tiers['T3']!.targets,
       ...deskTargets,
+      ...roomTargets,
     ]);
 
     const strays = [...covered].filter((target) => !shipped.has(target));
-    assert.deepEqual(strays, [], `typed but not in T0–T3 or desk.*: ${strays.join(', ')}`);
+    assert.deepEqual(strays, [], `typed but not in T0–T3, desk.* or room.*: ${strays.join(', ')}`);
     assert.equal(covered.size, shipped.size);
   });
 });
@@ -179,6 +197,7 @@ describe('the namespaced surface is endpoints only', () => {
     ['push', new PushApi(io, () => true)],
     ['moderation', new ModerationApi(io)],
     ['desk', new DeskApi(io)],
+    ['room', new RoomApi(io)],
   ];
 
   it('names no endpoint the server does not have', () => {

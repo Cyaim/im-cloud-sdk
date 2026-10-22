@@ -77,6 +77,12 @@ import type {
   ReportReceipt,
   ResumeRequest,
   ResumeResult,
+  RoomCursorRequest,
+  RoomIdRequest,
+  RoomJoinResult,
+  RoomKickRequest,
+  RoomMuteRequest,
+  RoomSendRequest,
   SearchMessagesRequest,
   SendMessageRequest,
   SendMessageResult,
@@ -1098,6 +1104,137 @@ export class DeskApi {
    */
   suggest(request: DeskSuggestRequest, options?: ImRequestOptions): Promise<string[]> {
     return this.io.request<string[]>('desk.suggest', request, options);
+  }
+}
+
+/**
+ * `room.*` — chat rooms: live-stream style broadcast to whoever is in the room right now (T4).
+ *
+ * **Rooms trade every delivery guarantee for scale, and the SDK keeps them out of the machinery that
+ * exists for those guarantees.** A room message is never stored, never delivered per user, never
+ * pushed offline and carries `seq: 0`; it arrives on `onMessage` like any other message, skips gap
+ * repair and cursors entirely, and `room.send` here records nothing either. What a room offers
+ * instead is `recent` on join — a short ring buffer for whoever just walked in, not a history.
+ *
+ * **Membership belongs to the connection, not the user.** A reconnect leaves every room, and the SDK
+ * deliberately does not rejoin for you: which rooms a screen still wants is the application's to
+ * know, and a client that silently rejoined would keep counting a viewer who navigated away. Call
+ * `join` again from your reconnect handler for the rooms still on screen.
+ *
+ * **Rooms are created and destroyed by the tenant backend** (`POST /v1/rooms`, `DELETE
+ * /v1/rooms/{roomId}`), never from here. Their events — mute, kick, destroy — arrive on `evt.system`;
+ * subscribe with `im.onRoomEvent`.
+ *
+ * Refusals worth branching on: `1600 RoomNotFound` (missing or destroyed, on every verb), `1601
+ * RoomFull` on join, `1602 NotInRoom` for a send without a join (or after a kick), `1603 RoomMuted`
+ * and `1506 MemberMuted` on send, `1103` for a mute or kick by someone who is neither the owner nor
+ * an admin, `1511` for one aimed at the owner, and `1003` when the room is over its rate.
+ *
+ * 聊天室为了规模放弃了所有投递保证，SDK 也让它远离为这些保证而存在的机制：消息不存储、不按人投递、
+ * seq 恒为 0，照常从 onMessage 到达，但不进补洞、不碰游标，room.send 也什么都不记。
+ * 成员身份属于连接而不属于用户：重连会离开所有房间，SDK 刻意不替你重进——哪些房间还在屏幕上由应用决定。
+ */
+export class RoomApi {
+  constructor(
+    private readonly io: ImInvoker,
+    private readonly newClientMsgId: () => string = () => `${Date.now().toString(36)}`,
+  ) {}
+
+  /**
+   * Enters a room on this connection and returns the room, its online count, and the recent buffer.
+   *
+   * `recent` is oldest first, every entry `seq: 0`; it is handed back here and nowhere else — it does
+   * not go through `onMessage`, so a screen that wants it drawn draws it.
+   */
+  async join(request: RoomIdRequest, options?: ImRequestOptions): Promise<RoomJoinResult> {
+    const result = await this.io.request<RoomJoinResult>('room.join', request, options);
+    result.onlineCount = asLong(result.onlineCount);
+    if (result.room) {
+      result.room.maxOnline = asLong(result.room.maxOnline);
+      result.room.createdAt = asLong(result.room.createdAt);
+    }
+    result.recent = (result.recent ?? []).map((message) => {
+      message.seq = asLong(message.seq);
+      message.messageId = asId(message.messageId);
+      message.sendTime = asLong(message.sendTime);
+      message.createTime = asLong(message.createTime);
+      return message;
+    });
+    return result;
+  }
+
+  /** Leaves a room on this connection. It has no room-specific refusal. */
+  async quit(request: RoomIdRequest, options?: ImRequestOptions): Promise<void> {
+    await this.io.request<void>('room.quit', request, options);
+  }
+
+  /**
+   * Says something to the room.
+   *
+   * `clientMsgId`, `contentType` and `sendTime` are filled in when absent, exactly as `msg.send` does —
+   * the server refuses a room message without a `clientMsgId` (`1001`). The result's `seq` is always
+   * `0` and its `conversationId` is `r_{roomId}`; **nothing is recorded against any cursor**, because
+   * there is no position to record. Mark low-value traffic (gifts, reactions) with
+   * `options.priority: MessagePriority.Low` so the room sheds it first when it is busy.
+   * 结果的 seq 恒为 0、conversationId 是 r_{roomId}；不记任何游标——没有位置可记。
+   */
+  async send(request: RoomSendRequest, options?: ImRequestOptions): Promise<SendMessageResult> {
+    // A body with no message at all goes out as it is, for the server to refuse with 1001 and say
+    // so; filling in an id and a type around nothing would turn a caller's bug into an empty message.
+    // 完全没有 message 的请求体原样发出，由服务端以 1001 拒绝并说明；替一个空洞补上 id 与类型，等于把调用方的缺陷变成一条空消息。
+    const message = request.message as RoomSendRequest['message'] | undefined;
+    const payload: RoomSendRequest = message
+      ? {
+          ...request,
+          message: {
+            ...message,
+            contentType: message.contentType ?? MessageContentType.Text,
+            clientMsgId: message.clientMsgId ?? this.newClientMsgId(),
+            sendTime: message.sendTime ?? Date.now(),
+          },
+        }
+      : request;
+
+    const result = await this.io.request<SendMessageResult>('room.send', payload, options);
+    result.seq = asLong(result.seq);
+    result.messageId = asId(result.messageId);
+    result.createTime = asLong(result.createTime);
+    return result;
+  }
+
+  /** How many connections are in the room right now, across the cluster. A bare number. */
+  async onlineCount(request: RoomIdRequest, options?: ImRequestOptions): Promise<number> {
+    return asLong(await this.io.request<unknown>('room.onlineCount', request, options));
+  }
+
+  /**
+   * A **sample** of who is in the room, as user ids — not the full list, and not meant to be.
+   *
+   * Enumerating a large room exactly is deliberately not offered: no screen can use a million ids,
+   * and every caller that asks for them is about to write a bug. Page on `nextCursor` / `hasMore` for
+   * a few more faces; for "how many", use {@link onlineCount}.
+   */
+  memberList(request: RoomCursorRequest, options?: ImRequestOptions): Promise<PagedResult<string>> {
+    return this.io.request<PagedResult<string>>('room.memberList', request, options);
+  }
+
+  /**
+   * Mutes or unmutes — one call, and `untilMs` decides: in the future mutes until then, absent or past
+   * unmutes. Without `userId` it is the whole room. Owner or admin only. See {@link RoomMuteRequest}.
+   */
+  async mute(request: RoomMuteRequest, options?: ImRequestOptions): Promise<void> {
+    await this.io.request<void>('room.mute', request, options);
+  }
+
+  /**
+   * Removes a member. Owner or admin only; the owner cannot be kicked.
+   *
+   * The member is told through a `room.kicked` event. Their connection on the node that handled the
+   * kick stops receiving at once; one on another node keeps receiving until the client acts on the
+   * event or reconnects — so act on it.
+   */
+  async kick(request: RoomKickRequest, options?: ImRequestOptions): Promise<void> {
+    await this.io.request<void>('room.kick', request, options);
   }
 }
 

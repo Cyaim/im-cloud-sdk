@@ -22,6 +22,7 @@ export {
   ModerationApi,
   MsgApi,
   PushApi,
+  RoomApi,
   UserApi,
   type ImInvoker,
 } from './api.js';
@@ -51,6 +52,7 @@ export {
   type ImCursorsOptions,
 } from './cursors.js';
 export * from './desk.js';
+export * from './room.js';
 export * from './models.js';
 export * from './protocol.js';
 export {
