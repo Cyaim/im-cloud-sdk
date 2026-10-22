@@ -231,8 +231,8 @@ endpoint greps straight to the call.
 | Namespace | Methods |
 |---|---|
 | `im.conn` | `heartbeat` `reauth` `sync` |
-| `im.msg` | `send` `sync` `history` `recall` `delete` `typing` `edit` `forward` `react` `receipt` · `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search` `receiptDetail` — and T4's `streamBegin` `streamAppend` `streamComplete` `streamAbort` (see below) |
-| `im.conv` | `list` `get` `read` `unreadTotal` `setting` `delete` `clear` · `markUnread` |
+| `im.msg` | `send` `sync` `history` `recall` `delete` `typing` `edit` `forward` `react` `receipt` · `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search` `receiptDetail` — and T4's `streamBegin` `streamAppend` `streamComplete` `streamAbort`, `schedule` `scheduled` `cancelScheduled` and `translate` (see below) |
+| `im.conv` | `list` `get` `read` `unreadTotal` `setting` `delete` `clear` · `markUnread` — and T4's `folders` `upsertFolder` `deleteFolder` (see below) |
 | `im.user` | `me` `profile` `batchProfile` `updateProfile` `presence` `subscribePresence` `unsubscribePresence` · `setStatus` |
 | `im.friend` | `list` `add` `handleRequest` `requestList` `delete` `blockList` `block` `unblock` · `setRemark` |
 | `im.group` | `create` `info` `update` `dismiss` `memberList` `joined` `invite` `kick` `quit` `join` · `transfer` `applicationList` `handleApplication` `setRole` `mute` `muteMember` `setNickname` `announcement` |
@@ -245,8 +245,9 @@ endpoint greps straight to the call.
 
 That is contract tiers **T0, T1, T2 and T3 complete** — session floor, 1:1 chat MVP, social graph
 and groups, and competitive parity — plus the nine `desk.*`, seven `room.*` and four `msg.stream*`
-of T4: 93 of the server's 107 endpoints. The names after the `·` are T3. The other 14 endpoints of T4
-go through
+of T4, its three scheduled-message calls, three folder calls and `msg.translate`: 100 of the
+server's 107 endpoints. The names after the `·` are T3. The other 7 endpoints of T4 (`keys.*`, the
+end-to-end-encryption key directory) go through
 `invoke()` until they are typed. Every method takes exactly one request object named for the server DTO, so the
 server adding an optional field stays additive instead of breaking your call sites.
 
@@ -385,6 +386,84 @@ im.streamEvents.transform(ImStreamAssembler()).listen((ImStreamState s) {
 - A stream whose terminal frame was lost with the connection stays `streaming` in the assembler (the
   server does not replay frames); call `forget` / `clear` when you stop drawing it.
 
+### Scheduled messages, folders and translation
+
+None of these calls is followed by an event: creating, cancelling or sending a schedule, and saving or
+deleting a folder, push nothing to the caller's other devices — they see the change by listing
+again. No add-on or app setting gates schedules or folders; translation is gated twice (below).
+
+**Scheduled messages** — `im.msg.schedule` / `scheduled` / `cancelScheduled`.
+
+```dart
+final ImScheduledMessage s = await im.msg.schedule(ImScheduleRequest.text(
+  'Stand-up in five',
+  sendAt: DateTime.now().add(const Duration(minutes: 30)).millisecondsSinceEpoch,
+  groupId: 'team',
+));
+// later, before it fires:
+await im.msg.cancelScheduled(ImScheduleIdRequest(scheduleId: s.scheduleId));
+```
+
+- `ImScheduleRequest` is **flat** — the message's members beside `sendAt` — and carries no `options`
+  and no `sendTime`: the server's `ScheduleRequest` has neither. Address it like `msg.send`
+  (`conversationId`, else `groupId`, else `receiverId`). `clientMsgId` is optional and not generated
+  here; without one the server uses `sch-<scheduleId>`.
+- **Limits** (the deployment's `IM:Extras`, defaults): `sendAt` at least **10 seconds** and at most
+  **90 days** ahead (`1001`); empty content `1001`; `1003` past **120** schedules per user per hour;
+  `1006` with **100** already pending. **`msg.schedule` is not idempotent**: repeating one whose reply
+  was lost makes a second schedule — list before retrying.
+- **Firing granularity**: the scheduler sweeps every **15 seconds** by default, so the message goes
+  out on the first sweep at or after `sendAt` — up to that much late, never early. The receiver gets
+  an ordinary `evt.message` with a normal seq on `im.messages`; the sender's other devices get it
+  through self-sync.
+- **There is no state field.** `ImScheduledMessage.state` reads it: `pending` (no `messageId`, no
+  `error`), `sent` (`messageId` set), `cancelled` (`error` is `"cancelled by sender"`), `failed` (any
+  other `error`). Settled schedules **stay in `msg.scheduled` for about 48 hours** — a cancelled one is
+  still listed, as cancelled. `msg.cancelScheduled` is `1002` for an unknown id and `1006` once the
+  scheduler has started sending it.
+
+**Folders** — `im.conv.folders` / `upsertFolder` / `deleteFolder`. A folder holds **tags, not
+conversations**: file a conversation by tagging it (`im.conv.setting` with
+`ImConversationSetting(tags: …)`), and filter `conv.list` by the folder's `tags`, `unreadOnly` and
+`types` yourself.
+
+- Every tag in a folder must already be on one of your conversations, or the save is `1001` naming
+  the unknown ones. At most **20** folders (`1006`), **16** tags each (`1001`), names up to **64**
+  characters (longer is cut; blank is `1001`).
+- **`upsertFolder` replaces the whole folder** — a rename that sends only the name clears the tags.
+  `ImUpsertFolderRequest.edit(folder, name: …)` keeps every member you do not change.
+- Without a `folderId` the server allocates one, so a retried create makes a second folder; choose
+  the id yourself (1–64 letters, digits, `-`, `_`, `.`) and the create is safe to repeat.
+- `conv.folders` is a plain list, already sorted by `order` then name. `deleteFolder` removes the
+  folder only — its conversations keep their tags — and is `1002` for a folder you do not have.
+
+**Translation** — `im.msg.translate`. Messages you can already read, in one conversation, into one
+BCP-47 language; up to **50** ids a call, **60** calls a minute per user.
+
+```dart
+try {
+  final ImTranslationResult r = await im.msg.translate(ImTranslateRequest(
+    conversationId: conversationId,
+    messageIds: <String>[message.messageId],
+    targetLanguage: 'zh-CN',
+  ));
+  for (final ImTranslatedMessage item in r.items) {
+    // item.text, or item.error for this one message
+  }
+} on ImException catch (e) {
+  if (e.code == ImErrorCode.featureNotEnabled || e.code == ImErrorCode.planExpired) {
+    // hide the button for now; do not latch it
+  }
+}
+```
+
+- **A deployment without translation answers with a refusal, not a crash**: `1204` when the plan
+  lacks the translation add-on (Enterprise and up, or a trial), then `1203` when it has it but no
+  translation provider is configured — each an `ImException` carrying the code and the server's
+  message. Both can change at runtime, so do not remember them.
+- **A success can carry failures**: each message stands alone in `items`, with `text` or with an
+  `error`; the call fails as a whole only when not one message could be translated.
+
 ### Tier T3 — what the signatures do not say
 
 Every T3 method carries its full list of refusals in its doc comment. These are the ones that bite:
@@ -433,9 +512,9 @@ path with every typed method — same timeouts, same cancellation, same error ma
 touches a cursor.
 
 ```dart
-// msg.cancelScheduled is tier T4 and not typed yet:
-await im.invoke<void>('msg.cancelScheduled', <String, Object?>{
-  'scheduleId': scheduleId,
+// keys.remaining is tier T4 and not typed yet:
+final int left = await im.invoke<int>('keys.remaining', <String, Object?>{
+  'deviceId': deviceId,
 });
 ```
 

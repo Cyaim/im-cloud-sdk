@@ -655,6 +655,64 @@ Map<String, List<Future<void> Function(ImClient im)>> recipes() {
       (ImClient im) => im.msg.streamAbort(const ImStreamAbortRequest(streamId: 'st_wire')),
       (ImClient im) => ImStreamWriter(im.msg, stream).abort('model timed out'),
     ],
+
+    // scheduled messages, folders, translation (T4) — one row with every member and one minimal row
+    // per call. msg.schedule is flat (no nested message), so nothing here needs `nestedOmitted`.
+    // 定时消息、文件夹、翻译：每条一行全字段、一行最小。msg.schedule 是扁平的，没有嵌套消息。
+    'msg.schedule': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.msg.schedule(const ImScheduleRequest(
+            sendAt: 1758412812000,
+            conversationId: 's_alice_bob',
+            receiverId: 'bob',
+            groupId: 'team',
+            conversationType: ImConversationType.group,
+            clientMsgId: 'cm-sched-wire',
+            contentType: ImMessageContentType.custom,
+            content: <String, dynamic>{'kind': 'reminder', 'text': 'stand-up'},
+            mentionAll: true,
+            mentionedUserIds: <String>['bob', 'carol'],
+            quoteMessageId: snowflake,
+            threadRootId: snowflake,
+            extensions: <String, dynamic>{'origin': 'wire'},
+          )),
+      (ImClient im) => im.msg
+          .schedule(ImScheduleRequest.text('stand-up', sendAt: 1758412812000, receiverId: 'bob')),
+    ],
+    'msg.scheduled': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.msg.scheduled(const ImPageRequest(cursor: 'sch-2', limit: 50)),
+      (ImClient im) => im.msg.scheduled(),
+    ],
+    'msg.cancelScheduled': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.msg.cancelScheduled(const ImScheduleIdRequest(scheduleId: 'sch_wire')),
+    ],
+    'conv.folders': <Future<void> Function(ImClient)>[(ImClient im) => im.conv.folders()],
+    'conv.upsertFolder': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.conv.upsertFolder(const ImUpsertFolderRequest(
+            folderId: 'work',
+            name: 'Work',
+            order: 3,
+            tags: <String>['client', 'urgent'],
+            unreadOnly: true,
+            types: <ImConversationType>[ImConversationType.single, ImConversationType.group],
+          )),
+      (ImClient im) => im.conv.upsertFolder(const ImUpsertFolderRequest(name: 'Work')),
+    ],
+    'conv.deleteFolder': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.conv.deleteFolder(const ImFolderIdRequest(folderId: 'work')),
+    ],
+    'msg.translate': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.msg.translate(const ImTranslateRequest(
+            conversationId: 's_alice_bob',
+            messageIds: <String>[snowflake, '360381357961969669'],
+            targetLanguage: 'zh-CN',
+            sourceLanguage: 'en',
+          )),
+      (ImClient im) => im.msg.translate(const ImTranslateRequest(
+            conversationId: 's_alice_bob',
+            messageIds: <String>[snowflake],
+            targetLanguage: 'zh-CN',
+          )),
+    ],
   };
 }
 

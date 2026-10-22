@@ -529,9 +529,9 @@ class ImClient {
   /// returns messages and moves nothing.
   ///
   /// ```dart
-  /// // msg.cancelScheduled is T4 and not typed yet:
-  /// await im.invoke<void>('msg.cancelScheduled', <String, Object?>{
-  ///   'scheduleId': scheduleId,
+  /// // keys.remaining is T4 and not typed yet:
+  /// final int left = await im.invoke<int>('keys.remaining', <String, Object?>{
+  ///   'deviceId': deviceId,
   /// });
   /// ```
   Future<T> invoke<T>(String target, [Object? body, ImCancelToken? cancel]) =>

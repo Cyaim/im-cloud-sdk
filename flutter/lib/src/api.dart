@@ -23,6 +23,7 @@ import 'dart:async';
 import 'cancel.dart';
 import 'desk.dart';
 import 'device_logs.dart';
+import 'extras.dart';
 import 'json.dart';
 import 'logging.dart';
 import 'models.dart';
@@ -358,6 +359,62 @@ final class ImMsgApi extends _Namespace {
   /// with the [ImStreamAbortRequest.reason]. `1002` once the stream is already over.
   Future<void> streamAbort(ImStreamAbortRequest request, [ImCancelToken? cancel]) =>
       sendUnit('msg.streamAbort', request.toJson(), cancel);
+
+  // -------------------------------------------------------------------------- scheduled (T4)
+  //
+  // A schedule is not a message until it is sent: no seq, no history, invisible to the receiver.
+  // Nothing is pushed when one is created, cancelled or sent — the caller's other devices see the
+  // change only by listing again. What does arrive is the message itself, an ordinary evt.message.
+  // 定时消息在发出之前不是消息：不占 seq、不进历史、对方看不到。建、取消、发出都没有推送事件，
+  // 其他设备只能重新列；会到达的只有发出后的那条普通消息。
+
+  /// `msg.schedule` (T4). Queues a message to be sent at [ImScheduleRequest.sendAt] and returns the
+  /// schedule — a schedule id, not a message id.
+  ///
+  /// **Firing granularity:** the server's scheduler sweeps every 15 seconds by default, so the message
+  /// goes out on the first sweep at or after `sendAt`. The receiver gets it as an ordinary
+  /// `evt.message` with a normal seq on [ImClient.messages]; the sender's other devices through
+  /// self-sync. **Not idempotent** — see [ImScheduleRequest] for that and for the refusals
+  /// (`1001` lead under 10 s, past 90 days, no content or no address; `1003`; `1006`; `msg.send`'s
+  /// access refusals).
+  /// 调度器默认每 15 秒扫一次；接收方收到的是一条普通 evt.message。本调用不幂等。
+  Future<ImScheduledMessage> schedule(ImScheduleRequest request, [ImCancelToken? cancel]) =>
+      decodeOne('msg.schedule', request.toJson(), cancel, ImScheduledMessage.fromJson);
+
+  /// `msg.scheduled` (T4). The caller's schedules, one page at a time: pending ones **and** ones
+  /// settled in about the last 48 hours — sent, cancelled or failed. Read
+  /// [ImScheduledMessage.state]; a cancelled schedule stays listed with
+  /// `error: "cancelled by sender"`. The request is optional; without one the first page of 20
+  /// comes back (at most 100). Page on [ImPage.nextCursor]; [ImPage.total] is always null.
+  /// 列出待发的与约 48 小时内已了结的（已发、已取消、失败）；取消的那条仍在列表里，error 为 "cancelled by sender"。
+  Future<ImPage<ImScheduledMessage>> scheduled([
+    ImPageRequest request = const ImPageRequest(),
+    ImCancelToken? cancel,
+  ]) =>
+      decodePage('msg.scheduled', request.toJson(), cancel, ImScheduledMessage.fromJson);
+
+  /// `msg.cancelScheduled` (T4). Cancels a pending schedule; it stays listed by [scheduled] as
+  /// cancelled. `1002` for an id that is unknown or someone else's (or empty: `1001`); `1006` once
+  /// the scheduler has started sending it — it can no longer be cancelled, and the message will
+  /// arrive.
+  /// 已经开始发送的取消不了（1006），消息会照常到达。
+  Future<void> cancelScheduled(ImScheduleIdRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('msg.cancelScheduled', request.toJson(), cancel);
+
+  // -------------------------------------------------------------------------- translate (T4)
+
+  /// `msg.translate` (T4). Translates messages the caller can already read into one language.
+  ///
+  /// **On a deployment without translation this is a refusal, not a crash:** `1204`
+  /// ([ImErrorCode.planExpired]) when the plan lacks the translation add-on, `1203`
+  /// ([ImErrorCode.featureNotEnabled]) when no provider is configured — each an [ImException] with
+  /// the code and the server's message. Hide the button on either; do not latch it.
+  ///
+  /// A success can carry per-message failures in [ImTranslatedMessage.error]; see
+  /// [ImTranslationResult]. The other refusals are on [ImTranslateRequest].
+  /// 没配翻译的部署答 1204（套餐不含）或 1203（没配服务），都是带码与原话的 ImException，不是崩溃；不要记死。
+  Future<ImTranslationResult> translate(ImTranslateRequest request, [ImCancelToken? cancel]) =>
+      decodeOne('msg.translate', request.toJson(), cancel, ImTranslationResult.fromJson);
 }
 
 // ---------------------------------------------------------------------------- conv
@@ -417,6 +474,35 @@ final class ImConvApi extends _Namespace {
   /// 不移动 readSeq，对方的已读回执不受影响；conv.read / delete / clear 都会清掉这个标记。
   Future<void> markUnread(ImMarkUnreadRequest request, [ImCancelToken? cancel]) =>
       sendUnit('conv.markUnread', request.toJson(), cancel);
+
+  // -------------------------------------------------------------------------- folders (T4)
+  //
+  // A folder is a named filter over the tags on the caller's conversations, not a container: filing
+  // a conversation is tagging it with [setting], and the client filters [list] by the folder.
+  // Nothing is pushed when a folder changes; other devices list again.
+  // 文件夹是按会话标签过滤的具名视图，不是容器：归档 = 用 setting 打标签，客户端按文件夹过滤 list。
+  // 文件夹变化没有推送，其他设备重新列。
+
+  /// `conv.folders` (T4). Every folder the caller has (at most 20), **a plain list, not a page**,
+  /// already sorted by [ImConversationFolder.order] and then by name — draw them in this order.
+  /// 服务端已按 order、再按名字排好；直接照这个顺序画。
+  Future<List<ImConversationFolder>> folders([ImCancelToken? cancel]) =>
+      decodeList('conv.folders', null, cancel, ImConversationFolder.fromJson);
+
+  /// `conv.upsertFolder` (T4). Creates a folder, or replaces one by id, and returns it as saved.
+  /// **A replacement, not a patch** — use [ImUpsertFolderRequest.edit] to change one member. The
+  /// retry rule and the refusals (`1001` blank name, malformed id, more than 16 tags or a tag on none
+  /// of the caller's conversations; `1006` at 20 folders) are on [ImUpsertFolderRequest].
+  Future<ImConversationFolder> upsertFolder(
+    ImUpsertFolderRequest request, [
+    ImCancelToken? cancel,
+  ]) =>
+      decodeOne('conv.upsertFolder', request.toJson(), cancel, ImConversationFolder.fromJson);
+
+  /// `conv.deleteFolder` (T4). Deletes the folder only; its conversations keep their tags. `1002`
+  /// for a folder the caller does not have.
+  Future<void> deleteFolder(ImFolderIdRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('conv.deleteFolder', request.toJson(), cancel);
 }
 
 // ---------------------------------------------------------------------------- user

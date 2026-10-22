@@ -126,6 +126,17 @@
     {"target":"msg.streamComplete","type":"CompleteStreamRequest","via":"msg.streamComplete #2","body":{"streamId":"st_wire","content":{"text":"Hello."},"extensions":{"n":1}}},
     {"target":"msg.streamAbort","type":"StreamAbortRequest","via":"msg.streamAbort #0","body":{"streamId":"st_wire","reason":"the user pressed stop"}},
     {"target":"msg.streamAbort","type":"StreamAbortRequest","via":"msg.streamAbort #1","body":{"streamId":"st_wire"}},
-    {"target":"msg.streamAbort","type":"StreamAbortRequest","via":"msg.streamAbort #2","body":{"streamId":"st_wire","reason":"model timed out"}}
+    {"target":"msg.streamAbort","type":"StreamAbortRequest","via":"msg.streamAbort #2","body":{"streamId":"st_wire","reason":"model timed out"}},
+    {"target":"msg.schedule","type":"ScheduleRequest","via":"msg.schedule #0","body":{"sendAt":1758412812000,"conversationId":"s_alice_bob","receiverId":"bob","groupId":"team","conversationType":2,"clientMsgId":"generated","contentType":100,"content":{"kind":"reminder","text":"stand-up"},"mentionAll":true,"mentionedUserIds":["bob","carol"],"quoteMessageId":"360381357961969667","threadRootId":"360381357961969667","extensions":{"origin":"wire"}}},
+    {"target":"msg.schedule","type":"ScheduleRequest","via":"msg.schedule #1","body":{"sendAt":1758412812000,"receiverId":"bob","contentType":1,"content":{"text":"stand-up"},"mentionAll":false}},
+    {"target":"msg.scheduled","type":"PageRequest","via":"msg.scheduled #0","body":{"cursor":"sch-2","limit":50}},
+    {"target":"msg.scheduled","type":"PageRequest","via":"msg.scheduled #1","body":{"limit":20}},
+    {"target":"msg.cancelScheduled","type":"ScheduleIdRequest","via":"msg.cancelScheduled #0","body":{"scheduleId":"sch_wire"}},
+    {"target":"conv.folders","type":null,"via":"conv.folders #0","body":{}},
+    {"target":"conv.upsertFolder","type":"UpsertFolderRequest","via":"conv.upsertFolder #0","body":{"folderId":"work","name":"Work","order":3,"tags":["client","urgent"],"unreadOnly":true,"types":[1,2]}},
+    {"target":"conv.upsertFolder","type":"UpsertFolderRequest","via":"conv.upsertFolder #1","body":{"name":"Work","order":0,"unreadOnly":false}},
+    {"target":"conv.deleteFolder","type":"FolderIdRequest","via":"conv.deleteFolder #0","body":{"folderId":"work"}},
+    {"target":"msg.translate","type":"TranslateRequest","via":"msg.translate #0","body":{"conversationId":"s_alice_bob","messageIds":["360381357961969667","360381357961969669"],"targetLanguage":"zh-CN","sourceLanguage":"en"}},
+    {"target":"msg.translate","type":"TranslateRequest","via":"msg.translate #1","body":{"conversationId":"s_alice_bob","messageIds":["360381357961969667"],"targetLanguage":"zh-CN"}}
   ]
 }

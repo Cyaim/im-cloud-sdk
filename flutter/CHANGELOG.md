@@ -11,6 +11,24 @@ tiers T0 and T1 complete on all five platforms with §5 and §6 implemented ever
 
 ### Added (2026-10-22)
 
+- **Scheduled messages, folders and translation (T4)**: `im.msg.schedule` / `scheduled` /
+  `cancelScheduled`, `im.conv.folders` / `upsertFolder` / `deleteFolder` and `im.msg.translate`, named
+  for their endpoints (CONTRACT §4.2). `ImScheduleRequest` is the server's flat `ScheduleRequest`
+  (no `options`, no `sendTime`; `clientMsgId` optional and not generated, as the server derives one),
+  with a `.text` factory; `msg.scheduled` takes the existing `ImPageRequest` and returns
+  `ImPage<ImScheduledMessage>`, whose `state` (pending / sent / cancelled / failed) is read off
+  `messageId` and `error` since the server has no state field. `ImUpsertFolderRequest` (types as
+  integers; an empty tag list left out, which the server reads as empty) with `.edit` for the
+  replace-not-patch save, `ImFolderIdRequest`, `ImConversationFolder`; `ImTranslateRequest`,
+  `ImTranslationResult` and `ImTranslatedMessage` (message ids as strings both ways). `msg.translate`
+  on a deployment without translation surfaces `1203` / `1204` as an ordinary `ImException` with the
+  server's message.
+- `test/extras_test.dart`: every call's whole frame, full and minimal; replies with every member
+  decoded; refusals by code and message, translate's `1203` / `1204` included; fixtures and bodies held
+  to `payloadTypes`. The seven request bodies are in `wire-samples/flutter.json`; the README has a
+  "Scheduled messages, folders and translation" section. The `invoke()` examples now use
+  `keys.remaining`, which is still untyped.
+
 - **The four streaming calls of T4 on `im.msg`**: `streamBegin`, `streamAppend`, `streamComplete`,
   `streamAbort` — named for their endpoints (CONTRACT §4.2), with `ImBeginStreamRequest` (address
   as for `msg.send`, `clientMsgId` generated when omitted, `contentType`, `placeholder`, nested
