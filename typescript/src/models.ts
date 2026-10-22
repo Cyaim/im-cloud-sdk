@@ -1861,3 +1861,177 @@ export interface TranslatedMessage {
    */
   error?: string;
 }
+
+// ---------------------------------------------------------------------------- keys.* — the end-to-end encryption key directory (T4)
+//
+// **Opaque strings, all of them.** Every key, signature and id below is a plain JSON string, and every
+// key or signature is in STANDARD base64 (`+` `/` `=`; base64url is refused). The SDK performs no
+// cryptography: it does not generate, check, decode or re-encode anything, and hands each string to the
+// wire exactly as given — the server compares identity keys by exact string equality, and the safety
+// number hashes the strings, so a re-encoding would read as a new identity.
+// 全部是不透明字符串：密钥、签名、id 都是 JSON 字符串，密钥与签名一律是标准 base64（不收 base64url）。
+// SDK 不做任何加密运算——不生成、不校验、不解码、不重新编码，原样上线：服务端按字符串精确比对身份公钥，
+// 安全码对字符串做哈希，换一种编码就会被读成换了身份。
+//
+// **Nested names are exact.** `signedPreKey`, `oneTimePreKeys[]` and `keys[]` are bound
+// case-sensitively and their `keyId` / `publicKey` / `signature` are required there, so a missing or
+// misspelled member is `1000` for the whole call — these types carry the published camelCase names.
+// 嵌套对象按大小写精确绑定，且 keyId / publicKey / signature 是必填：少一个或拼错一个，整个调用就是 1000。
+
+/**
+ * The medium-term key a device publishes beside its identity key, signed by it. Rotate it by
+ * publishing again; rotating it changes neither the safety number nor the one-time pool.
+ */
+export interface SignedPreKey {
+  /** Your own id for the key, so a peer's first message can say which one it used. Required. */
+  keyId: string;
+  /** Standard base64; decodes to 1–128 bytes. Required. */
+  publicKey: string;
+  /**
+   * Standard base64; decodes to 1–96 bytes. The identity key's signature over the **decoded bytes of
+   * `publicKey`** — not over `keyId` or `createdAt`. Ed25519 / XEdDSA / ECDSA P-256 per `algorithm`.
+   * A signature that does not verify is `1001` "signedPreKey signature does not verify against identityKey".
+   * 身份私钥对 publicKey 解码后字节的签名，不含 keyId 与 createdAt。验不过是 1001。
+   */
+  signature: string;
+  /** Unix ms. On publish, absent or 0 means now; in a {@link PreKeyBundle} it is always set. */
+  createdAt?: number;
+}
+
+/** A single-use key. Handed to exactly one peer by `keys.claim`, and removed as it is handed out. */
+export interface OneTimePreKey {
+  /**
+   * Your own id for the key. A blank id, one containing U+001F, or one repeated within the same call
+   * makes the server **drop that key without an error**.
+   * 空 id、含 U+001F 的 id、同一次调用里重复的 id，服务端会静默丢掉那一把，不报错。
+   */
+  keyId: string;
+  /** Standard base64. One that does not decode is dropped the same way, without an error. */
+  publicKey: string;
+}
+
+/**
+ * The body `keys.publish` takes: this device's identity key, its signed prekey, and optionally a first
+ * batch of one-time keys.
+ *
+ * **No `deviceId` and no `platform`.** The server binds both and then overwrites them with the
+ * connection's, so publishing always speaks for the connected device and no other — they are left off
+ * this type on purpose.
+ * 没有 deviceId 与 platform：服务端会用连接上的值覆盖它们，发布永远只代表当前连接的设备，所以这里刻意不带。
+ *
+ * **A re-publish replaces** the identity key, signed prekey, algorithm and publish time, and keeps the
+ * one-time pool, appending any keys given here — unless `identityKey` changed, in which case the old
+ * pool is deleted first (keys made for the old identity are useless to a peer).
+ * 再次发布替换身份公钥、签名预密钥、算法与发布时间，保留一次性密钥池并追加；身份公钥变了则先清掉旧池。
+ */
+export interface PublishKeysRequest {
+  /**
+   * Standard base64, at most 256 characters and 128 decoded bytes. For a Curve25519 or Ed25519
+   * algorithm it decodes to 32 bytes, or 33 with a leading `0x05`; for P-256 to at least 33. Otherwise
+   * `1001` "identityKey is not valid for this algorithm"; empty is `1001` "identityKey is required".
+   * Changing it is a visible security event: peers' safety numbers change.
+   */
+  identityKey: string;
+  /** Required, with all three of `keyId`, `publicKey` and `signature`. An empty `publicKey` is `1001`. */
+  signedPreKey: SignedPreKey;
+  /**
+   * Optional first batch, at most 100 after the server drops invalid entries (`1001` above that).
+   * The device's pool holds at most 100; past that it is trimmed, keeping the **oldest**.
+   */
+  oneTimePreKeys?: OneTimePreKey[];
+  /**
+   * Absent means `"x3dh-curve25519-aes256gcm-v1"`. Matched by substring: `curve25519` / `x25519` /
+   * `xed25519` verify the signature as XEdDSA, `ed25519` as Ed25519, `p256` / `p-256` / `secp256r1` /
+   * `prime256v1` as ECDSA P-256. Anything else is `1008` "unknown algorithm".
+   */
+  algorithm?: string;
+}
+
+/**
+ * The body `keys.upload` takes: more one-time keys for **the connected device** (there is no way to
+ * name another). Appends to the pool, which holds at most 100 — the oldest are kept.
+ */
+export interface UploadOneTimeKeysRequest {
+  /**
+   * 1–100 keys. Empty is `1001` "keys is required"; none valid (see {@link OneTimePreKey}) is `1001`
+   * "no valid one-time prekeys supplied"; more than 100 is `1001`.
+   */
+  keys: OneTimePreKey[];
+}
+
+/** The body `keys.remaining` takes. */
+export interface RemainingKeysRequest {
+  /**
+   * Absent or blank means the connected device. Always counted under the caller's **own** user, so an
+   * unknown id answers `0`, never an error.
+   */
+  deviceId?: string;
+}
+
+/**
+ * The body `keys.claim` takes: which of a peer's devices to open a session with. Both required —
+ * `1001` "userId is required" / "deviceId is required" — and neither defaults to the caller.
+ */
+export interface ClaimBundleRequest {
+  userId: string;
+  deviceId: string;
+}
+
+/**
+ * What `keys.claim` answers: everything needed to open a session with one device. The SDK checks
+ * nothing in it — verifying `signedPreKey.signature` against `identityKey` is the caller's job.
+ * SDK 不校验其中任何东西：用 identityKey 验 signedPreKey.signature 是调用方的事。
+ */
+export interface PreKeyBundle {
+  userId: string;
+  deviceId: string;
+  /** Standard base64, exactly as the device published it. */
+  identityKey: string;
+  signedPreKey: SignedPreKey;
+  /**
+   * The one-time key this claim consumed. **Absent when the device's pool was empty** — the claim
+   * still succeeds, and the session is opened with the signed prekey alone (weaker forward secrecy
+   * for the first message). Never `null` after decoding.
+   * 设备的一次性密钥用完时没有这个字段——领取照样成功，只用签名预密钥建会话。
+   */
+  oneTimePreKey?: OneTimePreKey;
+  /** As the device published it. */
+  algorithm: string;
+}
+
+/** The body `keys.devices` takes. */
+export interface DeviceKeysRequest {
+  /** Absent or blank means the caller's own devices. An unknown user answers `[]`, not an error. */
+  userId?: string;
+}
+
+/**
+ * One device with published keys, as `keys.devices` lists it. There is no signed prekey here — claim a
+ * bundle for that.
+ */
+export interface DeviceKeyInfo {
+  deviceId: string;
+  /** The platform the device connected with when it last published, as an integer. */
+  platform: Platform;
+  /** Standard base64, exactly as published. */
+  identityKey: string;
+  /** Unix ms of the last publish. */
+  publishedAt: number;
+  /** One-time keys left in its pool. */
+  remainingOneTimeKeys: number;
+}
+
+/** The body `keys.revoke` takes. */
+export interface RevokeDeviceRequest {
+  /**
+   * Required: blank is `1001` "deviceId is required" — it **never** defaults to the connected device.
+   * Always resolved under the caller's own user.
+   */
+  deviceId: string;
+}
+
+/** The body `keys.safetyNumber` takes. */
+export interface SafetyNumberRequest {
+  /** Required: blank is `1001` "peerUserId is required". The caller's own id is allowed. */
+  peerUserId: string;
+}

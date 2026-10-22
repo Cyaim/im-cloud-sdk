@@ -178,15 +178,15 @@ report can be grepped rather than translated.
 | `im.diag` | `logRequests` `logUploaded` — the client drives both; ordinary applications never call them |
 | `im.desk` | `request` `accept` `transfer` `close` `status` `queue` `rate` `canned` `suggest` |
 | `im.room` | `join` `quit` `send` `onlineCount` `memberList` `mute` `kick` |
+| `im.keys` | `publish` `upload` `remaining` `claim` `devices` `revoke` `safetyNumber` |
 
-That is tiers **T0, T1, T2 and T3 in full, plus the whole of `desk.*` and `room.*`, the four
-`msg.stream*` calls, scheduled messages, conversation folders and `msg.translate` from T4** — 100 of
-the server's 107 endpoints, verified against `sdk/endpoint-inventory.json` by the test suite rather
-than counted by hand. The names after the first `·` are T3, after the second T4 (see
+That is **every one of the server's 107 endpoints**: tiers T0, T1, T2 and T3 in full, and all of T4 —
+`desk.*`, `room.*`, the four `msg.stream*` calls, scheduled messages, conversation folders,
+`msg.translate` and the key directory `keys.*` — verified against `sdk/endpoint-inventory.json` by the
+test suite rather than counted by hand. The names after the first `·` are T3, after the second T4 (see
 [Streaming replies](#streaming-replies), [Scheduled messages](#scheduled-messages),
-[Conversation folders](#conversation-folders) and [Translation](#translation)). The other 7
-endpoints of T4 — the end-to-end encryption key directory, `keys.*` — go through `invoke()` until
-they are typed.
+[Conversation folders](#conversation-folders), [Translation](#translation) and
+[Key directory](#key-directory-end-to-end-encryption)).
 
 ### Tier T3 — what the signatures do not say
 
@@ -245,8 +245,8 @@ is permanent, shares the typed methods' code path exactly (same timeouts, cancel
 mapping), and never touches a cursor.
 
 ```ts
-// keys.remaining is tier T4 and not typed yet:
-const left = await im.invoke<number>('keys.remaining', { deviceId });
+// an endpoint newer than this SDK, called by name:
+const result = await im.invoke<{ ok: boolean }>('example.newThing', { id });
 ```
 
 ## Customer-service desk
@@ -496,9 +496,10 @@ The rules, from the server:
 
 Limits and refusals: `1001` for empty `content`, no address, or `sendAt` under 10 s ahead or past
 90 days; `msg.send`'s access refusals (not a member, blocked, …); `1003` past 120 schedules an hour per
-user; `1006` with 100 still waiting. Cancelling: `1002` for an unknown id or someone else's, `1006` once
-the dispatcher has claimed it ("already being sent") — from then on, recall the message instead. The
-outbox pages 20 at a time by default, at most 100. All limits are deployment options (`IM:Extras`).
+user; `1006` with 100 still waiting. Cancelling: `1002` for an unknown id or someone else's; `1006` when
+nothing is left to cancel — it is being sent right now, was already cancelled, or was already sent or
+failed (only the message text differs; branch on the code). For one that was sent, recall the message
+instead. The outbox pages 20 at a time by default, at most 100. All limits are deployment options (`IM:Extras`).
 
 ## Conversation folders
 
@@ -552,6 +553,70 @@ try {
   distinct id, in the order given; `cached` says it came from cache rather than a provider call.
 - Message ids go out and come back as strings. At most 50 per call; `1001` for none readable, more than
   50, or a malformed BCP-47 tag; `1003` past 60 calls a minute per user.
+
+## Key directory (end-to-end encryption)
+
+`im.keys` is the directory end-to-end encryption needs: each device publishes its public keys, and a
+sender fetches a peer device's keys to open a session with it.
+
+**The SDK performs no cryptography.** Key pairs, the signature on the signed prekey, verifying a
+claimed bundle, and the session cipher are all the application's — use a vetted library (libsignal,
+libsodium, WebCrypto). Every key, signature and id is an opaque string, key material in **standard
+base64** (base64url is refused), and the SDK passes each one through unchanged: the server compares
+identity keys by exact string, so a re-encoded key reads as a new identity. Private keys never leave
+the device — nothing on this surface could carry one — and the SDK logs no key material.
+
+```ts
+// On a device's first login (and again to rotate the signed prekey):
+await im.keys.publish({
+  identityKey,                                         // standard base64
+  signedPreKey: { keyId: 'spk-1', publicKey: spkPublic, signature: spkSignature },
+  oneTimePreKeys: batch,                               // [{ keyId, publicKey }], at most 100 per call
+  algorithm: 'x3dh-ed25519-aes256gcm-v1',              // absent: x3dh-curve25519-aes256gcm-v1
+});
+if ((await im.keys.remaining()) < 20) await im.keys.upload({ keys: moreKeys });
+
+// To message bob: one ciphertext per device he has.
+for (const device of await im.keys.devices({ userId: 'bob' })) {
+  const bundle = await im.keys.claim({ userId: 'bob', deviceId: device.deviceId });   // consumes a key
+  // verify bundle.signedPreKey.signature against bundle.identityKey yourself, then open the session;
+  // bundle.oneTimePreKey is absent when bob's pool was empty
+}
+
+const words = await im.keys.safetyNumber({ peerUserId: 'bob' });   // "12345 67890 … " — 12 groups of 5
+```
+
+- **`claim` consumes one of the peer's one-time keys** (oldest first), so its `remaining` drops by one.
+  It is not idempotent: never retry it blindly and never prefetch — the SDK does not retry it either.
+  With the pool empty it still succeeds, with no `oneTimePreKey`. Claiming your own device is allowed
+  and drains your own pool.
+- **`publish` replaces** the identity key, signed prekey, algorithm and publish time, and **keeps the
+  one-time pool**, appending any keys it carries — unless the identity key changed, which empties the
+  old pool first. It and `upload` always act for the connected device: there is no `deviceId` or
+  `platform` to send. The signed prekey's signature is over the decoded bytes of its `publicKey` only.
+  `upload` appends.
+- **`revoke`** needs a `deviceId` (blank is `1001`, never "this device"), resolves it under your own
+  user, and succeeds for an unknown device. Afterwards a claim of it is `1002`, it is gone from
+  `devices`, and both sides' safety numbers change.
+- The **safety number** is the same from either side and covers every identity key of both users: it
+  changes when a device is added or revoked or an identity key changes, not when a signed prekey
+  rotates or a one-time key is used.
+- **No events.** Nothing announces a revoked device, a changed identity key or a pool running low;
+  check `remaining` on launch, and re-read `devices` / `safetyNumber` when it matters.
+- **Not gated.** `keys.*` is callable whether or not the app's `e2ee.enabled` is set, on every plan —
+  that switch governs settings and translation, not the directory. There is no REST route to it.
+- Replies: `remaining` is a bare number (`0` for an unknown device of yours), `devices` a plain array
+  in no particular order (`[]` for an unknown user), `safetyNumber` a bare string.
+
+Limits and refusals: at most 100 one-time keys per call and per device (a full pool keeps the oldest),
+10 devices per user (`1202` for an 11th), keys kept 180 days; these are deployment options
+(`IM:Encryption`). `1001` for a missing or malformed identity key, a missing or incomplete signed
+prekey, a signature that does not verify, no valid one-time key in an upload, or more than 100; `1008`
+for an unknown algorithm; `1002` for an upload before the first publish, a claim of a device with no
+keys, or a safety number with a user who has none. One-time keys with a blank or repeated `keyId` or
+an undecodable `publicKey` are dropped without an error. A misspelled nested member (`signedPreKey`,
+`oneTimePreKeys[]`, `keys[]` are matched case-sensitively) is `1000` for the whole call — the types
+here carry the right names.
 
 ## Errors
 

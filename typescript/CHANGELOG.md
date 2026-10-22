@@ -16,6 +16,27 @@ endpoints. `1.0.0` is reserved for T0 + T1 complete on all five SDKs.
 
 Implements [`sdk/CONTRACT.md`](../CONTRACT.md) contract version `1.0`.
 
+### Added (2026-10-22, key directory)
+
+- **`keys.*` typed whole — all seven: `im.keys.publish` `upload` `remaining` `claim` `devices`
+  `revoke` `safetyNumber`** — with `PublishKeysRequest`, `SignedPreKey`, `OneTimePreKey`,
+  `UploadOneTimeKeysRequest`, `RemainingKeysRequest`, `ClaimBundleRequest`, `PreKeyBundle`,
+  `DeviceKeysRequest`, `DeviceKeyInfo`, `RevokeDeviceRequest` and `SafetyNumberRequest`. The typed
+  surface is now all 107 endpoints; nothing of T4 is left behind `invoke()`.
+  - **The SDK performs no cryptography.** Key material is opaque standard-base64 strings, passed
+    through unchanged (the server compares identity keys by exact string); no key material is logged.
+  - `PublishKeysRequest` has no `deviceId` or `platform`: the server overwrites both from the
+    connection. The nested `signedPreKey` / `oneTimePreKeys[]` / `keys[]` members carry the exact
+    camelCase names the server binds case-sensitively.
+  - `claim` consumes a one-time key and is never retried; a claim from an empty pool decodes with no
+    `oneTimePreKey` (a `null` is made absent). `remaining` answers a bare number, `devices` a plain
+    array, `safetyNumber` a bare string; `remaining` and `devices` send `{}` when called bare.
+  - No `keys.*` event exists, so nothing new is decoded. `keys.*` is not gated by `e2ee.enabled`.
+- `msg.cancelScheduled`'s `1006` is now documented as "nothing left to cancel": in flight, already
+  cancelled, or already sent or failed, with the server's three messages.
+- The `invoke()` example in the README and on `ImClient.invoke` now uses a made-up target, since no
+  endpoint is left untyped.
+
 ### Added (2026-10-22, scheduled messages, folders and translation)
 
 - **Seven more T4 calls typed: `msg.schedule` `msg.scheduled` `msg.cancelScheduled`, `conv.folders`

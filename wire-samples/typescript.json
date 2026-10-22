@@ -2,7 +2,9 @@
   "$comment": "RECORDED by SDK/typescript/test/wire-kinds.test.ts from the frames this SDK's typed methods put on a fake socket. Do not edit by hand; re-record with IM_RECORD_WIRE_SAMPLES=1 npm test (in SDK/typescript). Judged against the server's real socket binder by IM.Server/tests/IM.Tests.Unit/SdkWireSampleBindingTests.cs in the platform repository.",
   "sdk": "typescript",
   "omitted": {
-    "RecallMessageRequest.asAdmin": "MsgController.Recall sets it false for every socket call; recalling as an admin is a server-API capability, so no client type carries it"
+    "RecallMessageRequest.asAdmin": "MsgController.Recall sets it false for every socket call; recalling as an admin is a server-API capability, so no client type carries it",
+    "PublishKeysRequest.deviceId": "KeysController.Publish overwrites it with the device of the connection before anything reads it; a device may only publish for itself, so no client type carries it",
+    "PublishKeysRequest.platform": "KeysController.Publish overwrites it with the platform of the connection; no client type carries it"
   },
   "samples": [
     {"target":"conn.heartbeat","type":null,"via":"conn.heartbeat","body":{}},
@@ -122,6 +124,16 @@
     {"target":"conv.deleteFolder","type":"FolderIdRequest","via":"conv.deleteFolder","body":{"folderId":"f_work"}},
     {"target":"msg.translate","type":"TranslateRequest","via":"msg.translate, every field","body":{"conversationId":"c_wire","messageIds":["360381357961969667","7"],"targetLanguage":"zh-CN","sourceLanguage":"en"}},
     {"target":"msg.translate","type":"TranslateRequest","via":"msg.translate, minimal","body":{"conversationId":"c_wire","messageIds":["360381357961969667","7"],"targetLanguage":"ja"}},
+    {"target":"keys.publish","type":"PublishKeysRequest","via":"keys.publish, every field","body":{"identityKey":"BQ+/ra7fXd3Mu8zN3u/wESIzRFVmd4iZqrvM3e7/ABEi","signedPreKey":{"keyId":"spk-7","publicKey":"q83vASNFZ4mrze8BI0VniavN7wEjRWeJq83vASNFZ4k=","signature":"c2lnbmF0dXJlLW92ZXItdGhlLWRlY29kZWQtc3BrLWJ5dGVzLW5vdC10aGUta2V5SWQ+/w==","createdAt":1758412790000},"oneTimePreKeys":[{"keyId":"otk-1","publicKey":"b3RrLW9uZS1wdWJsaWMta2V5LWJ5dGVzLTMyLWxvbmc+/w=="},{"keyId":"otk-2","publicKey":"b3RrLXR3by1wdWJsaWMta2V5LWJ5dGVzLTMyLWxvbmc+/w=="}],"algorithm":"x3dh-ed25519-aes256gcm-v1"}},
+    {"target":"keys.publish","type":"PublishKeysRequest","via":"keys.publish, minimal","body":{"identityKey":"BQ+/ra7fXd3Mu8zN3u/wESIzRFVmd4iZqrvM3e7/ABEi","signedPreKey":{"keyId":"spk-7","publicKey":"q83vASNFZ4mrze8BI0VniavN7wEjRWeJq83vASNFZ4k=","signature":"c2lnbmF0dXJlLW92ZXItdGhlLWRlY29kZWQtc3BrLWJ5dGVzLW5vdC10aGUta2V5SWQ+/w=="}}},
+    {"target":"keys.upload","type":"UploadOneTimeKeysRequest","via":"keys.upload","body":{"keys":[{"keyId":"otk-3","publicKey":"b3RrLW9uZS1wdWJsaWMta2V5LWJ5dGVzLTMyLWxvbmc+/w=="},{"keyId":"otk-4","publicKey":"b3RrLXR3by1wdWJsaWMta2V5LWJ5dGVzLTMyLWxvbmc+/w=="}]}},
+    {"target":"keys.remaining","type":"RemainingKeysRequest","via":"keys.remaining, every field","body":{"deviceId":"device-2"}},
+    {"target":"keys.remaining","type":"RemainingKeysRequest","via":"keys.remaining, minimal","body":{}},
+    {"target":"keys.claim","type":"ClaimBundleRequest","via":"keys.claim","body":{"userId":"bob","deviceId":"bob-phone"}},
+    {"target":"keys.devices","type":"DeviceKeysRequest","via":"keys.devices, every field","body":{"userId":"bob"}},
+    {"target":"keys.devices","type":"DeviceKeysRequest","via":"keys.devices, minimal","body":{}},
+    {"target":"keys.revoke","type":"RevokeDeviceRequest","via":"keys.revoke","body":{"deviceId":"old-laptop"}},
+    {"target":"keys.safetyNumber","type":"SafetyNumberRequest","via":"keys.safetyNumber","body":{"peerUserId":"bob"}},
     {"target":"msg.send","type":"SendMessageRequest","via":"im.sendText","body":{"receiverId":"bob","content":{"text":"hi"},"contentType":1,"clientMsgId":"generated","sendTime":1758412790000}},
     {"target":"msg.history","type":"HistoryRequest","via":"im.history","body":{"conversationId":"c_wire","beforeSeq":40,"limit":20}},
     {"target":"msg.recall","type":"RecallMessageRequest","via":"im.recall","body":{"conversationId":"c_wire","messageId":"360381357961969667","reason":"wrong chat"}},

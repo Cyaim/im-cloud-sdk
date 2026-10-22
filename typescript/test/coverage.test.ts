@@ -8,6 +8,7 @@ import {
   DiagApi,
   FriendApi,
   GroupApi,
+  KeysApi,
   MediaApi,
   ModerationApi,
   MsgApi,
@@ -60,6 +61,7 @@ function typedTargets(): Set<string> {
     new ModerationApi(io),
     new DeskApi(io),
     new RoomApi(io),
+    new KeysApi(io),
     new DiagApi(io),
   ];
 
@@ -101,8 +103,8 @@ describe('tier coverage', () => {
    * The first deliberate exception to "T0–T3 and nothing else", and the reason it is an exception
    * rather than a hole: T4's rule is "correctly typed when a customer asks", and the customer
    * asked. `desk.*` is typed **whole** — all nine — which is what keeps the rule below meaningful.
-   * `room.*`, `msg.stream*` and the seven chat-app calls, below, are the second, third and fourth; the
-   * other 7 endpoints of T4 (`keys.*`) stay behind `invoke()`.
+   * `room.*`, `msg.stream*`, the seven chat-app calls and `keys.*`, below, are the second to fifth —
+   * and with `keys.*` every endpoint of T4 is typed.
    * T4 的规则原话就是「有客户要的时候把它类型化」，而客户来了。desk.* 是整族做完的九条，
    * 这才让下面那条「不许做一半」的规矩仍然有意义。
    */
@@ -187,11 +189,40 @@ describe('tier coverage', () => {
     assert.deepEqual(missing, [], `the seven are not complete: ${missing.join(', ')}`);
   });
 
+  /**
+   * The fifth: `keys.*`, the end-to-end encryption key directory, all seven. A family with rules a
+   * signature cannot carry — `claim` consumes a one-time key and must never be retried, an empty pool
+   * still answers, the nested key members bind case-sensitively — and half a key directory is a
+   * session that cannot be opened. All seven, or none.
+   * 第五族：端到端加密的密钥目录七条。claim 会消耗一次性密钥、绝不能重试，池空照样答复，嵌套成员按大小写绑定——
+   * 只做一半的密钥目录就是建不起来的会话。七条全做，或者一条不做。
+   */
+  const keysTargets = inventory.tiers['T4']!.targets.filter((target) => target.startsWith('keys.'));
+
+  it('types every endpoint in T4 keys.*', () => {
+    assert.deepEqual(
+      [...keysTargets].sort(),
+      ['keys.claim', 'keys.devices', 'keys.publish', 'keys.remaining', 'keys.revoke', 'keys.safetyNumber', 'keys.upload'],
+      'the server grew or lost a key-directory endpoint',
+    );
+
+    const missing = keysTargets.filter((target) => !covered.has(target));
+    assert.deepEqual(missing, [], `keys is not complete: ${missing.join(', ')}`);
+  });
+
+  it('with the five families, types every endpoint in T4', () => {
+    // Nothing of T4 is left behind invoke(); an endpoint the server adds to T4 fails here until it is
+    // typed or deliberately named as left out.
+    // T4 再没有只能靠 invoke() 够到的端点；服务端往 T4 加一条，这里就红，直到它被类型化或被明确列为不做。
+    const missing = inventory.tiers['T4']!.targets.filter((target) => !covered.has(target));
+    assert.deepEqual(missing, [], `T4 is not complete: ${missing.join(', ')}`);
+  });
+
   it('does not half-type a tier it has not committed to', () => {
     // A partially typed tier is worse than an untyped one: a developer cannot tell which half is
     // there, and finds out one endpoint at a time. Everything beyond T3 goes through `invoke()`,
-    // which is documented and obviously an escape hatch — except `desk.*`, `room.*`, `msg.stream*` and
-    // the seven chat-app calls, which are committed to whole, above. T3 joined the committed set whole, all twenty at once, for the same reason.
+    // which is documented and obviously an escape hatch — except `desk.*`, `room.*`, `msg.stream*`,
+    // the seven chat-app calls and `keys.*`, which are committed to whole, above. T3 joined the committed set whole, all twenty at once, for the same reason.
     // T3 是整层二十条一起加进来的，理由同上：不许做一半。
     const shipped = new Set([
       ...inventory.tiers['T0']!.targets,
@@ -202,10 +233,11 @@ describe('tier coverage', () => {
       ...roomTargets,
       ...streamTargets,
       ...chatAppTargets,
+      ...keysTargets,
     ]);
 
     const strays = [...covered].filter((target) => !shipped.has(target));
-    assert.deepEqual(strays, [], `typed but not in T0–T3, desk.*, room.*, msg.stream* or the seven: ${strays.join(', ')}`);
+    assert.deepEqual(strays, [], `typed but not in T0–T3, desk.*, room.*, msg.stream*, the seven or keys.*: ${strays.join(', ')}`);
     assert.equal(covered.size, shipped.size);
   });
 });
@@ -258,6 +290,7 @@ describe('the namespaced surface is endpoints only', () => {
     ['moderation', new ModerationApi(io)],
     ['desk', new DeskApi(io)],
     ['room', new RoomApi(io)],
+    ['keys', new KeysApi(io)],
   ];
 
   it('names no endpoint the server does not have', () => {

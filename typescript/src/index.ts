@@ -18,6 +18,7 @@ export {
   DiagApi,
   FriendApi,
   GroupApi,
+  KeysApi,
   MediaApi,
   ModerationApi,
   MsgApi,

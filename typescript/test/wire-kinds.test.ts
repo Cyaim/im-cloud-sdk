@@ -24,8 +24,9 @@ import { FakeSocket, until } from './fake-socket.js';
 import { type Inventory, loadInventory } from './inventory.js';
 
 /**
- * Every request field of every typed endpoint — T0–T3, `desk.*`, `room.*`, `msg.stream*` and the seven
- * scheduled-message, folder and translation calls — in the JSON kind the server's C# type binds from.
+ * Every request field of every typed endpoint — T0–T3, `desk.*`, `room.*`, `msg.stream*`, the seven
+ * scheduled-message, folder and translation calls and `keys.*` — in the JSON kind the server's C# type
+ * binds from.
  *
  * **Why the kind, and why the server's type rather than this SDK's.** The socket binder does not go
  * through the platform's JSON options: it reads each request property with the C# type the DTO
@@ -478,6 +479,66 @@ const rows: Row[] = [
     'msg.translate, minimal',
   ),
 
+  // ---- T4: keys.*, the key directory. Key material is opaque standard base64 (with `+`, `/` and `=`),
+  // passed through as given. keys.publish carries every member of SignedPreKey and a one-time key, and
+  // no deviceId or platform (see OMITTED); keys.remaining and keys.devices are sampled with an explicit
+  // id and with {}.
+  row(
+    'keys.publish',
+    (c, k) =>
+      c.keys.publish(
+        k({
+          identityKey: 'BQ+/ra7fXd3Mu8zN3u/wESIzRFVmd4iZqrvM3e7/ABEi',
+          signedPreKey: {
+            keyId: 'spk-7',
+            publicKey: 'q83vASNFZ4mrze8BI0VniavN7wEjRWeJq83vASNFZ4k=',
+            signature: 'c2lnbmF0dXJlLW92ZXItdGhlLWRlY29kZWQtc3BrLWJ5dGVzLW5vdC10aGUta2V5SWQ+/w==',
+            createdAt: 1758412790000,
+          },
+          oneTimePreKeys: [
+            { keyId: 'otk-1', publicKey: 'b3RrLW9uZS1wdWJsaWMta2V5LWJ5dGVzLTMyLWxvbmc+/w==' },
+            { keyId: 'otk-2', publicKey: 'b3RrLXR3by1wdWJsaWMta2V5LWJ5dGVzLTMyLWxvbmc+/w==' },
+          ],
+          algorithm: 'x3dh-ed25519-aes256gcm-v1',
+        }),
+      ),
+    'keys.publish, every field',
+  ),
+  row(
+    'keys.publish',
+    (c, k) =>
+      c.keys.publish(
+        k({
+          identityKey: 'BQ+/ra7fXd3Mu8zN3u/wESIzRFVmd4iZqrvM3e7/ABEi',
+          signedPreKey: {
+            keyId: 'spk-7',
+            publicKey: 'q83vASNFZ4mrze8BI0VniavN7wEjRWeJq83vASNFZ4k=',
+            signature: 'c2lnbmF0dXJlLW92ZXItdGhlLWRlY29kZWQtc3BrLWJ5dGVzLW5vdC10aGUta2V5SWQ+/w==',
+          },
+        }),
+      ),
+    'keys.publish, minimal',
+  ),
+  row(
+    'keys.upload',
+    (c, k) =>
+      c.keys.upload(
+        k({
+          keys: [
+            { keyId: 'otk-3', publicKey: 'b3RrLW9uZS1wdWJsaWMta2V5LWJ5dGVzLTMyLWxvbmc+/w==' },
+            { keyId: 'otk-4', publicKey: 'b3RrLXR3by1wdWJsaWMta2V5LWJ5dGVzLTMyLWxvbmc+/w==' },
+          ],
+        }),
+      ),
+  ),
+  row('keys.remaining', (c, k) => c.keys.remaining(k({ deviceId: 'device-2' })), 'keys.remaining, every field'),
+  row('keys.remaining', (c, k) => c.keys.remaining(k({})), 'keys.remaining, minimal'),
+  row('keys.claim', (c, k) => c.keys.claim(k({ userId: 'bob', deviceId: 'bob-phone' }))),
+  row('keys.devices', (c, k) => c.keys.devices(k({ userId: 'bob' })), 'keys.devices, every field'),
+  row('keys.devices', (c, k) => c.keys.devices(k({})), 'keys.devices, minimal'),
+  row('keys.revoke', (c, k) => c.keys.revoke(k({ deviceId: 'old-laptop' }))),
+  row('keys.safetyNumber', (c, k) => c.keys.safetyNumber(k({ peerUserId: 'bob' }))),
+
   // ---- public methods that build their own body
   row('msg.send', (c) => c.sendText({ receiverId: 'bob' }, 'hi'), 'im.sendText'),
   row('msg.history', (c) => c.history(C, 40, 20), 'im.history'),
@@ -494,13 +555,22 @@ const rows: Row[] = [
 
 /**
  * Server fields this SDK never sends, each with the reason. Keyed by the server's type name. An
- * entry must name a real field and must never appear in a body; the list may only shrink.
+ * entry must name a real field and must never appear in a body; the list may only shrink — the one
+ * kind of growth allowed is a field the server binds and then overwrites from the connection, which a
+ * client sending it could only get wrong (`keys.publish`'s device and platform, 2026-10-22).
+ * 只许缩短；唯一允许新增的一类，是服务端绑定之后又用连接上的值覆盖的字段——客户端发了也只会发错。
  */
 const OMITTED: Record<string, Record<string, string>> = {
   RecallMessageRequest: {
     asAdmin:
       'MsgController.Recall sets it false for every socket call; recalling as an admin is a server-API ' +
       'capability, so no client type carries it',
+  },
+  PublishKeysRequest: {
+    deviceId:
+      'KeysController.Publish overwrites it with the device of the connection before anything reads it; a ' +
+      'device may only publish for itself, so no client type carries it',
+    platform: 'KeysController.Publish overwrites it with the platform of the connection; no client type carries it',
   },
 };
 
@@ -740,15 +810,15 @@ interface WireFrame {
 describe('request wire kinds: every field, as the server declares it', () => {
   const inventory = loadInventory();
   // Every target this SDK types, whatever its tier: T0–T3, and the desk.*, room.* and msg.stream*
-  // families of T4 with the seven scheduled-message, folder and translation calls. A family typed outside the floor meets the same binder that every T1 call meets,
+  // families of T4 with the seven scheduled-message, folder and translation calls and keys.*. A family typed outside the floor meets the same binder that every T1 call meets,
   // and is held to the same rules.
   //
-  // room.*, msg.stream* and the seven are named from the tier list as well as read from `implementedIn`, the way
+  // room.*, msg.stream*, the seven and keys.* are named from the tier list as well as read from `implementedIn`, the way
   // coverage.test.ts names every family: `implementedIn` is computed by the platform repository's
   // generator from these sources, so it flips only when the inventory is regenerated, and a family
   // typed in the commit before that would otherwise have no row asked of it. The union only ever
   // adds targets to check; once the inventory says true it changes nothing.
-  // room.*、msg.stream* 与这七条同时从层级表点名：implementedIn 要等平台仓的生成器重新生成清单才会翻转，
+  // room.*、msg.stream*、这七条与 keys.* 同时从层级表点名：implementedIn 要等平台仓的生成器重新生成清单才会翻转，
   // 在那之前这一族不会被要求有行。并集只会多查、不会少查；清单翻成 true 之后它不改变任何东西。
   const roomFamily = inventory.tiers['T4']?.targets.filter((target) => target.startsWith('room.')) ?? [];
   const streamFamily = inventory.tiers['T4']?.targets.filter((target) => target.startsWith('msg.stream')) ?? [];
@@ -761,12 +831,14 @@ describe('request wire kinds: every field, as the server declares it', () => {
     'conv.deleteFolder',
     'msg.translate',
   ].filter((target) => inventory.tiers['T4']?.targets.includes(target));
+  const keysFamily = inventory.tiers['T4']?.targets.filter((target) => target.startsWith('keys.')) ?? [];
   const shipped = [
     ...new Set([
       ...inventory.endpoints.filter((e) => e.implementedIn?.['typescript'] === true).map((e) => e.target),
       ...roomFamily,
       ...streamFamily,
       ...chatAppSeven,
+      ...keysFamily,
     ]),
   ];
   const requestTypes = new Map(inventory.endpoints.map((e) => [e.target, e.requestType ?? null]));

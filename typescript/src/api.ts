@@ -22,6 +22,7 @@ import type {
   BeginStreamRequest,
   BlockEntry,
   BlockRequest,
+  ClaimBundleRequest,
   CompleteStreamRequest,
   ConversationFolder,
   ConversationIdRequest,
@@ -41,6 +42,8 @@ import type {
   DeskStatusRequest,
   DeskSuggestRequest,
   DeskTransferRequest,
+  DeviceKeyInfo,
+  DeviceKeysRequest,
   DownloadUrlRequest,
   EditMessageRequest,
   FolderIdRequest,
@@ -68,7 +71,9 @@ import type {
   MuteMemberRequest,
   PageRequest,
   PinnedMessage,
+  PreKeyBundle,
   PresenceState,
+  PublishKeysRequest,
   PushClickedRequest,
   PushProvider,
   ReactRequest,
@@ -78,15 +83,18 @@ import type {
   ReceiptDetailRequest,
   ReceiptRequest,
   RegisterPushTokenRequest,
+  RemainingKeysRequest,
   ReportReceipt,
   ResumeRequest,
   ResumeResult,
+  RevokeDeviceRequest,
   RoomCursorRequest,
   RoomIdRequest,
   RoomJoinResult,
   RoomKickRequest,
   RoomMuteRequest,
   RoomSendRequest,
+  SafetyNumberRequest,
   ScheduleIdRequest,
   ScheduleRequest,
   ScheduledMessage,
@@ -111,6 +119,7 @@ import type {
   UpdateConversationSettingRequest,
   UpdateGroupCommand,
   UpdateProfileRequest,
+  UploadOneTimeKeysRequest,
   UploadTicketRequest,
   UpsertFolderRequest,
   UserIdRequest,
@@ -506,10 +515,17 @@ export class MsgApi {
    * Cancels a schedule that is still waiting. The entry stays in {@link scheduled} with
    * `error: "cancelled by sender"`.
    *
-   * `1002` for an id that is unknown or someone else's; `1006` once the dispatcher has claimed it —
-   * "already being sent and can no longer be cancelled". From then on the remedy is `msg.recall` on
-   * the message it became.
-   * 未知或别人的是 1002；派发已领取之后是 1006，此后只能对发出的消息撤回。
+   * `1002` for an id that is unknown or someone else's. `1006` means **nothing is left to cancel**, in
+   * one of three states that differ only in the message text:
+   * - in flight — "this message is already being sent and can no longer be cancelled";
+   * - already cancelled — "this scheduled message has already been cancelled";
+   * - already sent or failed — "this scheduled message has already been sent or has failed, and can no
+   *   longer be cancelled".
+   *
+   * Branch on the code, not the text. For one that was sent, the remedy is `msg.recall` on the message
+   * it became (its `messageId` in {@link scheduled}).
+   * 未知或别人的是 1002。1006 表示已无可取消：正在发送、已取消、已发出或已失败三种情况，只有消息文本不同。
+   * 按码分支，不要按文本；已发出的那种，补救办法是对它变成的那条消息 msg.recall。
    */
   async cancelScheduled(request: ScheduleIdRequest, options?: ImRequestOptions): Promise<void> {
     await this.io.request<void>('msg.cancelScheduled', request, options);
@@ -1443,6 +1459,135 @@ export class RoomApi {
   async kick(request: RoomKickRequest, options?: ImRequestOptions): Promise<void> {
     await this.io.request<void>('room.kick', request, options);
   }
+}
+
+/**
+ * `keys.*` — the end-to-end encryption key directory (T4): publish this device's public keys, fetch a
+ * peer's to open a session, and the safety number two people compare to know nobody is in the middle.
+ *
+ * **The SDK performs no cryptography.** It stores nothing and computes nothing: keys, signatures and
+ * ids are opaque strings (standard base64 for key material) that go out and come back exactly as
+ * given. Generating key pairs, signing the signed prekey, verifying a claimed bundle, and the session
+ * cipher itself are the application's — use a vetted library (libsignal, libsodium, WebCrypto), and
+ * keep private keys on the device; nothing on this surface could carry one. It never logs key material.
+ * SDK 不做任何加密运算：密钥、签名、id 都是原样往返的不透明字符串（密钥材料是标准 base64）。生成密钥对、
+ * 给签名预密钥签名、校验领取到的密钥包、会话加密本身都由应用负责；私钥只留在设备上，这个面也传不了私钥。
+ *
+ * **Writes speak for the connected device only**: `publish` and `upload` take the device from the
+ * connection and offer no field for it. Reads name their target. `revoke` names a device but resolves
+ * it under the caller's own user.
+ *
+ * **No app setting, plan or add-on gates these calls** — they work whether or not `e2ee.enabled` is
+ * set (that switch governs settings and translation, not the directory). No event is sent for a
+ * revoked device, a changed identity key or a pool running low: poll `remaining` on launch, and
+ * re-read `devices` / `safetyNumber` when it matters.
+ * 不受应用开关、套餐或增值项限制——无论 e2ee.enabled 开没开都能调用。吊销、身份变更、密钥池见底都没有事件：
+ * 启动时查 remaining，需要时重新读 devices / safetyNumber。
+ */
+export class KeysApi {
+  constructor(private readonly io: ImInvoker) {}
+
+  /**
+   * Publishes the connected device's identity key and signed prekey, with optional one-time keys.
+   * Call it on a device's first login and whenever you rotate the signed prekey.
+   *
+   * **A replace for everything but the pool**: identity key, signed prekey, algorithm and publish time
+   * are overwritten; the one-time pool is kept and the given keys appended — unless the identity key
+   * changed, which empties the old pool first. See {@link PublishKeysRequest} for the encodings.
+   *
+   * Refusals: `1001` for an empty or malformed identity key, a missing or incomplete signed prekey, a
+   * signature that does not verify, or more than 100 one-time keys; `1008` for an unknown algorithm;
+   * `1202` for an 11th device of the same user. Invalid one-time keys are dropped without an error.
+   * 除密钥池外全部替换：池保留并追加，身份公钥变了则先清空旧池。拒绝：1001（身份公钥 / 签名预密钥 / 签名 /
+   * 超过 100 把）、1008（未知算法）、1202（同一用户第 11 台设备）。无效的一次性密钥被静默丢弃。
+   */
+  async publish(request: PublishKeysRequest, options?: ImRequestOptions): Promise<void> {
+    await this.io.request<void>('keys.publish', request, options);
+  }
+
+  /**
+   * Tops up the connected device's one-time pool — call it when {@link remaining} runs low. Appends;
+   * the pool holds at most 100 and keeps the oldest.
+   *
+   * Refusals: `1001` for no keys, none valid, or more than 100; `1002` "device has not published its
+   * identity key" before the first `publish`.
+   */
+  async upload(request: UploadOneTimeKeysRequest, options?: ImRequestOptions): Promise<void> {
+    await this.io.request<void>('keys.upload', request, options);
+  }
+
+  /**
+   * How many one-time keys a device of the caller's own has left. A bare number. With no `deviceId`,
+   * the connected device; an unknown one is `0`, not an error.
+   */
+  async remaining(request: RemainingKeysRequest = {}, options?: ImRequestOptions): Promise<number> {
+    return asLong(await this.io.request<unknown>('keys.remaining', request, options));
+  }
+
+  /**
+   * Takes what is needed to open a session with one of a peer's devices — **and consumes one of its
+   * one-time keys** (oldest first), so its `remaining` drops by one.
+   *
+   * **Not idempotent: never retry it blindly, never prefetch.** Two sessions opened with the same
+   * one-time key lose what that key was for. With the pool empty it still succeeds, with no
+   * `oneTimePreKey` (see {@link PreKeyBundle}). Claiming one's own device is allowed and drains one's
+   * own pool. Refusals: `1001` without `userId` or `deviceId`; `1002` "device has published no keys"
+   * (also after a revoke, and for an unknown user); `1005` when the directory is unavailable.
+   * 会消耗对方一把一次性密钥：不幂等，不要盲目重试、不要预取。池空时照样成功，只是没有 oneTimePreKey。
+   */
+  async claim(request: ClaimBundleRequest, options?: ImRequestOptions): Promise<PreKeyBundle> {
+    return readPreKeyBundle(await this.io.request<PreKeyBundle>('keys.claim', request, options));
+  }
+
+  /**
+   * Every device a user has keys published for — a sender encrypts once per device in this list.
+   * **A plain array, in no particular order**; `[]` for a user with none (or unknown). With no
+   * `userId`, the caller's own devices.
+   */
+  async devices(request: DeviceKeysRequest = {}, options?: ImRequestOptions): Promise<DeviceKeyInfo[]> {
+    const devices = await this.io.request<DeviceKeyInfo[] | null | undefined>('keys.devices', request, options);
+    return (devices ?? []).map((device) => {
+      device.publishedAt = asLong(device.publishedAt);
+      device.remainingOneTimeKeys = asLong(device.remainingOneTimeKeys);
+      return device;
+    });
+  }
+
+  /**
+   * Forgets one of the caller's own devices: its record, its pool and its place in `devices`, so
+   * nobody opens a new session with it. Existing sessions are the clients' business.
+   *
+   * `deviceId` is required (`1001` when blank) and never defaults to this device — revoking the
+   * connected device is allowed, but only by naming it. Revoking an unknown device **succeeds**.
+   * Afterwards a claim of it is `1002` and both sides' safety numbers change; no event is sent.
+   * deviceId 必填，从不默认成当前设备；吊销不存在的设备也成功。之后领取它是 1002，安全码随之变化，没有事件。
+   */
+  async revoke(request: RevokeDeviceRequest, options?: ImRequestOptions): Promise<void> {
+    await this.io.request<void>('keys.revoke', request, options);
+  }
+
+  /**
+   * The safety number for the caller and `peerUserId`: twelve groups of five digits separated by single
+   * spaces, the same from either side. It covers every identity key of both users, so it changes when
+   * a device is added or revoked or an identity key changes — not when a signed prekey rotates or a
+   * one-time key is used. A bare string. `1002` when either side has published no keys.
+   * 安全码：十二组五位数字、单个空格分隔，两端算出来相同。覆盖双方全部身份公钥。
+   */
+  safetyNumber(request: SafetyNumberRequest, options?: ImRequestOptions): Promise<string> {
+    return this.io.request<string>('keys.safetyNumber', request, options);
+  }
+}
+
+/**
+ * Repairs a claimed bundle: `signedPreKey.createdAt` may arrive quoted, and an empty pool's
+ * `oneTimePreKey` is absent — kept absent, and a `null` from an older server made absent too.
+ * Nothing about the key material is touched.
+ * 修复领取到的密钥包：createdAt 可能带引号；池空时 oneTimePreKey 缺席，保持缺席（null 也变成缺席）。密钥材料一概不动。
+ */
+function readPreKeyBundle(bundle: PreKeyBundle): PreKeyBundle {
+  if (bundle.signedPreKey) bundle.signedPreKey.createdAt = asLong(bundle.signedPreKey.createdAt);
+  if (bundle.oneTimePreKey === undefined || bundle.oneTimePreKey === null) delete bundle.oneTimePreKey;
+  return bundle;
 }
 
 /**

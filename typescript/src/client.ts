@@ -5,6 +5,7 @@ import {
   DiagApi,
   FriendApi,
   GroupApi,
+  KeysApi,
   MediaApi,
   ModerationApi,
   MsgApi,
@@ -182,9 +183,9 @@ export class ImClient {
   /**
    * `desk.*` — the customer-service desk (T4), typed because a customer asked for it.
    *
-   * The first tier-4 namespace on this client (`room` is the second). It is here rather than behind
-   * `invoke()` because the desk is a product built on this platform rather than an optional endpoint
-   * group: a visitor widget and an agent workbench are both ordinary applications of this SDK, and
+   * The first tier-4 namespace on this client (`room` is the second, `keys` the third). It is here
+   * rather than behind `invoke()` because the desk is a product built on this platform rather than an
+   * optional endpoint group: a visitor widget and an agent workbench are both ordinary applications of this SDK, and
    * neither should have to hand-write nine request shapes to be one.
    */
   readonly desk: DeskApi;
@@ -197,6 +198,18 @@ export class ImClient {
    * rejoin after a reconnect — the SDK does not do it for you.
    */
   readonly room: RoomApi;
+
+  /**
+   * `keys.*` — the end-to-end encryption key directory (T4), typed whole: publish, upload, remaining,
+   * claim, devices, revoke, safetyNumber.
+   *
+   * **The SDK performs no cryptography**: key material is opaque strings passed through unchanged, and
+   * generating, signing and verifying are the application's. `claim` consumes one of the peer's
+   * one-time keys, so it is never retried for you. Callable whether or not the app's `e2ee.enabled`
+   * is set.
+   * SDK 不做加密运算，密钥材料原样透传；claim 会消耗对方一把一次性密钥，SDK 不替你重试。与 e2ee.enabled 无关。
+   */
+  readonly keys: KeysApi;
 
   readonly diag: DiagApi;
 
@@ -237,6 +250,7 @@ export class ImClient {
     this.moderation = new ModerationApi(io);
     this.desk = new DeskApi(io);
     this.room = new RoomApi(io, () => this.newClientMsgId());
+    this.keys = new KeysApi(io);
     this.diag = new DiagApi(io);
 
     // Defaulted rather than required, unlike the cursor store, and the asymmetry is deliberate:
@@ -549,8 +563,8 @@ export class ImClient {
    * returns messages and moves nothing.
    *
    * ```ts
-   * // keys.remaining is T4 and not typed yet:
-   * const left = await im.invoke<number>('keys.remaining', { deviceId });
+   * // an endpoint newer than this SDK, called by name:
+   * const result = await im.invoke<{ ok: boolean }>('example.newThing', { id });
    * ```
    */
   invoke<T>(target: string, body?: unknown, options?: ImRequestOptions): Promise<T> {
