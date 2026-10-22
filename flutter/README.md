@@ -242,13 +242,13 @@ endpoint greps straight to the call.
 | `im.diag` | `logRequests` `logUploaded` — the client drives both; ordinary applications never call them |
 | `im.desk` | `request` `accept` `transfer` `close` `status` `queue` `rate` `canned` `suggest` — T4, the customer-service desk |
 | `im.room` | `join` `quit` `send` `onlineCount` `memberList` `mute` `kick` — T4, chat rooms (see below) |
+| `im.keys` | `publish` `upload` `remaining` `claim` `devices` `revoke` `safetyNumber` — T4, the end-to-end-encryption key directory (see below) |
 
 That is contract tiers **T0, T1, T2 and T3 complete** — session floor, 1:1 chat MVP, social graph
 and groups, and competitive parity — plus the nine `desk.*`, seven `room.*` and four `msg.stream*`
-of T4, its three scheduled-message calls, three folder calls and `msg.translate`: 100 of the
-server's 107 endpoints. The names after the `·` are T3. The other 7 endpoints of T4 (`keys.*`, the
-end-to-end-encryption key directory) go through
-`invoke()` until they are typed. Every method takes exactly one request object named for the server DTO, so the
+of T4, its three scheduled-message calls, three folder calls, `msg.translate` and the seven `keys.*`
+of the key directory: all 107 of the server's endpoints. The names after the `·` are T3. Every
+method takes exactly one request object named for the server DTO, so the
 server adding an optional field stays additive instead of breaking your call sites.
 
 The desk has two audiences and the session decides which one you are: `request` and `rate` are the
@@ -419,8 +419,9 @@ await im.msg.cancelScheduled(ImScheduleIdRequest(scheduleId: s.scheduleId));
 - **There is no state field.** `ImScheduledMessage.state` reads it: `pending` (no `messageId`, no
   `error`), `sent` (`messageId` set), `cancelled` (`error` is `"cancelled by sender"`), `failed` (any
   other `error`). Settled schedules **stay in `msg.scheduled` for about 48 hours** — a cancelled one is
-  still listed, as cancelled. `msg.cancelScheduled` is `1002` for an unknown id and `1006` once the
-  scheduler has started sending it.
+  still listed, as cancelled. `msg.cancelScheduled` is `1002` for an unknown id and `1006` when
+  nothing is left to cancel — already being sent, already cancelled, or already sent or failed (only
+  the message differs); a sent one is taken back with `msg.recall`.
 
 **Folders** — `im.conv.folders` / `upsertFolder` / `deleteFolder`. A folder holds **tags, not
 conversations**: file a conversation by tagging it (`im.conv.setting` with
@@ -463,6 +464,57 @@ try {
   message. Both can change at runtime, so do not remember them.
 - **A success can carry failures**: each message stands alone in `items`, with `text` or with an
   `error`; the call fails as a whole only when not one message could be translated.
+
+### Key directory (end-to-end encryption)
+
+`im.keys` is the directory an end-to-end-encrypted client publishes its public keys to and fetches
+a peer's from. **This SDK performs no cryptography**: generating keys, signing the signed prekey,
+X3DH and encrypting messages are your crypto library's. Every key, prekey and signature is an
+opaque string in **standard base64** (base64url is refused) that goes out and comes back
+**unchanged** — the server compares identity keys and builds the safety number from the strings
+themselves, so never re-encode one. Do not log them.
+
+```dart
+// This device, at first login (and again to rotate the signed prekey):
+await im.keys.publish(ImPublishKeysRequest(
+  identityKey: identityKeyB64,
+  signedPreKey: ImSignedPreKey(keyId: 'spk-1', publicKey: spkB64, signature: spkSignatureB64),
+  oneTimePreKeys: <ImOneTimePreKey>[for (final k in fresh) ImOneTimePreKey(keyId: k.id, publicKey: k.b64)],
+));
+if (await im.keys.remaining() < 20) await im.keys.upload(ImUploadOneTimeKeysRequest(keys: more));
+
+// Opening a session with a peer: one ciphertext per device.
+for (final ImDeviceKeyInfo device in await im.keys.devices(ImDeviceKeysRequest(userId: peer))) {
+  final ImPreKeyBundle bundle =
+      await im.keys.claim(ImClaimBundleRequest(userId: peer, deviceId: device.deviceId));
+  // bundle.oneTimePreKey is null when that device's pool was empty
+}
+
+final String safety = await im.keys.safetyNumber(ImSafetyNumberRequest(peerUserId: peer));
+```
+
+- **`keys.claim` consumes a one-time prekey.** It is a write that looks like a read: each claim
+  removes one key from the peer device's pool (oldest first), so `remaining` drops by one. Never
+  prefetch it and never retry it after a timeout. On an empty pool the claim still succeeds, with
+  `oneTimePreKey` null.
+- **`keys.publish` replaces, `keys.upload` appends.** Publishing again replaces the identity key,
+  signed prekey and algorithm and keeps the one-time pool, adding the new keys to it — unless the
+  identity key changed, which deletes the old pool first. The device and platform are always the
+  connection's; there is no field for them. `upload` adds to this device's pool, and is `1002` before
+  the device has published.
+- **Limits**: 100 one-time keys per call and per device (the oldest are kept), 10 devices per user
+  (`1202` for an 11th), keys kept 180 days. One-time keys with a blank or repeated id, or a public
+  key that is not base64, are dropped silently. A bad signature or an identity key that does not fit
+  the algorithm is `1001`; an unknown algorithm `1008`.
+- **`keys.revoke` needs a device id** (one of your own; blank is `1001`, never "this device"), and
+  revoking an unknown device succeeds. Afterwards a claim on it is `1002`, it is gone from `devices`,
+  and the safety number changes.
+- **`keys.safetyNumber`** is 12 groups of 5 digits, the same from both sides; it changes when either
+  side adds or revokes a device or changes an identity key. `1002` when either side has no keys.
+- **No event follows any of these calls** — a revoke, an identity change or a low pool push nothing;
+  call `devices`, `safetyNumber` or `remaining` again.
+- **`keys.*` is callable whether or not the app's `e2ee.enabled` is set**: no add-on, plan or app
+  setting gates the directory.
 
 ### Tier T3 — what the signatures do not say
 
@@ -512,7 +564,8 @@ path with every typed method — same timeouts, same cancellation, same error ma
 touches a cursor.
 
 ```dart
-// keys.remaining is tier T4 and not typed yet:
+// Any target by name, e.g. one the server gained after this release. Shown with
+// keys.remaining, which im.keys.remaining() also covers:
 final int left = await im.invoke<int>('keys.remaining', <String, Object?>{
   'deviceId': deviceId,
 });

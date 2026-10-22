@@ -63,6 +63,7 @@ class ImClient {
     diag = ImDiagApi(_connection);
     desk = ImDeskApi(_connection);
     room = ImRoomApi(_connection);
+    keys = ImKeysApi(_connection);
 
     // Defaulted rather than required, unlike the cursor store, and the asymmetry is deliberate:
     // losing cursors loses a user's messages, while losing logs loses a diagnostic (ADR-003).
@@ -158,6 +159,11 @@ class ImClient {
   /// `room.*` — chat rooms (T4): join, quit, send, onlineCount, memberList, mute, kick. A room's
   /// messages arrive on [messages] with `seq` 0 and never touch a cursor; see [ImRoomApi].
   late final ImRoomApi room;
+
+  /// `keys.*` — the end-to-end-encryption key directory (T4): publish, upload, remaining, claim,
+  /// devices, revoke, safetyNumber. This package carries the keys and performs no cryptography; see
+  /// [ImKeysApi].
+  late final ImKeysApi keys;
 
   /// The SDK's own runtime log: written here, read when the server asks this device for it.
   ///
@@ -529,7 +535,8 @@ class ImClient {
   /// returns messages and moves nothing.
   ///
   /// ```dart
-  /// // keys.remaining is T4 and not typed yet:
+  /// // Any target by name, e.g. one the server gained after this release. Shown with
+  /// // keys.remaining, which im.keys.remaining() also covers:
   /// final int left = await im.invoke<int>('keys.remaining', <String, Object?>{
   ///   'deviceId': deviceId,
   /// });

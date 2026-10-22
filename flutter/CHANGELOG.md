@@ -11,6 +11,26 @@ tiers T0 and T1 complete on all five platforms with §5 and §6 implemented ever
 
 ### Added (2026-10-22)
 
+- **Key directory (T4)**: `im.keys.publish` / `upload` / `remaining` / `claim` / `devices` / `revoke` /
+  `safetyNumber`, named for their endpoints (CONTRACT §4.2). The SDK carries keys and performs no
+  cryptography: key material is an opaque standard-base64 string, sent and returned unchanged.
+  `ImPublishKeysRequest` (identity key, `ImSignedPreKey`, optional `ImOneTimePreKey` list left out when
+  empty, optional algorithm; no device or platform, which the server takes from the connection),
+  `ImUploadOneTimeKeysRequest`, `ImRemainingKeysRequest` / `ImDeviceKeysRequest` (optional: the
+  connected device / the caller's own), `ImClaimBundleRequest` → `ImPreKeyBundle` (`oneTimePreKey`
+  null when the pool was empty), `ImDeviceKeyInfo` (platform as `ImPlatform`), `ImRevokeDeviceRequest`,
+  `ImSafetyNumberRequest`; `remaining`, `devices` and `safetyNumber` read the server's bare number,
+  array and string. Doc comments say claim consumes a one-time key (never prefetch or retry), publish
+  replaces and keeps the pool, upload appends, revoking an unknown device succeeds, and no setting
+  (`e2ee.enabled` included) gates the directory.
+- `test/keys_test.dart`: every call's whole frame, full and minimal (nested members under exact
+  camelCase, key material unchanged, no device or platform); replies with every member decoded; a
+  drained bundle; refusals by code and message; no key material in the log; fixtures and bodies held
+  to `payloadTypes`. The request bodies are in `wire-samples/flutter.json`, with
+  `PublishKeysRequest.deviceId` / `platform` declared omitted; the README has a "Key directory
+  (end-to-end encryption)" section and now counts all 107 endpoints typed. The `invoke()` examples say
+  they are for any target. `msg.cancelScheduled`'s `1006` is documented in full (already being sent,
+  already cancelled, or already sent or failed; `msg.recall` for a sent one).
 - **Scheduled messages, folders and translation (T4)**: `im.msg.schedule` / `scheduled` /
   `cancelScheduled`, `im.conv.folders` / `upsertFolder` / `deleteFolder` and `im.msg.translate`, named
   for their endpoints (CONTRACT §4.2). `ImScheduleRequest` is the server's flat `ScheduleRequest`

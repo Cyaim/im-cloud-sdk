@@ -42,7 +42,14 @@ const Map<String, Map<String, String>> omitted = <String, Map<String, String>>{
     'asAdmin': 'forced false by MsgController.Recall for every client call; admin recall is a '
         'server-API capability, so the typed request has no field for it',
   },
+  'keys.publish': <String, String>{
+    'deviceId': _keysConnection,
+    'platform': _keysConnection,
+  },
 };
+
+const String _keysConnection = 'overwritten from the connection by KeysController.Publish: a '
+    'device can publish only its own keys, so ImPublishKeysRequest has no member for it';
 
 const String _roomAddress = 'room.send: the room is the address — RoomService stamps r_<roomId> '
     'and type 3 whatever the body says, so ImRoomMessage has no member for it';
@@ -712,6 +719,59 @@ Map<String, List<Future<void> Function(ImClient im)>> recipes() {
             messageIds: <String>[snowflake],
             targetLanguage: 'zh-CN',
           )),
+    ],
+
+    // the key directory (T4). Key material is an opaque standard-base64 string; the nested
+    // signedPreKey / oneTimePreKeys members are matched case-sensitively by the server. publish never
+    // sends deviceId or platform (see `omitted`).
+    // 密钥目录：密钥材料是不透明的标准 base64 字符串；嵌套成员服务端区分大小写。publish 不发设备与平台。
+    'keys.publish': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.keys.publish(const ImPublishKeysRequest(
+            identityKey: 'BXv+3Qk/9mZy0aB1c2d3e4f5g6h7i8j9k0l1m2n3o4p5',
+            signedPreKey: ImSignedPreKey(
+              keyId: 'spk-wire',
+              publicKey: 'q+8/Zm9vYmFyYmF6cXV4cXV1eHF1dXhxdXV4cXV1eA==',
+              signature: 'c2lnbmF0dXJl+/c2lnbmF0dXJlc2lnbmF0dXJlc2lnbmF0dXJlc2lnbmF0dXJl',
+              createdAt: 1758412800000,
+            ),
+            oneTimePreKeys: <ImOneTimePreKey>[
+              ImOneTimePreKey(keyId: 'otk-1', publicKey: 'b3RrLTE+/w=='),
+              ImOneTimePreKey(keyId: 'otk-2', publicKey: 'b3RrLTI+/w=='),
+            ],
+            algorithm: 'x3dh-ed25519-aes256gcm-v1',
+          )),
+      (ImClient im) => im.keys.publish(const ImPublishKeysRequest(
+            identityKey: 'BXv+3Qk/9mZy0aB1c2d3e4f5g6h7i8j9k0l1m2n3o4p5',
+            signedPreKey: ImSignedPreKey(
+              keyId: 'spk-wire',
+              publicKey: 'q+8/Zm9vYmFyYmF6cXV4cXV1eHF1dXhxdXV4cXV1eA==',
+              signature: 'c2lnbmF0dXJl+/c2lnbmF0dXJlc2lnbmF0dXJlc2lnbmF0dXJlc2lnbmF0dXJl',
+            ),
+          )),
+    ],
+    'keys.upload': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.keys.upload(const ImUploadOneTimeKeysRequest(keys: <ImOneTimePreKey>[
+            ImOneTimePreKey(keyId: 'otk-3', publicKey: 'b3RrLTM+/w=='),
+            ImOneTimePreKey(keyId: 'otk-4', publicKey: 'b3RrLTQ+/w=='),
+          ])),
+    ],
+    'keys.remaining': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.keys.remaining(const ImRemainingKeysRequest(deviceId: 'alice-tablet')),
+      (ImClient im) => im.keys.remaining(),
+    ],
+    'keys.claim': <Future<void> Function(ImClient)>[
+      (ImClient im) =>
+          im.keys.claim(const ImClaimBundleRequest(userId: 'bob', deviceId: 'bob-phone')),
+    ],
+    'keys.devices': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.keys.devices(const ImDeviceKeysRequest(userId: 'bob')),
+      (ImClient im) => im.keys.devices(),
+    ],
+    'keys.revoke': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.keys.revoke(const ImRevokeDeviceRequest(deviceId: 'alice-lost-phone')),
+    ],
+    'keys.safetyNumber': <Future<void> Function(ImClient)>[
+      (ImClient im) => im.keys.safetyNumber(const ImSafetyNumberRequest(peerUserId: 'bob')),
     ],
   };
 }

@@ -13,6 +13,7 @@ export 'src/api.dart'
         ImDiagApi,
         ImFriendApi,
         ImGroupApi,
+        ImKeysApi,
         ImMediaApi,
         ImModerationApi,
         ImMsgApi,
@@ -28,6 +29,7 @@ export 'src/cursor_store.dart'
     show ImCursorScope, ImCursorSnapshot, ImCursorStore, ImInMemoryCursorStore;
 export 'src/desk.dart';
 export 'src/extras.dart';
+export 'src/keys.dart';
 export 'src/device_logs.dart'
     show
         ImDeviceLogAnswer,

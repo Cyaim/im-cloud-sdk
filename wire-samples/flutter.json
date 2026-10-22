@@ -2,7 +2,9 @@
   "$comment": "RECORDED by SDK/flutter/test/wire_kind_test.dart from the frames this package's typed methods put on a fake socket. Do not edit by hand; re-record with IM_RECORD_WIRE_SAMPLES=1 dart test test/wire_kind_test.dart (in SDK/flutter). Judged against the server's real socket binder by IM.Server/tests/IM.Tests.Unit/SdkWireSampleBindingTests.cs in the platform repository.",
   "sdk": "flutter",
   "omitted": {
-    "RecallMessageRequest.asAdmin": "forced false by MsgController.Recall for every client call; admin recall is a server-API capability, so the typed request has no field for it"
+    "RecallMessageRequest.asAdmin": "forced false by MsgController.Recall for every client call; admin recall is a server-API capability, so the typed request has no field for it",
+    "PublishKeysRequest.deviceId": "overwritten from the connection by KeysController.Publish: a device can publish only its own keys, so ImPublishKeysRequest has no member for it",
+    "PublishKeysRequest.platform": "overwritten from the connection by KeysController.Publish: a device can publish only its own keys, so ImPublishKeysRequest has no member for it"
   },
   "samples": [
     {"target":"conn.heartbeat","type":null,"via":"conn.heartbeat #0","body":{}},
@@ -137,6 +139,16 @@
     {"target":"conv.upsertFolder","type":"UpsertFolderRequest","via":"conv.upsertFolder #1","body":{"name":"Work","order":0,"unreadOnly":false}},
     {"target":"conv.deleteFolder","type":"FolderIdRequest","via":"conv.deleteFolder #0","body":{"folderId":"work"}},
     {"target":"msg.translate","type":"TranslateRequest","via":"msg.translate #0","body":{"conversationId":"s_alice_bob","messageIds":["360381357961969667","360381357961969669"],"targetLanguage":"zh-CN","sourceLanguage":"en"}},
-    {"target":"msg.translate","type":"TranslateRequest","via":"msg.translate #1","body":{"conversationId":"s_alice_bob","messageIds":["360381357961969667"],"targetLanguage":"zh-CN"}}
+    {"target":"msg.translate","type":"TranslateRequest","via":"msg.translate #1","body":{"conversationId":"s_alice_bob","messageIds":["360381357961969667"],"targetLanguage":"zh-CN"}},
+    {"target":"keys.publish","type":"PublishKeysRequest","via":"keys.publish #0","body":{"identityKey":"BXv+3Qk/9mZy0aB1c2d3e4f5g6h7i8j9k0l1m2n3o4p5","signedPreKey":{"keyId":"spk-wire","publicKey":"q+8/Zm9vYmFyYmF6cXV4cXV1eHF1dXhxdXV4cXV1eA==","signature":"c2lnbmF0dXJl+/c2lnbmF0dXJlc2lnbmF0dXJlc2lnbmF0dXJlc2lnbmF0dXJl","createdAt":1758412800000},"oneTimePreKeys":[{"keyId":"otk-1","publicKey":"b3RrLTE+/w=="},{"keyId":"otk-2","publicKey":"b3RrLTI+/w=="}],"algorithm":"x3dh-ed25519-aes256gcm-v1"}},
+    {"target":"keys.publish","type":"PublishKeysRequest","via":"keys.publish #1","body":{"identityKey":"BXv+3Qk/9mZy0aB1c2d3e4f5g6h7i8j9k0l1m2n3o4p5","signedPreKey":{"keyId":"spk-wire","publicKey":"q+8/Zm9vYmFyYmF6cXV4cXV1eHF1dXhxdXV4cXV1eA==","signature":"c2lnbmF0dXJl+/c2lnbmF0dXJlc2lnbmF0dXJlc2lnbmF0dXJlc2lnbmF0dXJl"}}},
+    {"target":"keys.upload","type":"UploadOneTimeKeysRequest","via":"keys.upload #0","body":{"keys":[{"keyId":"otk-3","publicKey":"b3RrLTM+/w=="},{"keyId":"otk-4","publicKey":"b3RrLTQ+/w=="}]}},
+    {"target":"keys.remaining","type":"RemainingKeysRequest","via":"keys.remaining #0","body":{"deviceId":"alice-tablet"}},
+    {"target":"keys.remaining","type":"RemainingKeysRequest","via":"keys.remaining #1","body":{}},
+    {"target":"keys.claim","type":"ClaimBundleRequest","via":"keys.claim #0","body":{"userId":"bob","deviceId":"bob-phone"}},
+    {"target":"keys.devices","type":"DeviceKeysRequest","via":"keys.devices #0","body":{"userId":"bob"}},
+    {"target":"keys.devices","type":"DeviceKeysRequest","via":"keys.devices #1","body":{}},
+    {"target":"keys.revoke","type":"RevokeDeviceRequest","via":"keys.revoke #0","body":{"deviceId":"alice-lost-phone"}},
+    {"target":"keys.safetyNumber","type":"SafetyNumberRequest","via":"keys.safetyNumber #0","body":{"peerUserId":"bob"}}
   ]
 }

@@ -25,6 +25,7 @@ import 'desk.dart';
 import 'device_logs.dart';
 import 'extras.dart';
 import 'json.dart';
+import 'keys.dart';
 import 'logging.dart';
 import 'models.dart';
 import 'protocol.dart';
@@ -394,10 +395,12 @@ final class ImMsgApi extends _Namespace {
       decodePage('msg.scheduled', request.toJson(), cancel, ImScheduledMessage.fromJson);
 
   /// `msg.cancelScheduled` (T4). Cancels a pending schedule; it stays listed by [scheduled] as
-  /// cancelled. `1002` for an id that is unknown or someone else's (or empty: `1001`); `1006` once
-  /// the scheduler has started sending it — it can no longer be cancelled, and the message will
-  /// arrive.
-  /// 已经开始发送的取消不了（1006），消息会照常到达。
+  /// cancelled. `1002` for an id that is unknown or someone else's (or empty: `1001`). `1006` means
+  /// nothing is left to cancel, for any of three reasons that differ only in the server's message:
+  /// the scheduler is already sending it (the message will arrive), it was already cancelled, or it
+  /// was already sent or failed. For one already sent, the remedy is `msg.recall`.
+  /// 1006 表示已无可取消：正在发送（消息会照常到达）、已取消、已发出或已失败，三者只有服务端原话不同；
+  /// 已发出的那条要撤回请用 msg.recall。
   Future<void> cancelScheduled(ImScheduleIdRequest request, [ImCancelToken? cancel]) =>
       sendUnit('msg.cancelScheduled', request.toJson(), cancel);
 
@@ -1216,4 +1219,91 @@ final class ImRoomApi extends _Namespace {
   /// (`1511`). Everyone in the room hears `room.kicked`.
   Future<void> kick(ImRoomKickRequest request, [ImCancelToken? cancel]) =>
       sendUnit('room.kick', request.toJson(), cancel);
+}
+
+// ---------------------------------------------------------------------------- keys (T4)
+
+/// `keys.*` — the end-to-end-encryption key directory (T4): publish, upload, remaining, claim,
+/// devices, revoke, safetyNumber.
+///
+/// **The directory stores and hands out public keys; this package performs no cryptography.** Every
+/// key, prekey and signature is an opaque standard-base64 string the application's own crypto
+/// library produced, sent and returned unchanged (see `keys.dart`). Generating keys, signing the
+/// signed prekey, running X3DH and encrypting messages are the application's.
+///
+/// **`keys.claim` is a write:** it consumes one of the peer device's one-time prekeys. Never call it
+/// speculatively, and never retry it as if it were idempotent.
+///
+/// **Not gated:** no add-on, plan or app setting — `e2ee.enabled` included — switches these calls
+/// off, and no event follows any of them (a revoke, an identity change, a low pool push nothing).
+///
+/// 密钥目录只存取公钥，本包不做任何加密运算：生成密钥、给签名预密钥签名、X3DH、加密消息都是应用自己的事。
+/// keys.claim 是写操作（消耗对方一个一次性密钥），不要预取、不要当幂等请求重试。不受 e2ee.enabled 等任何设置
+/// 约束；这些调用之后都没有推送事件。
+final class ImKeysApi extends _Namespace {
+  const ImKeysApi(super.requester);
+
+  /// `keys.publish`. Publishes **this device's** identity key, signed prekey and, optionally, a
+  /// first batch of one-time prekeys — at first login on a device, and again to rotate the signed
+  /// prekey. The device and platform are the connection's. Publishing again **replaces** the
+  /// identity, signed prekey and algorithm and **keeps** the one-time pool (appending to it) unless
+  /// the identity key changed. Refusals and limits are on [ImPublishKeysRequest].
+  /// 再次发布替换身份与签名预密钥、保留并追加一次性密钥池（身份密钥变了则旧池先删）。
+  Future<void> publish(ImPublishKeysRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('keys.publish', request.toJson(), cancel);
+
+  /// `keys.upload`. **Appends** one-time prekeys to this device's pool (100 at most per call and per
+  /// device). Call it when [remaining] runs low. `1002` before this device has published.
+  /// 追加到当前设备的一次性密钥池；余量低时调用。没发布过是 1002。
+  Future<void> upload(ImUploadOneTimeKeysRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('keys.upload', request.toJson(), cancel);
+
+  /// `keys.remaining`. How many one-time prekeys one of the caller's own devices has left — the
+  /// connected one without a request. The server answers a bare number; an unknown device is 0,
+  /// not an error.
+  /// 不带请求即当前设备；服务端回一个裸数字，不存在的设备回 0。
+  Future<int> remaining([
+    ImRemainingKeysRequest request = const ImRemainingKeysRequest(),
+    ImCancelToken? cancel,
+  ]) async =>
+      imIntOr(await rawData('keys.remaining', request.toJson(), cancel));
+
+  /// `keys.claim`. One device's bundle, to open a session with it.
+  ///
+  /// **Not idempotent: it consumes** one of that device's one-time prekeys (oldest first), so its
+  /// [remaining] drops by one. Never prefetch, never retry after a timeout — a second claim takes a
+  /// second key. When the pool is empty the claim still succeeds, with
+  /// [ImPreKeyBundle.oneTimePreKey] null. Claiming one's own device is allowed and drains one's own
+  /// pool. `1002` ("device has published no keys") for a device with no keys — unknown, never
+  /// published, or revoked; `1005` when the directory is unavailable.
+  /// 不幂等：每次领取消耗对方一个一次性密钥，不要预取、超时后不要重试。池空了照样成功，oneTimePreKey 为 null。
+  Future<ImPreKeyBundle> claim(ImClaimBundleRequest request, [ImCancelToken? cancel]) =>
+      decodeOne('keys.claim', request.toJson(), cancel, ImPreKeyBundle.fromJson);
+
+  /// `keys.devices`. Every device a user has keys published for — the caller's own without a
+  /// request. **A bare list in no particular order**; an unknown user is an empty list, not an
+  /// error. An encrypted message is one ciphertext per device on this list.
+  /// 不带请求即自己的设备；裸数组、顺序不定；不存在的用户回空列表。
+  Future<List<ImDeviceKeyInfo>> devices([
+    ImDeviceKeysRequest request = const ImDeviceKeysRequest(),
+    ImCancelToken? cancel,
+  ]) =>
+      decodeList('keys.devices', request.toJson(), cancel, ImDeviceKeyInfo.fromJson);
+
+  /// `keys.revoke`. Forgets one of the caller's own devices' keys — typically a lost one, so it is
+  /// named rather than defaulted (`1001` when blank). Revoking an unknown device succeeds; revoking
+  /// the connected one is allowed. Afterwards a claim on it is `1002` and the safety number changes;
+  /// no event says so.
+  /// 吊销自己的某台设备；deviceId 必填。不存在的设备照样成功；之后领取是 1002、安全码随之改变，没有事件。
+  Future<void> revoke(ImRevokeDeviceRequest request, [ImCancelToken? cancel]) =>
+      sendUnit('keys.revoke', request.toJson(), cancel);
+
+  /// `keys.safetyNumber`. The fingerprint two users compare out of band to confirm nobody is in the
+  /// middle — 12 groups of 5 digits separated by single spaces, the server's bare string, and the
+  /// same in both directions. It is built from both user ids and every identity key of each side, so
+  /// it changes when either adds or revokes a device or changes an identity key (not on prekey
+  /// rotation or use). `1002` when either side has no devices.
+  /// 两端各自算出的安全码相同；任何一方增删设备或换身份密钥都会变。任一方没有设备是 1002。
+  Future<String> safetyNumber(ImSafetyNumberRequest request, [ImCancelToken? cancel]) async =>
+      imStringOr(await rawData('keys.safetyNumber', request.toJson(), cancel));
 }
