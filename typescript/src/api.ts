@@ -23,6 +23,7 @@ import type {
   BlockEntry,
   BlockRequest,
   CompleteStreamRequest,
+  ConversationFolder,
   ConversationIdRequest,
   ConversationMessageRequest,
   ConversationView,
@@ -42,6 +43,7 @@ import type {
   DeskTransferRequest,
   DownloadUrlRequest,
   EditMessageRequest,
+  FolderIdRequest,
   ForwardMessagesRequest,
   Friend,
   FriendRequest,
@@ -85,6 +87,9 @@ import type {
   RoomKickRequest,
   RoomMuteRequest,
   RoomSendRequest,
+  ScheduleIdRequest,
+  ScheduleRequest,
+  ScheduledMessage,
   SearchMessagesRequest,
   SendMessageRequest,
   SendMessageResult,
@@ -100,11 +105,14 @@ import type {
   SyncMessagesRequest,
   SyncMessagesResult,
   TransferOwnerRequest,
+  TranslateRequest,
+  TranslationResult,
   TypingRequest,
   UpdateConversationSettingRequest,
   UpdateGroupCommand,
   UpdateProfileRequest,
   UploadTicketRequest,
+  UpsertFolderRequest,
   UserIdRequest,
   UserIdsRequest,
   UserProfile,
@@ -148,7 +156,10 @@ export class ConnApi {
   }
 }
 
-/** `msg.*` — send, backfill, everything done to a message after it exists, and streaming replies (T4). */
+/**
+ * `msg.*` — send, backfill, everything done to a message after it exists, and from T4 streaming replies,
+ * scheduled messages and translation.
+ */
 export class MsgApi {
   constructor(
     private readonly io: ImInvoker,
@@ -449,9 +460,95 @@ export class MsgApi {
   async streamAbort(request: StreamAbortRequest, options?: ImRequestOptions): Promise<void> {
     await this.io.request<void>('msg.streamAbort', request, options);
   }
+
+  // ---- T4: scheduled messages and translation -------------------------------------------------
+  //
+  // A scheduled message is not a message until it is sent: no seq, no history, invisible to the
+  // recipient, and no event announces it — the sender's other devices re-read `scheduled`. When it
+  // fires, the recipient gets an ordinary `evt.message` through the normal send path; nothing here
+  // touches a cursor. No app setting or add-on gates schedules; translation is gated twice.
+  // 定时消息发出之前不是消息：不占 seq、不进历史、对方看不到，也没有事件；发出时接收方收到普通的 evt.message。
+  // 这里没有任何东西碰游标。定时不受应用开关或增值项限制；翻译有两道闸。
+
+  /**
+   * Queues a message to be sent at `sendAt` and returns its outbox entry — keep `scheduleId`. The body
+   * goes out exactly as given (flat; no `options`, no `sendTime`, nothing generated — see
+   * {@link ScheduleRequest}).
+   *
+   * **Not idempotent**: a retry after a lost reply queues a second schedule. Check {@link scheduled}
+   * before retrying, or pass a `clientMsgId` so that a duplicate collapses into one message when it
+   * fires.
+   *
+   * Refusals: `1001` for empty content, no address, `sendAt` under 10 s ahead or past 90 days;
+   * `msg.send`'s access refusals (not a member, blocked, …); `1003` past 120 schedules an hour per user;
+   * `1006` with 100 still waiting — cancel one first.
+   * 不幂等：丢了答复再重试会排进第二条。拒绝：内容为空 / 没有地址 / 不足 10 秒或超过 90 天是 1001，
+   * 每人每小时超过 120 条是 1003，排队中满 100 条是 1006。
+   */
+  async schedule(request: ScheduleRequest, options?: ImRequestOptions): Promise<ScheduledMessage> {
+    return readScheduledMessage(await this.io.request<ScheduledMessage>('msg.schedule', request, options));
+  }
+
+  /**
+   * The caller's outbox, earliest `sendAt` first: what is still waiting, and what settled in the last
+   * ~48 hours — sent (`messageId` set), failed, or cancelled (`error: "cancelled by sender"`). **A
+   * cancelled entry stays listed**; tell the states apart as {@link ScheduledMessage} describes.
+   * `limit` absent or 0 is 20, capped at 100. Page until `nextCursor` is absent. No `total`.
+   * 按 sendAt 升序：排队中的，以及近约 48 小时内了结的（已发、失败、已取消）。取消的条目仍会列出。
+   */
+  async scheduled(request: PageRequest = {}, options?: ImRequestOptions): Promise<PagedResult<ScheduledMessage>> {
+    const page = await this.io.request<PagedResult<ScheduledMessage>>('msg.scheduled', request, options);
+    page.items = (page.items ?? []).map(readScheduledMessage);
+    return page;
+  }
+
+  /**
+   * Cancels a schedule that is still waiting. The entry stays in {@link scheduled} with
+   * `error: "cancelled by sender"`.
+   *
+   * `1002` for an id that is unknown or someone else's; `1006` once the dispatcher has claimed it —
+   * "already being sent and can no longer be cancelled". From then on the remedy is `msg.recall` on
+   * the message it became.
+   * 未知或别人的是 1002；派发已领取之后是 1006，此后只能对发出的消息撤回。
+   */
+  async cancelScheduled(request: ScheduleIdRequest, options?: ImRequestOptions): Promise<void> {
+    await this.io.request<void>('msg.cancelScheduled', request, options);
+  }
+
+  /**
+   * Translates messages the caller can read into `targetLanguage`. Per-message failures come back in
+   * `items[].error` with the call succeeding — see {@link TranslationResult}.
+   *
+   * **Off unless the deployment and the plan both carry it**, and the refusal is an ordinary
+   * `ImError` with the server's code and message: `1204 PlanExpired` when the plan lacks the
+   * translation add-on (Enterprise and up, or a trial), `1203 FeatureNotEnabled` when it has it but no
+   * translation provider is configured. Both come before any argument check. Neither is latched — a
+   * tenant can change both at runtime. Otherwise: `1001` for a missing `conversationId`, no readable
+   * id, more than 50 ids or a malformed language tag; `1003` past 60 calls a minute per user; the
+   * conversation's access refusals.
+   * 部署与套餐都具备时才可用：套餐不含翻译增值项是 1204，含但没配翻译服务是 1203，都是带服务端码与原文的普通 ImError。
+   */
+  async translate(request: TranslateRequest, options?: ImRequestOptions): Promise<TranslationResult> {
+    const result = await this.io.request<TranslationResult>('msg.translate', request, options);
+    result.items = (result.items ?? []).map((item) => ({ ...item, messageId: asId(item.messageId) }));
+    return result;
+  }
 }
 
-/** `conv.*` — the list a user opens the app to, and the per-user state attached to it. */
+/**
+ * Repairs the numbers of an outbox entry: the two timestamps may arrive quoted, and `messageId` —
+ * present only once sent — is read as a string either way. An absent one stays absent.
+ * 修复定时条目里的数字：两个时间戳可能带引号；messageId 只在发出后出现，一律读成字符串，没有就保持没有。
+ */
+function readScheduledMessage(entry: ScheduledMessage): ScheduledMessage {
+  entry.sendAt = asLong(entry.sendAt);
+  entry.createdAt = asLong(entry.createdAt);
+  if (entry.messageId === undefined || entry.messageId === null) delete entry.messageId;
+  else entry.messageId = asId(entry.messageId);
+  return entry;
+}
+
+/** `conv.*` — the list a user opens the app to, the per-user state attached to it, and folders over it (T4). */
 export class ConvApi {
   constructor(private readonly io: ImInvoker) {}
 
@@ -505,6 +602,42 @@ export class ConvApi {
    */
   async markUnread(request: MarkUnreadRequest, options?: ImRequestOptions): Promise<void> {
     await this.io.request<void>('conv.markUnread', request, options);
+  }
+
+  // ---- T4: folders ----------------------------------------------------------------------------
+  //
+  // A folder holds tags, not conversations: filing a conversation is tagging it with `setting`, and
+  // the client filters `list` by a folder's tags. No event announces a folder change; other devices
+  // re-read `folders`. No app setting or add-on gates them.
+  // 文件夹装的是标签：归档就是用 setting 给会话打标签，客户端按文件夹的标签筛 list。没有事件，其它设备重新读。
+
+  /**
+   * The caller's folders, sorted by `order` then name. **A plain array, not a page** — at most 20 by
+   * default. `[]` when there are none.
+   */
+  folders(options?: ImRequestOptions): Promise<ConversationFolder[]> {
+    return this.io.request<ConversationFolder[]>('conv.folders', undefined, options);
+  }
+
+  /**
+   * Creates a folder (no `folderId`) or replaces one by id, and returns it as saved — with the id the
+   * server minted, the name trimmed, duplicate tags dropped, `types` absent for "all".
+   *
+   * **A replace, not a patch**: what the body leaves out is reset (see {@link UpsertFolderRequest}).
+   * Refusals: `1001` for a blank name, a malformed id, more than 16 tags or a tag no conversation of
+   * the caller's carries yet; `1006` at 20 folders.
+   * 是替换不是补丁：省略的字段会被重置。拒绝：名字为空 / id 不合法 / 超过 16 个标签 / 标签还没用在任何会话上是 1001，满 20 个是 1006。
+   */
+  upsertFolder(request: UpsertFolderRequest, options?: ImRequestOptions): Promise<ConversationFolder> {
+    return this.io.request<ConversationFolder>('conv.upsertFolder', request, options);
+  }
+
+  /**
+   * Deletes a folder and nothing else: the conversations it named keep their tags and stay in the
+   * list. `1002` "no such folder" for an unknown id — including a second delete.
+   */
+  async deleteFolder(request: FolderIdRequest, options?: ImRequestOptions): Promise<void> {
+    await this.io.request<void>('conv.deleteFolder', request, options);
   }
 }
 

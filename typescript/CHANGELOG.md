@@ -16,6 +16,28 @@ endpoints. `1.0.0` is reserved for T0 + T1 complete on all five SDKs.
 
 Implements [`sdk/CONTRACT.md`](../CONTRACT.md) contract version `1.0`.
 
+### Added (2026-10-22, scheduled messages, folders and translation)
+
+- **Seven more T4 calls typed: `msg.schedule` `msg.scheduled` `msg.cancelScheduled`, `conv.folders`
+  `conv.upsertFolder` `conv.deleteFolder`, and `msg.translate`** — with `ScheduleRequest`,
+  `ScheduledMessage`, `ScheduleIdRequest`, `ConversationFolder`, `UpsertFolderRequest`,
+  `FolderIdRequest`, `TranslateRequest`, `TranslationResult` and `TranslatedMessage`. The typed surface
+  is now 100 of 107 endpoints; only `keys.*` (seven) remains behind `invoke()`.
+  - `ScheduleRequest` is **flat and narrower than `SendMessageRequest`**: the server binds the send
+    fields and `sendAt` at the top level, with no `options` and no `sendTime`. The SDK fills nothing
+    in — `clientMsgId` left out is derived by the server (`sch-<scheduleId>`). `msg.schedule` is not
+    idempotent.
+  - `ScheduledMessage` has no state field: no `messageId` and no `error` is waiting, `messageId` is
+    sent, `error` is settled without a message (`"cancelled by sender"` for a cancel). Cancelled entries
+    stay in `msg.scheduled` for about 48 hours. Timestamps and `messageId` are repaired on decode.
+  - A fired schedule reaches the recipient as an ordinary `evt.message`; no event exists for schedule
+    or folder changes, so nothing new is decoded.
+  - `conv.upsertFolder` replaces the whole folder; `conv.folders` answers a plain array.
+  - `msg.translate` refusals for a plan without the add-on (`1204`) or a deployment without a provider
+    (`1203`) are ordinary `ImError`s with the server's code and message; per-message failures ride in
+    `items[].error`. Item message ids are read as strings.
+- The `invoke()` example in the README and on `ImClient.invoke` now uses `keys.remaining`.
+
 ### Added (2026-10-22, streaming replies)
 
 - **`msg.stream*` typed whole — all four, and `evt.stream` decoded.** `im.msg.streamBegin`

@@ -167,8 +167,8 @@ report can be grepped rather than translated.
 | Namespace | Methods |
 |---|---|
 | `im.conn` | `heartbeat` `reauth` `sync` — the SDK drives all three; public for the odd case |
-| `im.msg` | `send` `sync` `history` `recall` `delete` `edit` `forward` `react` `receipt` `typing` · `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search` `receiptDetail` · `streamBegin` `streamAppend` `streamComplete` `streamAbort` |
-| `im.conv` | `list` `get` `read` `setting` `delete` `clear` `unreadTotal` · `markUnread` |
+| `im.msg` | `send` `sync` `history` `recall` `delete` `edit` `forward` `react` `receipt` `typing` · `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search` `receiptDetail` · `streamBegin` `streamAppend` `streamComplete` `streamAbort` `schedule` `scheduled` `cancelScheduled` `translate` |
+| `im.conv` | `list` `get` `read` `setting` `delete` `clear` `unreadTotal` · `markUnread` · `folders` `upsertFolder` `deleteFolder` |
 | `im.user` | `me` `profile` `batchProfile` `updateProfile` `presence` `subscribePresence` `unsubscribePresence` · `setStatus` |
 | `im.friend` | `list` `add` `handleRequest` `requestList` `delete` `blockList` `block` `unblock` · `setRemark` |
 | `im.group` | `create` `info` `update` `dismiss` `memberList` `joined` `invite` `kick` `quit` `join` · `transfer` `applicationList` `handleApplication` `setRole` `mute` `muteMember` `setNickname` `announcement` |
@@ -179,11 +179,14 @@ report can be grepped rather than translated.
 | `im.desk` | `request` `accept` `transfer` `close` `status` `queue` `rate` `canned` `suggest` |
 | `im.room` | `join` `quit` `send` `onlineCount` `memberList` `mute` `kick` |
 
-That is tiers **T0, T1, T2 and T3 in full, plus the whole of `desk.*`, `room.*` and the four
-`msg.stream*` calls from T4** — 93 of the server's 107 endpoints, verified against
-`sdk/endpoint-inventory.json` by the test suite rather than counted by hand. The names after the
-first `·` are T3, after the second T4 (see [Streaming replies](#streaming-replies)). The other 14
-endpoints of T4 go through `invoke()` until they are typed.
+That is tiers **T0, T1, T2 and T3 in full, plus the whole of `desk.*` and `room.*`, the four
+`msg.stream*` calls, scheduled messages, conversation folders and `msg.translate` from T4** — 100 of
+the server's 107 endpoints, verified against `sdk/endpoint-inventory.json` by the test suite rather
+than counted by hand. The names after the first `·` are T3, after the second T4 (see
+[Streaming replies](#streaming-replies), [Scheduled messages](#scheduled-messages),
+[Conversation folders](#conversation-folders) and [Translation](#translation)). The other 7
+endpoints of T4 — the end-to-end encryption key directory, `keys.*` — go through `invoke()` until
+they are typed.
 
 ### Tier T3 — what the signatures do not say
 
@@ -242,8 +245,8 @@ is permanent, shares the typed methods' code path exactly (same timeouts, cancel
 mapping), and never touches a cursor.
 
 ```ts
-// msg.cancelScheduled is tier T4 and not typed yet:
-await im.invoke<void>('msg.cancelScheduled', { scheduleId });
+// keys.remaining is tier T4 and not typed yet:
+const left = await im.invoke<number>('keys.remaining', { deviceId });
 ```
 
 ## Customer-service desk
@@ -456,6 +459,99 @@ At begin: `msg.send`'s refusals (`1104`, `1408`, `1303`, `1302`, `1500`, `1501`,
 `1505`), and `1103` for `options.pushConfig.title` / `body` or for unstored media while the app
 moderates. An empty `delta` succeeds and sends nothing. There is no limit on total duration, only on
 silence.
+
+## Scheduled messages
+
+`msg.schedule` queues a message to send later; `msg.scheduled` lists the caller's outbox;
+`msg.cancelScheduled` withdraws one that is still waiting. No app setting or add-on gates them.
+
+```ts
+const entry = await im.msg.schedule({
+  sendAt: Date.now() + 60 * 60_000,               // unix ms, 10 s to 90 days ahead
+  receiverId: 'bob',                              // or conversationId / groupId, as for msg.send
+  content: { text: 'Happy birthday!' },
+});
+// entry.scheduleId — keep it; entry.messageId and entry.error are absent while it waits
+
+const page = await im.msg.scheduled({ limit: 50 });   // earliest sendAt first; page on nextCursor
+await im.msg.cancelScheduled({ scheduleId: entry.scheduleId });
+```
+
+The rules, from the server:
+
+- **The body is flat** — the addressing and payload fields of `msg.send` with `sendAt` beside them,
+  not a nested message — and it has **no `options` and no `sendTime`**. The SDK fills nothing in:
+  `clientMsgId` may be left out (the server derives `sch-<scheduleId>`), `contentType` absent is Text.
+- **It is not a message until it is sent**: no seq, no history, invisible to the recipient. When it
+  fires, the recipient gets an **ordinary `evt.message`** with a normal seq, through the normal send
+  path and its refusals. The dispatcher sweeps every 15 s, so a message goes out up to about 15 s after
+  `sendAt`, never before.
+- **No event** announces creating, cancelling or firing a schedule. The sender's other devices re-read
+  `msg.scheduled`.
+- **There is no state field.** Neither `messageId` nor `error`: still waiting. `messageId`: sent.
+  `error`: settled without a message — `"cancelled by sender"`, or why the send failed. **A cancelled
+  entry stays listed** with that error; sent, failed and cancelled entries all stay about 48 hours.
+- **`msg.schedule` is not idempotent**: a retry after a lost reply queues a second schedule. List
+  before retrying, or give a `clientMsgId`, which deduplicates the eventual send.
+
+Limits and refusals: `1001` for empty `content`, no address, or `sendAt` under 10 s ahead or past
+90 days; `msg.send`'s access refusals (not a member, blocked, …); `1003` past 120 schedules an hour per
+user; `1006` with 100 still waiting. Cancelling: `1002` for an unknown id or someone else's, `1006` once
+the dispatcher has claimed it ("already being sent") — from then on, recall the message instead. The
+outbox pages 20 at a time by default, at most 100. All limits are deployment options (`IM:Extras`).
+
+## Conversation folders
+
+A folder holds **tags, not conversations**. Filing a conversation is tagging it with `conv.setting`;
+a folder names a set of tags, and the client filters its conversation list with them — so deleting a
+folder removes a name and nothing else.
+
+```ts
+await im.conv.setting({ conversationId, setting: { tags: ['work'] } });   // the tag must exist first
+
+const folder = await im.conv.upsertFolder({ name: 'Work', tags: ['work'], unreadOnly: false });
+await im.conv.upsertFolder({ ...folder, name: 'Office' });                 // rename: send it all back
+const folders = await im.conv.folders();                                   // plain array, sorted
+await im.conv.deleteFolder({ folderId: folder.folderId });
+```
+
+- **`upsertFolder` is a replace, not a patch.** Without `folderId` it creates (the server mints the
+  id, so a blind retry makes a second folder); with one it replaces that folder whole, and every field
+  left out is reset — `tags` to none, `order` to 0, `unreadOnly` to false, `types` to all.
+- `conv.folders` answers a plain array, sorted by `order` then name. `types` absent means every
+  conversation type (an empty list is stored as absent).
+- No event announces a change; other devices re-read `conv.folders`.
+
+Limits and refusals: `1001` for a blank name, a `folderId` that is not 1–64 characters of letters,
+digits, `-`, `_` or `.`, more than 16 tags, or **a tag none of the caller's conversations carries
+yet**; `1006` at 20 folders; `1002` "no such folder" when deleting an unknown id. Names and tags are
+trimmed and cut to 64 characters.
+
+## Translation
+
+`msg.translate` translates messages the caller can read into one language:
+
+```ts
+try {
+  const result = await im.msg.translate({ conversationId, messageIds: [id1, id2], targetLanguage: 'zh-CN' });
+  for (const item of result.items) show(item.messageId, item.text ?? `(${item.error})`);
+} catch (error) {
+  const off = [ImErrorCode.FeatureNotEnabled, ImErrorCode.PlanExpired] as number[];   // 1203, 1204
+  if (error instanceof ImError && off.includes(error.code)) hideTranslateButton(error.message);
+  else throw error;
+}
+```
+
+- **It is off unless both the plan and the deployment carry it**, and the refusal is an ordinary
+  `ImError` with the server's code and message, before anything else is checked: `1204 PlanExpired`
+  when the plan does not include the translation add-on (Enterprise and up, or a trial), `1203
+  FeatureNotEnabled` when it does but no translation provider is configured on the deployment. The SDK
+  latches neither — a tenant can change both at runtime.
+- **Per-message failures ride in `items[].error`** with the call succeeding — `"message not found"`
+  (also for one the caller may not see), `"message was recalled"`, no text, too long. One item per
+  distinct id, in the order given; `cached` says it came from cache rather than a provider call.
+- Message ids go out and come back as strings. At most 50 per call; `1001` for none readable, more than
+  50, or a malformed BCP-47 tag; `1003` past 60 calls a minute per user.
 
 ## Errors
 

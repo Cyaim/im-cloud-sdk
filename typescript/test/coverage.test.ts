@@ -101,8 +101,8 @@ describe('tier coverage', () => {
    * The first deliberate exception to "T0–T3 and nothing else", and the reason it is an exception
    * rather than a hole: T4's rule is "correctly typed when a customer asks", and the customer
    * asked. `desk.*` is typed **whole** — all nine — which is what keeps the rule below meaningful.
-   * `room.*` and `msg.stream*`, below, are the second and third; the other 14 endpoints of T4 stay
-   * behind `invoke()`.
+   * `room.*`, `msg.stream*` and the seven chat-app calls, below, are the second, third and fourth; the
+   * other 7 endpoints of T4 (`keys.*`) stay behind `invoke()`.
    * T4 的规则原话就是「有客户要的时候把它类型化」，而客户来了。desk.* 是整族做完的九条，
    * 这才让下面那条「不许做一半」的规矩仍然有意义。
    */
@@ -152,11 +152,46 @@ describe('tier coverage', () => {
     assert.deepEqual(missing, [], `streaming is not complete: ${missing.join(', ')}`);
   });
 
+  /**
+   * The fourth: the seven calls a chat app reaches for after the basics — scheduled messages (three),
+   * conversation folders (three) and translation. Not one namespace, so they are named here one by
+   * one, and the list is held to the tier list both ways: a server that grows or loses one of them
+   * fails the first assertion, an SDK that types six of them the second.
+   * 第四组：聊天应用在基础功能之后最常用的七条——定时消息三条、会话文件夹三条、翻译一条。
+   * 它们不属于同一个命名空间，所以逐条点名，并与层级表双向核对。
+   */
+  const chatAppTargets = [
+    'msg.schedule',
+    'msg.scheduled',
+    'msg.cancelScheduled',
+    'conv.folders',
+    'conv.upsertFolder',
+    'conv.deleteFolder',
+    'msg.translate',
+  ];
+
+  it('types every scheduled-message, folder and translation endpoint in T4', () => {
+    const t4 = inventory.tiers['T4']!.targets;
+    assert.deepEqual(
+      chatAppTargets.filter((target) => !t4.includes(target)),
+      [],
+      'the server lost or renamed one of these endpoints',
+    );
+    assert.deepEqual(
+      t4.filter((target) => /^msg\.(?:schedule|scheduled|cancelScheduled|translate)$|^conv\./.test(target)).sort(),
+      [...chatAppTargets].sort(),
+      'the server grew a conv.* or scheduling endpoint in T4',
+    );
+
+    const missing = chatAppTargets.filter((target) => !covered.has(target));
+    assert.deepEqual(missing, [], `the seven are not complete: ${missing.join(', ')}`);
+  });
+
   it('does not half-type a tier it has not committed to', () => {
     // A partially typed tier is worse than an untyped one: a developer cannot tell which half is
     // there, and finds out one endpoint at a time. Everything beyond T3 goes through `invoke()`,
-    // which is documented and obviously an escape hatch — except `desk.*`, `room.*` and `msg.stream*`,
-    // which are committed to whole, above. T3 joined the committed set whole, all twenty at once, for the same reason.
+    // which is documented and obviously an escape hatch — except `desk.*`, `room.*`, `msg.stream*` and
+    // the seven chat-app calls, which are committed to whole, above. T3 joined the committed set whole, all twenty at once, for the same reason.
     // T3 是整层二十条一起加进来的，理由同上：不许做一半。
     const shipped = new Set([
       ...inventory.tiers['T0']!.targets,
@@ -166,10 +201,11 @@ describe('tier coverage', () => {
       ...deskTargets,
       ...roomTargets,
       ...streamTargets,
+      ...chatAppTargets,
     ]);
 
     const strays = [...covered].filter((target) => !shipped.has(target));
-    assert.deepEqual(strays, [], `typed but not in T0–T3, desk.*, room.* or msg.stream*: ${strays.join(', ')}`);
+    assert.deepEqual(strays, [], `typed but not in T0–T3, desk.*, room.*, msg.stream* or the seven: ${strays.join(', ')}`);
     assert.equal(covered.size, shipped.size);
   });
 });

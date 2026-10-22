@@ -24,8 +24,8 @@ import { FakeSocket, until } from './fake-socket.js';
 import { type Inventory, loadInventory } from './inventory.js';
 
 /**
- * Every request field of every typed endpoint — T0–T3, `desk.*`, `room.*` and `msg.stream*` — in the
- * JSON kind the server's C# type binds from.
+ * Every request field of every typed endpoint — T0–T3, `desk.*`, `room.*`, `msg.stream*` and the seven
+ * scheduled-message, folder and translation calls — in the JSON kind the server's C# type binds from.
  *
  * **Why the kind, and why the server's type rather than this SDK's.** The socket binder does not go
  * through the platform's JSON options: it reads each request property with the C# type the DTO
@@ -414,6 +414,70 @@ const rows: Row[] = [
   row('msg.streamAbort', (c, k) => c.msg.streamAbort(k({ streamId: 'st_1', reason: 'the model timed out' })), 'msg.streamAbort, with a reason'),
   row('msg.streamAbort', (c, k) => c.msg.streamAbort(k({ streamId: 'st_1' })), 'msg.streamAbort, no reason'),
 
+  // ---- T4: scheduled messages, folders and translation. msg.schedule is FLAT — the send fields and
+  // sendAt at the top level, no options, no sendTime — so every member of ScheduleRequest is set once
+  // here, conversationType included although the server does not address by it. Every call has an
+  // every-field row and a minimal one; conv.folders takes no body.
+  row(
+    'msg.schedule',
+    (c, k) =>
+      c.msg.schedule(
+        k({
+          sendAt: 1758416390000,
+          conversationId: C,
+          receiverId: 'bob',
+          groupId: 'team',
+          conversationType: ConversationType.Group,
+          clientMsgId: 'sched-1',
+          contentType: MessageContentType.Image,
+          content: { objectKey: 'demo/alice/a.png', width: 640 },
+          mentionAll: true,
+          mentionedUserIds: ['bob', 'carol'],
+          quoteMessageId: BIG,
+          threadRootId: BIG,
+          extensions: { campaign: 'birthday' },
+        }),
+      ),
+    'msg.schedule, every field',
+  ),
+  row(
+    'msg.schedule',
+    (c, k) => c.msg.schedule(k({ sendAt: 1758416390000, receiverId: 'bob', content: { text: 'later' } })),
+    'msg.schedule, minimal',
+  ),
+  row('msg.scheduled', (c, k) => c.msg.scheduled(k({ cursor: 'sch:2', limit: 50 })), 'msg.scheduled, every field'),
+  row('msg.scheduled', (c, k) => c.msg.scheduled(k({})), 'msg.scheduled, minimal'),
+  row('msg.cancelScheduled', (c, k) => c.msg.cancelScheduled(k({ scheduleId: 'sch_1' }))),
+  row('conv.folders', (c) => c.conv.folders()),
+  row(
+    'conv.upsertFolder',
+    (c, k) =>
+      c.conv.upsertFolder(
+        k({
+          folderId: 'f_work',
+          name: 'Work',
+          order: 2,
+          tags: ['work', 'clients'],
+          unreadOnly: true,
+          types: [ConversationType.Single, ConversationType.Group],
+        }),
+      ),
+    'conv.upsertFolder, every field',
+  ),
+  row('conv.upsertFolder', (c, k) => c.conv.upsertFolder(k({ name: 'Work' })), 'conv.upsertFolder, minimal'),
+  row('conv.deleteFolder', (c, k) => c.conv.deleteFolder(k({ folderId: 'f_work' }))),
+  row(
+    'msg.translate',
+    (c, k) =>
+      c.msg.translate(k({ conversationId: C, messageIds: [BIG, '7'], targetLanguage: 'zh-CN', sourceLanguage: 'en' })),
+    'msg.translate, every field',
+  ),
+  row(
+    'msg.translate',
+    (c, k) => c.msg.translate(k({ conversationId: C, messageIds: [BIG, '7'], targetLanguage: 'ja' })),
+    'msg.translate, minimal',
+  ),
+
   // ---- public methods that build their own body
   row('msg.send', (c) => c.sendText({ receiverId: 'bob' }, 'hi'), 'im.sendText'),
   row('msg.history', (c) => c.history(C, 40, 20), 'im.history'),
@@ -676,23 +740,33 @@ interface WireFrame {
 describe('request wire kinds: every field, as the server declares it', () => {
   const inventory = loadInventory();
   // Every target this SDK types, whatever its tier: T0–T3, and the desk.*, room.* and msg.stream*
-  // families of T4. A family typed outside the floor meets the same binder that every T1 call meets,
+  // families of T4 with the seven scheduled-message, folder and translation calls. A family typed outside the floor meets the same binder that every T1 call meets,
   // and is held to the same rules.
   //
-  // room.* and msg.stream* are named from the tier list as well as read from `implementedIn`, the way
+  // room.*, msg.stream* and the seven are named from the tier list as well as read from `implementedIn`, the way
   // coverage.test.ts names every family: `implementedIn` is computed by the platform repository's
   // generator from these sources, so it flips only when the inventory is regenerated, and a family
   // typed in the commit before that would otherwise have no row asked of it. The union only ever
   // adds targets to check; once the inventory says true it changes nothing.
-  // room.* 与 msg.stream* 同时从层级表点名：implementedIn 要等平台仓的生成器重新生成清单才会翻转，
+  // room.*、msg.stream* 与这七条同时从层级表点名：implementedIn 要等平台仓的生成器重新生成清单才会翻转，
   // 在那之前这一族不会被要求有行。并集只会多查、不会少查；清单翻成 true 之后它不改变任何东西。
   const roomFamily = inventory.tiers['T4']?.targets.filter((target) => target.startsWith('room.')) ?? [];
   const streamFamily = inventory.tiers['T4']?.targets.filter((target) => target.startsWith('msg.stream')) ?? [];
+  const chatAppSeven = [
+    'msg.schedule',
+    'msg.scheduled',
+    'msg.cancelScheduled',
+    'conv.folders',
+    'conv.upsertFolder',
+    'conv.deleteFolder',
+    'msg.translate',
+  ].filter((target) => inventory.tiers['T4']?.targets.includes(target));
   const shipped = [
     ...new Set([
       ...inventory.endpoints.filter((e) => e.implementedIn?.['typescript'] === true).map((e) => e.target),
       ...roomFamily,
       ...streamFamily,
+      ...chatAppSeven,
     ]),
   ];
   const requestTypes = new Map(inventory.endpoints.map((e) => [e.target, e.requestType ?? null]));
@@ -858,6 +932,8 @@ describe('request wire kinds: every field, as the server declares it', () => {
       'msg.receiptDetail',
       'push.clicked',
       'moderation.report',
+      'msg.schedule',
+      'msg.translate',
     ];
     assert.deepEqual(expected.filter((target) => !carried.has(target)), [], 'a message-id endpoint went unsampled');
   });

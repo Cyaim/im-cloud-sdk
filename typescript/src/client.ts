@@ -549,8 +549,8 @@ export class ImClient {
    * returns messages and moves nothing.
    *
    * ```ts
-   * // msg.cancelScheduled is T4 and not typed yet:
-   * await im.invoke<void>('msg.cancelScheduled', { scheduleId });
+   * // keys.remaining is T4 and not typed yet:
+   * const left = await im.invoke<number>('keys.remaining', { deviceId });
    * ```
    */
   invoke<T>(target: string, body?: unknown, options?: ImRequestOptions): Promise<T> {
