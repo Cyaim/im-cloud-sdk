@@ -348,6 +348,48 @@ struct WireSampleRecorderTests {
         try samples.append(Self.line(RoomMuteRequest(roomId: "lobby", userId: "bob", untilMs: 1_758_499_200_000), encoder))
         try samples.append(Self.line(RoomKickRequest(roomId: "lobby", userId: "bob"), encoder))
 
+        // msg.stream* (T4). Every member BeginStreamRequest has, the nested options with every member
+        // MessageOptions and PushConfig have — a client may not send pushConfig.title / body to a
+        // stream (1103), but the binder judges their kind here like any other member.
+        try samples.append(Self.line(
+            BeginStreamRequest(
+                conversationId: "s_alice_bob",
+                receiverId: "bob",
+                groupId: "team",
+                clientMsgId: "stream-wire",
+                contentType: .image,
+                placeholder: ["name": .string("Assistant"), "avatar": .string("bots/a.png")],
+                options: MessageOptions(
+                    persistent: false,
+                    updateConversation: false,
+                    countUnread: false,
+                    offlinePush: false,
+                    pushConfig: PushConfig(
+                        title: "Assistant",
+                        body: "is typing",
+                        sound: "ding.caf",
+                        payload: ["deepLink": "app://chat"],
+                        badgeCount: false,
+                        channelId: "im_ai"
+                    ),
+                    needReceipt: true,
+                    priority: .high,
+                    onlineOnly: true,
+                    noSelfSync: true,
+                    expireIn: 5_000,
+                    moderationBypass: true
+                ),
+                extensions: ["model": .string("m-1")]
+            ),
+            encoder
+        ))
+        try samples.append(Self.line(StreamAppendRequest(streamId: "st_1", delta: "Hel"), encoder))
+        try samples.append(Self.line(
+            CompleteStreamRequest(streamId: "st_1", content: ["text": .string("Hello")], extensions: ["tokens": .int(3)]),
+            encoder
+        ))
+        try samples.append(Self.line(StreamAbortRequest(streamId: "st_1", reason: "the model failed"), encoder))
+
         // Every request type the inventory marks implementedIn.swift needs a sample here, or the
         // platform's binder never judges it. The platform repository holds this too, but only when the
         // submodule is bumped; holding it here makes this job say it when the recorder changes. The

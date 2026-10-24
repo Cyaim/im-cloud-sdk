@@ -269,6 +269,10 @@ public actor ImClient {
     /// `conversationId` `r_<roomId>`, delivered the moment they arrive — ahead of the repair lane, so
     /// never behind another conversation's repair — never repaired, never deduplicated by seq, and
     /// never to be committed: a room has no range to repair (see ``ImRoomNamespace``).
+    ///
+    /// A finished stream (`msg.streamComplete`) arrives here as the ordinary message it was stored
+    /// as, with a real seq, and goes through cursors and repair like any other. Its pieces never do:
+    /// they are on ``streamEvents()``.
     public nonisolated func messages() -> AsyncStream<ImMessage> {
         messageHub.subscribe()
     }
@@ -351,6 +355,40 @@ public actor ImClient {
             let pump = Task {
                 for await frame in frames {
                     if let event = RoomEvent.fromSystemData(frame.body?.data) {
+                        continuation.yield(event)
+                    }
+                }
+                continuation.finish()
+            }
+
+            continuation.onTermination = { _ in pump.cancel() }
+        }
+    }
+
+    /// `evt.stream`, decoded: the opening, the pieces and the end of every stream in a conversation
+    /// this user is in — an AI assistant typing out a reply. Feed it to `assemble()` (or a
+    /// ``StreamAssembler``) to get the text to draw.
+    ///
+    /// **These frames are not messages and never touch a cursor.** They have no seq, are pushed to
+    /// online devices only, may be shed under load and are never resent: a missing index stays
+    /// missing. This is the only reader of `evt.stream` in the SDK, so nothing here reaches
+    /// ``messages()``, a cursor, the gap repair or `msg.sync`. The stream that completes arrives on
+    /// ``messages()`` as an ordinary stored message, with a real seq, through the ordinary path —
+    /// that, not these frames, is what to keep. The terminal frame and that message can arrive in
+    /// either order; match them by ``StreamEvent/messageId``.
+    ///
+    /// A frame this build cannot read (not an object, no stream id) is dropped here. Not an endpoint,
+    /// so it lives here rather than on ``msg``.
+    ///
+    /// 这些帧不是消息、不碰游标：没有 seq，只投在线设备，可能被丢弃，永不重发。完成的流作为一条普通消息、带真 seq
+    /// 经普通路径从 messages() 到来——要留下的是它。终止帧与那条消息的先后不保证，按 messageId 对上。
+    public nonisolated func streamEvents() -> AsyncStream<StreamEvent> {
+        let frames = connection.events(for: .stream)
+
+        return AsyncStream(StreamEvent.self, bufferingPolicy: .unbounded) { continuation in
+            let pump = Task {
+                for await frame in frames {
+                    if let event = StreamEvent.fromData(frame.body?.data) {
                         continuation.yield(event)
                     }
                 }

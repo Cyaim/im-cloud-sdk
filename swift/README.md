@@ -292,7 +292,7 @@ and a bug report mentioning `msg.forward` can be grepped for.
 | Namespace | Endpoints |
 |---|---|
 | `im.conn` | `heartbeat` `reauth` `sync` |
-| `im.msg` | `send` `sync` `history` `recall` `delete` `edit` `forward` `react` `receipt` `typing` · `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search` `receiptDetail` |
+| `im.msg` | `send` `sync` `history` `recall` `delete` `edit` `forward` `react` `receipt` `typing` · `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search` `receiptDetail` · tier 4: `streamBegin` `streamAppend` `streamComplete` `streamAbort` |
 | `im.conv` | `list` `get` `read` `unreadTotal` `setting` `delete` `clear` · `markUnread` |
 | `im.user` | `me` `profile` `batchProfile` `updateProfile` `presence` `subscribePresence` `unsubscribePresence` · `setStatus` |
 | `im.media` | `uploadTicket` `downloadUrl` |
@@ -304,10 +304,10 @@ and a bug report mentioning `msg.forward` can be grepped for.
 | `im.desk` | `request` `accept` `transfer` `close` `status` `queue` `rate` `canned` `suggest` — tier 4, the customer-service desk |
 | `im.room` | `join` `quit` `send` `onlineCount` `memberList` `mute` `kick` — tier 4, chat rooms |
 
-That is tiers 0 to 3 of the client contract typed end to end, plus the nine `desk.*` and the seven
-`room.*` of tier 4 — 89 endpoints; the names after the `·` are tier 3. The other 18 endpoints of
-tier 4 (the E2EE key directory, AI streaming and translation, scheduling, conversation folders) go
-through `invoke` until they are typed.
+That is tiers 0 to 3 of the client contract typed end to end, plus the nine `desk.*`, the seven
+`room.*` and the four `msg.stream*` of tier 4 — 93 endpoints; the names after the first `·` are
+tier 3. The other 14 endpoints of tier 4 (the E2EE key directory, translation, scheduling,
+conversation folders) go through `invoke` until they are typed.
 
 The desk has two audiences and the session decides which one you are: `request` and `rate` are the
 customer's, the rest an agent's, `close` either side's; the conversation itself is an ordinary chat
@@ -350,6 +350,55 @@ for scale, and the client has to know which ones:
   only names starting `room.`; one this build does not know still arrives, with its raw `body`. A
   `room.kicked` naming you means stop sending: the server answers `1602` from then on.
 
+A streaming reply — an AI assistant typing it out — is opened, appended to piece by piece, and
+completed into one ordinary message. The platform calls no model.
+
+```swift
+let reply = try await StreamWriter.begin(im.msg, BeginStreamRequest(receiverId: "u_bob", placeholder: assistantCard))
+do {
+    for try await token in model.generate(prompt) { try await reply.append(token) }
+    try await reply.complete()                       // stored as {"text": every piece, joined}
+} catch {
+    try? await reply.abort(reason: "the model failed") // a terminal frame for everyone; nothing stored
+    throw error
+}
+
+for await stream in im.streamEvents().assemble() {
+    switch stream.status {
+    case .streaming: drawTyping(stream.streamId, stream.placeholder, stream.text)
+    case .completed: swapForMessage(stream.streamId, stream.messageId)
+    case .aborted: drawStopped(stream.streamId, stream.abortReason)
+    }
+}
+```
+
+- **Anyone signed in may stream, but only as themselves**, in a single chat (a chat with yourself
+  included) or a group of at most 200 — a chat room, system or assistant conversation answers
+  `1008`. Every permission `msg.send` checks is checked at `streamBegin`. Name the conversation by
+  `conversationId`, else `receiverId`, else `groupId`.
+- **`clientMsgId` is the finished message's idempotency key** and the server makes none up: it is
+  minted when the `BeginStreamRequest` is built and a blank one is filled in. `options` is nested
+  and matched case-sensitively; a non-empty `pushConfig.title` / `body` is refused (`1103`).
+- **The stream dies of silence, not of age**: append or complete within
+  `StreamHandle.idleTimeoutSeconds` (30) of the last call, or the server reaps it — a terminal
+  frame, no message. 4096 characters a piece (`1401`, and the stream stays open), 100 pieces a
+  second (`1003`). `streamComplete` without `content` stores `{"text": …}` of the pieces; with
+  `content` it replaces them. The stream is consumed either way: a second complete or abort answers
+  `1002`.
+- **The pieces are not messages.** `im.streamEvents()` is `evt.stream` decoded into `StreamEvent`s
+  — the opening (index 0, with the producer's `placeholder`), pieces (1, 2, 3…), and one terminal
+  frame (one past the last piece), `.completed` with the stored message's `messageId` and `seq` or
+  `.aborted` with an `abortReason`. No seq, online devices only, never stored, never resent: the SDK
+  keeps them away from every cursor and the gap repair, and there is nothing to commit. `assemble()`
+  (or a `StreamAssembler`) joins them by index, ignores a duplicate and stops the text at a missing
+  piece; **a hole is not repaired** — the stream is marked not `intact`, as is one joined mid-way.
+- **The completed stream is an ordinary message**: a real seq, the `clientMsgId` it was opened
+  with, delivered on `messages()` through cursors and gap repair like any other — to the producer
+  too, which is why `streamComplete`, unlike `msg.send`, does not move the delivered cursor. That
+  message, not the assembled text, is what to keep. The terminal frame and the message can arrive
+  in either order; match them by `messageId`. Reset a long-lived `StreamAssembler` with `clear()` on
+  reconnect (`assemble()` starts a fresh one per call).
+
 Three tier-3 behaviours are worth knowing before the first call. `im.msg.search` is **off by
 default** (the tenant's `EnableSearch`, `1203`) and rate limited per user *before* that check
 (`1003`), so debounce search-as-you-type. `im.group.setRole` sends only `.member` or `.admin` and
@@ -375,6 +424,7 @@ fine, a nine-argument `send` is not.
 | `states()` | `idle` \| `connecting` \| `open` \| `reconnecting` \| `closed` |
 | `kicks()` | Why the server ended the session |
 | `roomEvents()` | `room.muted` / `room.kicked` / `room.destroyed`, out of `evt.system` |
+| `streamEvents()` | `evt.stream`: a reply arriving piece by piece; `.assemble()` for the text |
 | `setPushToken(deviceToken:)` | Hand over the APNs token; re-registered on every connect |
 | `highestSeq(in:)` / `committedSeq(in:)` / `cursorSnapshot()` | Read the cursors |
 | `resync()` | Run `conn.sync` again after re-deriving cursors |

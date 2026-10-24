@@ -13,6 +13,31 @@ First published release. The version is deliberately **0.9.0** rather than 1.0.0
 reserved for tiers 0 and 1 complete on all five SDKs, and until then the number would be a promise
 the family does not keep. Implements client contract **1.0**.
 
+### Added (2026-10-25, streaming)
+
+- **The four `msg.stream*` endpoints of tier 4** on `im.msg`, typed as TypeScript, Kotlin, Dart and
+  Unity have typed them since 2026-10-22: `streamBegin`, `streamAppend`, `streamComplete`,
+  `streamAbort`, with `BeginStreamRequest` / `StreamAppendRequest` / `CompleteStreamRequest` /
+  `StreamAbortRequest` and `StreamHandle`. `BeginStreamRequest`'s `clientMsgId` is minted when it is
+  built, as `SendMessageRequest`'s is, and a blank one is filled in at `streamBegin` (the server
+  makes none up); `contentType` is the integer, and `options` nested in exact camelCase.
+  `streamComplete` answers the stored message's `SendMessageResult` and, unlike `msg.send`, moves no
+  cursor — the stored message reaches the producer's own connection on `evt.message` and is
+  delivered through the ordinary path. `StreamWriter.begin(im.msg, request)` holds the stream id and
+  key for a producer.
+- **`im.streamEvents()`** decodes `evt.stream` into `StreamEvent` (`.begin` / `.delta` /
+  `.completed` / `.aborted`; the message id read as a string or a number; read by hand, never
+  throws). `StreamAssembler` and `streamEvents().assemble()` join the pieces by index — duplicates
+  ignored, the text stopping at a missing piece, a hole or a mid-stream join marked not `intact` and
+  never repaired, nothing reopening one of the last 256 finished streams.
+- Tests: every call's whole frame, replies with every field set held to `payloadTypes`, each phase,
+  the assembly in every order the server produces, the terminal frame before and after the stored
+  message, the pieces proven to stay out of `messages()`, cursors and `msg.sync`, and the stored
+  message still repaired when it skips a seq.
+- Written without a Swift toolchain: the macOS job is the first thing that compiles it, and
+  `wire-samples/swift.json` has to be re-recorded from that job's artifact (four stream request
+  bodies) before it goes green.
+
 ### Added (2026-10-25)
 
 - **`im.room` — the seven `room.*` endpoints of tier 4**, typed as TypeScript, Kotlin, Dart and

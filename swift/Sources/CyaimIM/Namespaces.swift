@@ -274,6 +274,54 @@ public struct ImMsgNamespace: Sendable {
     public func receiptDetail(_ request: ReceiptDetailRequest) async throws -> MessageReceipt {
         try await connection.request("msg.receiptDetail", body: request)
     }
+
+    // MARK: streaming (T4)
+
+    /// Opens a stream — a reply that arrives a piece at a time — and pushes its opening `evt.stream`
+    /// frame to every online member of the conversation, the producer's own connection included.
+    ///
+    /// A blank ``BeginStreamRequest/clientMsgId`` is filled in: the server makes none up, and it is
+    /// the key the finished message is stored under. Every permission `msg.send` checks is checked
+    /// here, at the opening (see ``BeginStreamRequest`` for the codes); `1003` is more than 60
+    /// openings a minute. Then ``streamAppend(_:)`` the pieces and ``streamComplete(_:)`` or
+    /// ``streamAbort(_:)`` within ``StreamHandle/idleTimeoutSeconds`` of the last call, or the server
+    /// reaps the stream. ``StreamWriter`` holds the handle and the key for a producer. The types are
+    /// in Stream.swift.
+    ///
+    /// 开流。clientMsgId 留空由这里补上（服务端不生成，最终消息以它为幂等键）。msg.send 的全部权限检查都在开流时做。
+    public func streamBegin(_ request: BeginStreamRequest) async throws -> StreamHandle {
+        try await connection.request("msg.streamBegin", body: request.keyed())
+    }
+
+    /// Sends the next piece; the server numbers it and pushes it as an `evt.stream` frame. See
+    /// ``StreamAppendRequest`` for the refusals — `1401` leaves the stream open.
+    public func streamAppend(_ request: StreamAppendRequest) async throws {
+        try await connection.execute("msg.streamAppend", body: request)
+    }
+
+    /// Finishes the stream: the server stores it as one ordinary message, delivers that on
+    /// `evt.message`, pushes the terminal `evt.stream` frame, and answers the message's identity.
+    ///
+    /// **Unlike ``send(_:)``, this does not move the delivered cursor.** The stored message is pushed
+    /// to the producer's own connection too, and arrives on ``ImClient/messages()`` through the
+    /// ordinary path — cursors, ordering and gap repair included. Moving the cursor here would make
+    /// that delivery look like a duplicate and drop it.
+    ///
+    /// Can be refused as `msg.send` can (moderation, a webhook, the store), and the stream is consumed
+    /// either way; a second complete answers `1002`.
+    ///
+    /// 与 send 不同，这里不推进 delivered 游标：存下来的消息也会推给生产者自己的连接，经普通路径进 messages()；
+    /// 在这里推进游标会让那次投递被当成重复而丢掉。
+    @discardableResult
+    public func streamComplete(_ request: CompleteStreamRequest) async throws -> SendMessageResult {
+        try await connection.request("msg.streamComplete", body: request)
+    }
+
+    /// Ends the stream without a message. Receivers get a terminal frame carrying the reason;
+    /// nothing is stored. A second abort, or one after ``streamComplete(_:)``, answers `1002`.
+    public func streamAbort(_ request: StreamAbortRequest) async throws {
+        try await connection.execute("msg.streamAbort", body: request)
+    }
 }
 
 // MARK: - conv
