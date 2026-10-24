@@ -443,6 +443,46 @@ struct WireSampleRecorderTests {
             " minimal"
         ))
 
+        // The key directory (T4). Key material is opaque standard base64, with '+', '/' and padding.
+        // publish is recorded twice, every member and then the shortest body (no algorithm, the
+        // default createdAt, no one-time prekeys); remaining and devices also go out empty, which is
+        // "the connected device" / "the caller's own". deviceId and platform are declared omitted below.
+        try samples.append(Self.line(
+            PublishKeysRequest(
+                identityKey: "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=",
+                signedPreKey: SignedPreKey(
+                    keyId: "spk_1",
+                    publicKey: "ISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0A=",
+                    signature: "c2lnbmF0dXJl",
+                    createdAt: Self.time
+                ),
+                oneTimePreKeys: [OneTimePreKey(keyId: "otk_1", publicKey: "b3RrLTE=")],
+                algorithm: "x3dh-ed25519-aes256gcm-v1"
+            ),
+            encoder,
+            " every field"
+        ))
+        try samples.append(Self.line(
+            PublishKeysRequest(
+                identityKey: "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=",
+                signedPreKey: SignedPreKey(
+                    keyId: "spk_1",
+                    publicKey: "ISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0A=",
+                    signature: "c2lnbmF0dXJl"
+                )
+            ),
+            encoder,
+            " minimal"
+        ))
+        try samples.append(Self.line(UploadOneTimeKeysRequest([OneTimePreKey(keyId: "otk_2", publicKey: "b3RrLTI=")]), encoder))
+        try samples.append(Self.line(RemainingKeysRequest("device-2"), encoder, " every field"))
+        try samples.append(Self.line(RemainingKeysRequest(), encoder, " minimal"))
+        try samples.append(Self.line(ClaimBundleRequest(userId: "bob", deviceId: "device-9"), encoder))
+        try samples.append(Self.line(DeviceKeysRequest("bob"), encoder, " every field"))
+        try samples.append(Self.line(DeviceKeysRequest(), encoder, " minimal"))
+        try samples.append(Self.line(RevokeDeviceRequest("device-2"), encoder))
+        try samples.append(Self.line(SafetyNumberRequest("bob"), encoder))
+
         // Every request type the inventory marks implementedIn.swift needs a sample here, or the
         // platform's binder never judges it. The platform repository holds this too, but only when the
         // submodule is bumped; holding it here makes this job say it when the recorder changes. The
@@ -473,7 +513,9 @@ struct WireSampleRecorderTests {
             "  \"$comment\": \"RECORDED by SDK/swift/Tests/CyaimIMTests/WireSampleRecorderTests.swift from JSONEncoder, the encoder every typed method hands its request to. Do not edit by hand; re-record with IM_RECORD_WIRE_SAMPLES=1 swift test (in SDK/swift). Judged against the server's real socket binder by IM.Server/tests/IM.Tests.Unit/SdkWireSampleBindingTests.cs in the platform repository.\",",
             "  \"sdk\": \"swift\",",
             "  \"omitted\": {",
-            "    \"RecallMessageRequest.asAdmin\": \"MsgController.Recall forces it false for every socket call; recalling as an admin is a server-API capability, so no client type carries it\"",
+            "    \"RecallMessageRequest.asAdmin\": \"MsgController.Recall forces it false for every socket call; recalling as an admin is a server-API capability, so no client type carries it\",",
+            "    \"PublishKeysRequest.deviceId\": \"KeysController.Publish overwrites it with the connection's device, so a device can only publish for itself; no client type carries it\",",
+            "    \"PublishKeysRequest.platform\": \"KeysController.Publish overwrites it with the connection's platform; no client type carries it\"",
             "  },",
             "  \"samples\": [",
         ]

@@ -253,6 +253,11 @@ public actor ImClient {
     /// repair; see ``ImRoomNamespace``.
     public nonisolated var room: ImRoomNamespace { ImRoomNamespace(connection: connection) }
 
+    /// `keys.*` — the end-to-end encryption key directory (T4). The SDK moves opaque public-key
+    /// strings and performs no cryptography; `keys.claim` consumes a one-time prekey. See
+    /// ``ImKeysNamespace``.
+    public nonisolated var keys: ImKeysNamespace { ImKeysNamespace(connection: connection) }
+
     // MARK: - Streams
 
     /// Every message, in `seq` order per conversation, gaps already repaired.
@@ -959,14 +964,14 @@ public actor ImClient {
 
     /// Calls any endpoint in the catalogue, typed by the caller.
     ///
-    /// The catalogue is larger than the typed surface above and grows faster than SDK releases do,
-    /// so this is a supported route rather than a workaround — it is how you ship on Friday against
-    /// an endpoint the next SDK release will type:
+    /// A newer server can add endpoints faster than SDK releases type them, so this is a supported
+    /// route rather than a workaround — it is how you ship on Friday against an endpoint the next SDK
+    /// release will type:
     ///
     /// ```swift
-    /// // keys.revoke is tier 4 and not yet typed here.
-    /// try await im.invoke("keys.revoke", body: [
-    ///     "deviceId": .string(deviceId),
+    /// // An endpoint a newer server ships before this SDK types it (the name is illustrative):
+    /// try await im.invoke("feature.newCall", body: [
+    ///     "id": .string(id),
     /// ] as [String: JSONValue], as: EmptyBody.self)
     /// ```
     ///

@@ -13,6 +13,35 @@ First published release. The version is deliberately **0.9.0** rather than 1.0.0
 reserved for tiers 0 and 1 complete on all five SDKs, and until then the number would be a promise
 the family does not keep. Implements client contract **1.0**.
 
+### Added (2026-10-25, key directory)
+
+- **`im.keys` — the end-to-end encryption key directory**, the last seven endpoints of tier 4,
+  typed as TypeScript, Kotlin, Dart and Unity have typed them since 2026-10-22: `publish`, `upload`,
+  `remaining`, `claim`, `devices`, `revoke`, `safetyNumber` (one-field overloads, and
+  `claim(userId:deviceId:)`), with `PublishKeysRequest` / `SignedPreKey` / `OneTimePreKey` /
+  `UploadOneTimeKeysRequest` / `RemainingKeysRequest` / `ClaimBundleRequest` / `DeviceKeysRequest` /
+  `RevokeDeviceRequest` / `SafetyNumberRequest`, and `PreKeyBundle` / `DeviceKeyInfo`. **The SDK
+  performs no cryptography**: keys and signatures are opaque standard-base64 strings passed through
+  unchanged and never logged. `PublishKeysRequest` has no device id or platform — the server takes
+  both from the connection. `remaining` and `devices` default to the connected device / the caller's
+  own (an empty body); `remaining` answers a bare `Int`, `devices` a plain array, `safetyNumber` a
+  bare `String`. `claim` consumes a one-time prekey, is documented as non-idempotent and is never
+  reissued by the SDK; an empty pool decodes as `oneTimePreKey == nil`. No `e2ee.enabled` gate and no
+  events, as the server has none. With this every endpoint of the contract (107) is typed here.
+- Tests (`KeysTests`): every call's whole frame on both overloads, nested `signedPreKey` /
+  `oneTimePreKeys[]` / `keys[]` names exact; replies with every field set held to `payloadTypes`;
+  the empty-pool claim; a claim sent exactly once whether refused (`1005`) or unanswered (`1004`);
+  the 1001 / 1008 / 1202 / 1002 refusals; key material unchanged on the wire and absent from the log
+  and the warnings; quoted numbers and an unknown platform decode.
+- `WireSampleRecorderTests` records the seven request bodies in full, plus a minimal publish and the
+  empty `remaining` / `devices` bodies; `PublishKeysRequest.deviceId` / `.platform` are declared
+  omitted with the reason.
+- The escape-hatch example in the README and on `invoke(_:body:as:)` now names an illustrative
+  future endpoint, since `keys.revoke` is typed.
+- Written without a Swift toolchain: the macOS job is the first thing that compiles it, and
+  `wire-samples/swift.json` has to be re-recorded from that job's artifact (seven request types,
+  three of them also in their shortest form) before it goes green.
+
 ### Added (2026-10-25, scheduling, folders, translation)
 
 - **Scheduled messages on `im.msg`**, typed as TypeScript, Kotlin, Dart and Unity have typed them

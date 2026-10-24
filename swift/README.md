@@ -303,11 +303,12 @@ and a bug report mentioning `msg.forward` can be grepped for.
 | `im.diag` | `logRequests` `logUploaded` — driven by `ImClient` itself; apps do not call these |
 | `im.desk` | `request` `accept` `transfer` `close` `status` `queue` `rate` `canned` `suggest` — tier 4, the customer-service desk |
 | `im.room` | `join` `quit` `send` `onlineCount` `memberList` `mute` `kick` — tier 4, chat rooms |
+| `im.keys` | `publish` `upload` `remaining` `claim` `devices` `revoke` `safetyNumber` — tier 4, the end-to-end encryption key directory |
 
 That is tiers 0 to 3 of the client contract typed end to end, plus, of tier 4, the nine `desk.*`,
-the seven `room.*`, the four `msg.stream*`, the three schedule calls, the three folder calls and
-`msg.translate` — 100 endpoints; the names after the first `·` are tier 3. The other 7 endpoints of
-tier 4 (the E2EE key directory, `keys.*`) go through `invoke` until they are typed.
+the seven `room.*`, the four `msg.stream*`, the three schedule calls, the three folder calls,
+`msg.translate` and the seven `keys.*` — all 107 endpoints; the names after the first `·` are
+tier 3.
 
 The desk has two audiences and the session decides which one you are: `request` and `rate` are the
 customer's, the rest an agent's, `close` either side's; the conversation itself is an ordinary chat
@@ -476,6 +477,67 @@ do {
 
 Neither is retryable; do not latch either beyond the session, since both are runtime settings.
 
+The key directory (`im.keys`) is where each device publishes its **public** keys and a sender
+fetches a peer's to open a session (X3DH-style: identity key, signed prekey, one-time prekeys).
+**The SDK types the seven calls and moves the key material unchanged; it performs no
+cryptography.** Generating key pairs, signing the signed prekey, running the key agreement and
+encrypting messages are your crypto library's. Every key and signature is an opaque
+**standard-base64** string (not base64url); pass it exactly as your library produced it — the server
+compares identity keys by exact string and hashes the strings into the safety number, so a
+re-encoded key is a different key. No private key ever crosses this surface, and the SDK never logs
+key material.
+
+```swift
+// Once per device, and again whenever you rotate the signed prekey:
+try await im.keys.publish(PublishKeysRequest(
+    identityKey: identity.publicBase64,
+    signedPreKey: SignedPreKey(keyId: "spk-7", publicKey: spk.publicBase64, signature: spkSignatureBase64),
+    oneTimePreKeys: batch.map { OneTimePreKey(keyId: $0.id, publicKey: $0.publicBase64) },
+    algorithm: "x3dh-ed25519-aes256gcm-v1"   // nil keeps the server default, x3dh-curve25519-aes256gcm-v1
+))
+if try await im.keys.remaining() < 20 { try await im.keys.upload(nextBatch()) }
+
+// Sending to bob: one ciphertext per device.
+for device in try await im.keys.devices("bob") {
+    let bundle = try await im.keys.claim(userId: "bob", deviceId: device.deviceId) // consumes a one-time prekey
+    openSession(bundle)                                                             // bundle.oneTimePreKey may be nil
+}
+let fingerprint = try await im.keys.safetyNumber("bob") // "12345 67890 …" — 12 groups of 5 digits
+```
+
+- **`keys.claim` consumes.** Each claim hands out one one-time prekey and deletes it (first in,
+  first out), so `remaining` drops by one. It is **not idempotent: never retry it after a lost
+  reply as if it were, and never prefetch** — the SDK never reissues it on its own, whatever the
+  code. When the pool is empty the claim still succeeds, with `oneTimePreKey` `nil`. Claiming your
+  own device is allowed and drains your own pool.
+- **`keys.publish` replaces and keeps the pool.** Identity key, signed prekey and algorithm are
+  replaced; the one-time pool is kept and the new keys appended — unless the identity key changed,
+  which deletes the old pool first. **The device and platform are the connection's; they are not on
+  the request.** The signed prekey's signature is the identity key's over the decoded bytes of its
+  `publicKey` only; the server verifies it (`1001` when it does not) and picks the scheme from
+  `algorithm` (`curve25519`/`x25519`/`xed25519`, `ed25519`, `p256`; anything else `1008`). All four
+  `SignedPreKey` members always go out; a `createdAt` of 0 is stamped by the server.
+- **`keys.upload` appends** to the connected device's pool; `1002` before that device has
+  published. One-time prekeys with a blank or repeated `keyId` or a `publicKey` that is not base64
+  are dropped without an error.
+- **`keys.revoke(deviceId)`** forgets one of your own devices: after it, a claim is `1002`, the
+  device is gone from `devices`, and both sides' safety numbers change. The id is required (`1001`
+  when blank, never defaulted to this device); **revoking an unknown device succeeds**.
+- **The safety number** is the same from either side, 12 groups of 5 digits. It changes when a
+  device is added or revoked or an identity key changes, not on signed-prekey rotation or
+  one-time-key use. `1002` when either side has nothing published.
+- **Limits:** 100 one-time prekeys per call and 100 held per device (the oldest kept); 10 devices
+  per user (an eleventh is `1202 QuotaExceeded`); identity keys up to 256 characters; a device's
+  keys expire 180 days after its last publish or upload.
+- **Callable whether or not the app's `e2ee.enabled` is set.** That switch constrains settings
+  writes and translation, not the directory; there is no `1203` / `1204` here.
+- **No events.** Nothing is pushed for a revoked device, a changed identity key or a pool running
+  low — read `devices` and `remaining` again (on launch, before sending).
+- `remaining` and `devices` without an argument send an empty body: the connected device, the
+  caller's own. `remaining` is a bare `Int`, `devices` a plain array in no particular order (an
+  unknown user is empty), `safetyNumber` a bare `String`; an unknown device's `remaining` is 0.
+  None of these is an error.
+
 Three tier-3 behaviours are worth knowing before the first call. `im.msg.search` is **off by
 default** (the tenant's `EnableSearch`, `1203`) and rate limited per user *before* that check
 (`1003`), so debounce search-as-you-type. `im.group.setRole` sends only `.member` or `.admin` and
@@ -533,14 +595,14 @@ Messages carry the object key, never a URL: every reader signs their own link wi
 
 ### `invoke` — the escape hatch
 
-The catalogue is larger than the typed surface and grows faster than SDK releases do, so this is a
-supported route rather than a workaround. It shares one code path with every typed method, so
-timeouts, cancellation and error mapping behave identically — and it never touches a cursor.
+A newer server can add endpoints faster than SDK releases type them, so this is a supported route
+rather than a workaround. It shares one code path with every typed method, so timeouts,
+cancellation and error mapping behave identically — and it never touches a cursor.
 
 ```swift
-// keys.revoke is tier 4 and not yet typed here.
-try await im.invoke("keys.revoke", body: [
-    "deviceId": .string(deviceId),
+// An endpoint a newer server ships before this SDK types it (the name is illustrative):
+try await im.invoke("feature.newCall", body: [
+    "id": .string(id),
 ] as [String: JSONValue], as: EmptyBody.self)
 ```
 
