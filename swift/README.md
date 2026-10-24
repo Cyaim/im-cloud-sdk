@@ -302,11 +302,12 @@ and a bug report mentioning `msg.forward` can be grepped for.
 | `im.moderation` | `report` |
 | `im.diag` | `logRequests` `logUploaded` — driven by `ImClient` itself; apps do not call these |
 | `im.desk` | `request` `accept` `transfer` `close` `status` `queue` `rate` `canned` `suggest` — tier 4, the customer-service desk |
+| `im.room` | `join` `quit` `send` `onlineCount` `memberList` `mute` `kick` — tier 4, chat rooms |
 
-That is tiers 0 to 3 of the client contract typed end to end, plus the nine `desk.*` of tier 4 — 82
-endpoints; the names after the `·` are tier 3. The other 25 endpoints of tier 4 (live rooms, the
-E2EE key directory, AI streaming and translation, scheduling, conversation folders) go through
-`invoke` until they are typed.
+That is tiers 0 to 3 of the client contract typed end to end, plus the nine `desk.*` and the seven
+`room.*` of tier 4 — 89 endpoints; the names after the `·` are tier 3. The other 18 endpoints of
+tier 4 (the E2EE key directory, AI streaming and translation, scheduling, conversation folders) go
+through `invoke` until they are typed.
 
 The desk has two audiences and the session decides which one you are: `request` and `rate` are the
 customer's, the rest an agent's, `close` either side's; the conversation itself is an ordinary chat
@@ -319,6 +320,35 @@ when `contentType` is `.notification` **and** `content["code"]` is 1801–1807: 
 numbers are account error codes elsewhere on this platform, so a bare code check will one day draw
 "your account is locked" onto a support transcript. The TypeScript SDK's `readDeskNotification`
 documents the fields each code carries; this SDK has no reader yet.
+
+A chat room — the live-stream comment wall, the broadcast lobby — trades every delivery guarantee
+for scale, and the client has to know which ones:
+
+- **A room message has `seq` 0 and never enters gap repair.** It arrives on `messages()` as an
+  ordinary `ImMessage` with `conversationId` `r_<roomId>` and `conversationType` `.chatRoom`,
+  delivered the moment it lands — ahead of the repair lane, so never behind another conversation's
+  repair, not deduplicated by seq, and never repaired: it is not stored per user, so a dropped frame
+  is simply gone and there is no range to ask `msg.sync` for. The SDK keeps it out of every cursor;
+  **do not commit it** (`commit(_:seq:)` ignores seq 0, so a "commit everything you store" loop is
+  safe). `im.room.send` answers `seq` 0 too and moves nothing.
+- **Rooms are created by the tenant's backend** (`POST /v1/rooms`); there is no socket call for it.
+- **Joining belongs to the connection.** After a reconnect, call `im.room.join` again for every room
+  still on screen — the SDK does not rejoin for you. `RoomJoinResult.recent` is the room's last few
+  messages for a newcomer, returned to the caller only and never replayed on `messages()`.
+- **`RoomMuteRequest` has no defaults on purpose**: `userId: nil` mutes the whole room, and
+  `untilMs: nil` (or a time already past) *lifts* the mute; neither is sent as `null`. Only the
+  owner and `ChatRoom.admins` may mute or kick (`1103`), and nobody can mute or kick the owner
+  (`1511`).
+- **`room.send` takes a `RoomMessage`**, not a `SendMessageRequest`: a room is addressed by
+  `roomId`, and quote, thread and receiver fields would be ignored. Its `clientMsgId` is minted when
+  it is built and a blank one is filled in. Refusals: `1602` not joined (or kicked), `1603` the room
+  is muted, `1506` you are muted, `1003` the room is over its rate.
+- **`room.memberList` is a sample**, never the full list; page on `hasMore`. `room.onlineCount` is a
+  bare `Int64`, and an unknown room answers 0 rather than `1600`.
+- `im.roomEvents()` is the `room.*` events out of `evt.system` — `room.muted`, `room.kicked`,
+  `room.destroyed` — as `RoomEvent`. It reads `evt.system` beside the device-log handler and takes
+  only names starting `room.`; one this build does not know still arrives, with its raw `body`. A
+  `room.kicked` naming you means stop sending: the server answers `1602` from then on.
 
 Three tier-3 behaviours are worth knowing before the first call. `im.msg.search` is **off by
 default** (the tenant's `EnableSearch`, `1203`) and rate limited per user *before* that check
@@ -344,6 +374,7 @@ fine, a nine-argument `send` is not.
 | `events(_:as:)` / `frames(for:)` | Any server event (`evt.typing`, `evt.read`, `evt.group`, …) |
 | `states()` | `idle` \| `connecting` \| `open` \| `reconnecting` \| `closed` |
 | `kicks()` | Why the server ended the session |
+| `roomEvents()` | `room.muted` / `room.kicked` / `room.destroyed`, out of `evt.system` |
 | `setPushToken(deviceToken:)` | Hand over the APNs token; re-registered on every connect |
 | `highestSeq(in:)` / `committedSeq(in:)` / `cursorSnapshot()` | Read the cursors |
 | `resync()` | Run `conn.sync` again after re-deriving cursors |

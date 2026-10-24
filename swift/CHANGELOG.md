@@ -13,6 +13,32 @@ First published release. The version is deliberately **0.9.0** rather than 1.0.0
 reserved for tiers 0 and 1 complete on all five SDKs, and until then the number would be a promise
 the family does not keep. Implements client contract **1.0**.
 
+### Added (2026-10-25)
+
+- **`im.room` — the seven `room.*` endpoints of tier 4**, typed as TypeScript, Kotlin, Dart and
+  Unity have typed them since 2026-10-22: `join`, `quit`, `send`, `onlineCount`, `memberList`,
+  `mute`, `kick`, with `RoomIdRequest` / `RoomCursorRequest` / `RoomSendRequest` / `RoomMuteRequest`
+  / `RoomKickRequest`, `ChatRoom` and `RoomJoinResult`. `room.send` takes a `RoomMessage` — the
+  members of `SendMessageRequest` a room reads — whose `clientMsgId` is minted when it is built; a
+  blank one is filled in and a `sendTime` of 0 or below stamped at send. `RoomMuteRequest`'s
+  initialiser has no defaults: a `nil` `userId` is the whole room and a `nil` `untilMs` lifts the
+  mute, both left out of the body rather than sent as `null`. `im.roomEvents()` decodes
+  `room.muted` / `room.kicked` / `room.destroyed` out of `evt.system`, beside the device-log handler
+  and without touching it; a `room.*` name this build does not know is delivered with its raw body.
+- Tests prove a chat-room message (`seq` 0, `r_<roomId>`) is delivered at once, asks `msg.sync` for
+  nothing, is not held behind another conversation's repair and moves no cursor, and that the
+  kicked member's own `room.kicked` is delivered.
+- Written without a Swift toolchain: the macOS job is the first thing that compiles it, and
+  `wire-samples/swift.json` has to be re-recorded from that job's artifact (five room request
+  bodies) before it goes green.
+
+### Changed (2026-10-25)
+
+- **A `seq` 0 message no longer waits in the serial repair lane.** It is handed to `messages()` by
+  the decoding pump the moment it arrives, as the other four SDKs hand it over, instead of queuing
+  behind whatever repair another conversation has in flight. It still moves no cursor and is still
+  never repaired; only its latency changed. `commit(_:seq:)` already ignored a seq of 0 or below.
+
 ### Added (2026-10-09)
 
 - **`im.desk` — the nine `desk.*` endpoints of tier 4**, typed as TypeScript has typed them since

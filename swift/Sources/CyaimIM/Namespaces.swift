@@ -943,3 +943,85 @@ public struct ImDeskNamespace: Sendable {
         try await connection.request("desk.suggest", body: request, as: [String].self)
     }
 }
+
+// MARK: - room (T4)
+
+/// `room.*` — chat rooms: the live-stream comment wall, the broadcast lobby (T4).
+///
+/// **A room trades every delivery guarantee for scale, and the client has to know it.** Its messages
+/// are not stored per user, not pushed offline and carry `seq` **0**: they arrive on
+/// ``ImClient/messages()`` as ordinary ``ImMessage``s with `conversationId` `r_<roomId>`, and
+/// ``ImClient`` keeps them out of cursors and gap repair entirely — a dropped frame is gone, and there
+/// is no range to ask for. Do not commit them; ``ImClient/commit(_:seq:)`` ignores a seq of 0.
+///
+/// **Rooms are created by the tenant's backend** (`POST /v1/rooms`), never from a device. **Joining
+/// belongs to the connection**: after a reconnect, send ``join(_:)`` again for every room still on
+/// screen — the SDK does not do it for you. Mutes, kicks and the room's destruction arrive on
+/// ``ImClient/roomEvents()``.
+///
+/// **A deployment older than this build answers `1008 UnsupportedOperation`**; neither retrying nor
+/// re-authenticating changes it. The types are in Room.swift.
+///
+/// 聊天室用全部投递保证换规模：消息不按人存储、不发离线推送、seq 为 0，ImClient 让它们完全绕开游标与补洞。
+/// 聊天室由租户后端创建；入房属于连接，重连后要重新 join，SDK 不代劳。
+public struct ImRoomNamespace: Sendable {
+    let connection: ImConnection
+
+    /// Enters a room on this connection and returns it, the head count, and its last few messages.
+    ///
+    /// `1600 RoomNotFound` for a room that does not exist or was destroyed; `1601 RoomFull` when
+    /// ``ChatRoom/maxOnline`` connections are already in.
+    public func join(_ request: RoomIdRequest) async throws -> RoomJoinResult {
+        try await connection.request("room.join", body: request)
+    }
+
+    /// Leaves a room on this connection. Leaving one you are not in succeeds.
+    public func quit(_ request: RoomIdRequest) async throws {
+        try await connection.execute("room.quit", body: request)
+    }
+
+    /// Says something to the room. The result's `seq` is **always 0** and its `conversationId` is
+    /// `r_<roomId>`; it moves no cursor, which is why this does not go through `msg.send`.
+    ///
+    /// A blank ``RoomMessage/clientMsgId`` is filled in and a ``RoomMessage/sendTime`` of 0 or below
+    /// stamped. Refusals: `1602 NotInRoom` (not joined, or kicked), `1603 RoomMuted` (the whole room
+    /// is muted and you are neither owner nor admin), `1506 MemberMuted`, `1401 MessageTooLong`,
+    /// `1402 ModerationRejected`, `1003 RateLimited` (the room is over its rate).
+    ///
+    /// 结果的 seq 恒为 0，不动游标，所以不走 msg.send。
+    @discardableResult
+    public func send(_ request: RoomSendRequest) async throws -> SendMessageResult {
+        var outgoing = request
+        if outgoing.message.clientMsgId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            outgoing.message.clientMsgId = ClientMessageId.generate()
+        }
+        if outgoing.message.sendTime <= 0 {
+            outgoing.message.sendTime = ImClock.nowMilliseconds()
+        }
+        return try await connection.request("room.send", body: outgoing)
+    }
+
+    /// Connections in the room right now, cluster-wide. A bare number. **An unknown room answers 0**,
+    /// not `1600`: this is polled for a viewer counter and the server skips the existence check.
+    public func onlineCount(_ request: RoomIdRequest) async throws -> Int64 {
+        try await connection.request("room.onlineCount", body: request)
+    }
+
+    /// **A sample** of the user ids present, not the full list: the server never enumerates a large
+    /// room exactly. Page on ``Page/hasMore`` / ``Page/nextCursor``; a page can be short, or empty,
+    /// with more to come. An unknown room is an empty sample, not `1600`.
+    public func memberList(_ request: RoomCursorRequest) async throws -> Page<String> {
+        try await connection.request("room.memberList", body: request)
+    }
+
+    /// Mutes the room or one member until a time — or, with ``RoomMuteRequest/untilMs`` `nil` or
+    /// past, lifts the mute. Owner or admins only (`1103`); never the owner (`1511`).
+    public func mute(_ request: RoomMuteRequest) async throws {
+        try await connection.execute("room.mute", body: request)
+    }
+
+    /// Removes a member from the room. Owner or admins only (`1103`); never the owner (`1511`).
+    public func kick(_ request: RoomKickRequest) async throws {
+        try await connection.execute("room.kick", body: request)
+    }
+}

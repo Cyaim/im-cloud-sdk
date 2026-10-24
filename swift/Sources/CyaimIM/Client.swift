@@ -249,6 +249,10 @@ public actor ImClient {
     /// see ``ImDeskNamespace``.
     public nonisolated var desk: ImDeskNamespace { ImDeskNamespace(connection: connection) }
 
+    /// `room.*` — chat rooms (T4). Their messages carry seq 0 and never touch a cursor or the gap
+    /// repair; see ``ImRoomNamespace``.
+    public nonisolated var room: ImRoomNamespace { ImRoomNamespace(connection: connection) }
+
     // MARK: - Streams
 
     /// Every message, in `seq` order per conversation, gaps already repaired.
@@ -260,6 +264,11 @@ public actor ImClient {
     /// Call ``commit(_:seq:)`` once the message is durably in your own store. Until you do, the
     /// message is delivered again after a reconnect — which is the correct trade, and why you must
     /// be idempotent on `messageId`.
+    ///
+    /// Chat-room messages come through here too, and are the exception: `seq` **0**,
+    /// `conversationId` `r_<roomId>`, delivered the moment they arrive — ahead of the repair lane, so
+    /// never behind another conversation's repair — never repaired, never deduplicated by seq, and
+    /// never to be committed: a room has no range to repair (see ``ImRoomNamespace``).
     public nonisolated func messages() -> AsyncStream<ImMessage> {
         messageHub.subscribe()
     }
@@ -325,6 +334,31 @@ public actor ImClient {
     /// 坐席侧的 evt.desk。event 不认识的帧解不开，在这里被跳过，而不是半成品地交给应用。
     public nonisolated func deskEvents() -> AsyncStream<DeskEvent> {
         events(.desk, as: DeskEvent.self)
+    }
+
+    /// The `room.*` events — mutes, kicks, a room destroyed — out of `evt.system`.
+    ///
+    /// A separate reader of that target from the device-log handler, and it takes only the events
+    /// whose name starts `room.`: everything else on `evt.system` belongs to someone else and is left
+    /// alone. A `room.*` name this build does not know is delivered rather than dropped (see
+    /// ``RoomEvent``). Not an endpoint, so it lives here rather than on ``room``.
+    ///
+    /// evt.system 的另一个读者，只取名字以 room. 开头的事件；其余的属于别人，不碰。
+    public nonisolated func roomEvents() -> AsyncStream<RoomEvent> {
+        let frames = connection.events(for: .system)
+
+        return AsyncStream(RoomEvent.self, bufferingPolicy: .unbounded) { continuation in
+            let pump = Task {
+                for await frame in frames {
+                    if let event = RoomEvent.fromSystemData(frame.body?.data) {
+                        continuation.yield(event)
+                    }
+                }
+                continuation.finish()
+            }
+
+            continuation.onTermination = { _ in pump.cancel() }
+        }
     }
 
     /// Raw frames for a target, for payloads the SDK does not model.
@@ -439,6 +473,10 @@ public actor ImClient {
     /// is how you get a cursor that is confidently wrong.
     ///
     /// 落库之后再调用。回调返回只代表消息进了内存，而进程崩溃丢的正是这部分。
+    ///
+    /// A seq of 0 or below is ignored by the same guard: nothing at seq 0 was ever stored, and a
+    /// chat-room message (`seq` 0, `r_<roomId>`) committed by an application that commits everything
+    /// it stores must not register the room as a conversation and send it in every `conn.sync`.
     public func commit(_ conversationId: String, seq: Int64) {
         guard seq > (committed[conversationId] ?? 0) else { return }
 
@@ -942,8 +980,8 @@ public actor ImClient {
             }
         })
 
-        pumps.append(Task { [workContinuation] in
-            await ImClient.pumpMessages(incoming, into: workContinuation)
+        pumps.append(Task { [workContinuation, messageHub] in
+            await ImClient.pumpMessages(incoming, into: workContinuation, unpersistedTo: messageHub)
         })
 
         pumps.append(Task { [workContinuation] in
@@ -975,12 +1013,28 @@ public actor ImClient {
 
     /// Decodes pushes and queues them. `static`, so the loop runs on the cooperative pool instead
     /// of occupying the actor for every frame — and so a slow repair cannot block decoding.
+    ///
+    /// **A `seq` 0 message skips the lane** and goes straight to `hub`. It was never persisted (a
+    /// chat-room broadcast, an online-only tip), so it has no position to order against, no cursor to
+    /// move and nothing to repair — and queued behind another conversation's repair it would only
+    /// arrive late, the one thing a live room cannot afford. The lane's consumer would deliver it the
+    /// same way (``deliver(_:)`` emits a seq 0 untouched); the difference is only that it no longer
+    /// waits for its turn. The other four SDKs hand it over at the same point.
+    ///
+    /// seq 0 的消息不进串行队列：它没有位置、不动游标、无可补洞，排在别的会话补洞后面只会迟到。
     private static func pumpMessages(
         _ frames: AsyncStream<ImFrame>,
-        into work: AsyncStream<Work>.Continuation
+        into work: AsyncStream<Work>.Continuation,
+        unpersistedTo hub: Broadcaster<ImMessage>
     ) async {
         for await frame in frames {
             guard let message: ImMessage = frame.decodedData() else { continue }
+
+            if message.seq == 0 {
+                hub.yield(message)
+                continue
+            }
+
             work.yield(.incoming(message))
         }
     }

@@ -304,6 +304,50 @@ struct WireSampleRecorderTests {
             encoder
         ))
 
+        // room (T4). room.join, room.quit and room.onlineCount share RoomIdRequest. The room message
+        // carries every member RoomMessage has; the addressing, quote and thread members it leaves out
+        // are the platform binder's per-property exemption for RoomSendRequest.Message, not omissions
+        // declared here.
+        try samples.append(Self.line(RoomIdRequest("lobby"), encoder))
+        try samples.append(Self.line(RoomCursorRequest(roomId: "lobby", cursor: "members:2", limit: 20), encoder))
+        try samples.append(Self.line(
+            RoomSendRequest(
+                roomId: "lobby",
+                message: RoomMessage(
+                    content: ["gift": .string("rocket"), "count": .int(3)],
+                    contentType: .custom,
+                    clientMsgId: "room-wire",
+                    mentionAll: true,
+                    mentionedUserIds: ["alice"],
+                    options: MessageOptions(
+                        persistent: false,
+                        updateConversation: false,
+                        countUnread: false,
+                        offlinePush: false,
+                        pushConfig: PushConfig(
+                            title: "Lobby",
+                            body: "a rocket",
+                            sound: "ding.caf",
+                            payload: ["deepLink": "app://lobby"],
+                            badgeCount: false,
+                            channelId: "im_rooms"
+                        ),
+                        needReceipt: true,
+                        priority: .low,
+                        onlineOnly: true,
+                        noSelfSync: true,
+                        expireIn: 5_000,
+                        moderationBypass: true
+                    ),
+                    sendTime: Self.time,
+                    extensions: ["combo": .int(7)]
+                )
+            ),
+            encoder
+        ))
+        try samples.append(Self.line(RoomMuteRequest(roomId: "lobby", userId: "bob", untilMs: 1_758_499_200_000), encoder))
+        try samples.append(Self.line(RoomKickRequest(roomId: "lobby", userId: "bob"), encoder))
+
         // Every request type the inventory marks implementedIn.swift needs a sample here, or the
         // platform's binder never judges it. The platform repository holds this too, but only when the
         // submodule is bumped; holding it here makes this job say it when the recorder changes. The
