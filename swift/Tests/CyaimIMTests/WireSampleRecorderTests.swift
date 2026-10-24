@@ -390,6 +390,59 @@ struct WireSampleRecorderTests {
         ))
         try samples.append(Self.line(StreamAbortRequest(streamId: "st_1", reason: "the model failed"), encoder))
 
+        // Scheduled messages, folders and translation (T4). The three with optional members are recorded
+        // twice, every member and then the shortest body the SDK sends. msg.scheduled sends PageRequest,
+        // recorded above for msg.favourites; conv.folders sends no body.
+        try samples.append(Self.line(
+            ScheduleRequest(
+                sendAt: Self.time,
+                content: ["objectKey": .string("demo/alice/a.png"), "width": .int(640)],
+                contentType: .image,
+                conversationId: "c_wire",
+                receiverId: "bob",
+                groupId: "team",
+                conversationType: .group,
+                clientMsgId: "sched-1",
+                mentionAll: true,
+                mentionedUserIds: ["bob", "carol"],
+                quoteMessageId: Self.big,
+                threadRootId: 7,
+                extensions: ["campaign": .string("birthday")]
+            ),
+            encoder,
+            " every field"
+        ))
+        try samples.append(Self.line(
+            ScheduleRequest(sendAt: Self.time, content: ["text": .string("later")], receiverId: "bob"),
+            encoder,
+            " minimal"
+        ))
+        try samples.append(Self.line(ScheduleIdRequest("sch_1"), encoder))
+        try samples.append(Self.line(
+            UpsertFolderRequest(
+                name: "Work",
+                folderId: "f_work",
+                order: 2,
+                tags: ["work", "clients"],
+                unreadOnly: true,
+                types: [.single, .group]
+            ),
+            encoder,
+            " every field"
+        ))
+        try samples.append(Self.line(UpsertFolderRequest(name: "Work"), encoder, " minimal"))
+        try samples.append(Self.line(FolderIdRequest("f_work"), encoder))
+        try samples.append(Self.line(
+            TranslateRequest(conversationId: "c_wire", messageIds: [Self.big, 7], targetLanguage: "zh-CN", sourceLanguage: "en"),
+            encoder,
+            " every field"
+        ))
+        try samples.append(Self.line(
+            TranslateRequest(conversationId: "c_wire", messageIds: [Self.big], targetLanguage: "ja"),
+            encoder,
+            " minimal"
+        ))
+
         // Every request type the inventory marks implementedIn.swift needs a sample here, or the
         // platform's binder never judges it. The platform repository holds this too, but only when the
         // submodule is bumped; holding it here makes this job say it when the recorder changes. The

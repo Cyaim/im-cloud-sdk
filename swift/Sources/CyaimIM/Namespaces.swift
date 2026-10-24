@@ -322,6 +322,64 @@ public struct ImMsgNamespace: Sendable {
     public func streamAbort(_ request: StreamAbortRequest) async throws {
         try await connection.execute("msg.streamAbort", body: request)
     }
+
+    // MARK: scheduling (T4)
+
+    /// Schedules a message for ``ScheduleRequest/sendAt`` and answers the outbox entry —
+    /// ``ScheduledMessage/scheduleId`` to cancel it by, no ``ScheduledMessage/messageId`` yet.
+    ///
+    /// **Moves no cursor and delivers nothing.** When it fires, the message reaches the receiver as an
+    /// ordinary `evt.message` with a real seq (and the sender's devices through the usual self-sync),
+    /// on the first server sweep after `sendAt` (every 15 seconds by default). No event announces the
+    /// schedule itself. **Not idempotent**: a retry after a lost reply schedules twice, so the SDK never
+    /// retries it and leaves ``ScheduleRequest/clientMsgId`` alone. See ``ScheduleRequest`` for the
+    /// refusals and limits; the types are in Schedule.swift.
+    ///
+    /// 不动游标、不投递任何东西：到点发出时，接收方经普通 evt.message 收到它（发送者的设备经通常的自同步），粒度是服务端扫描周期（默认 15 秒）。
+    /// 不幂等：丢了答复就重试会建两条。
+    @discardableResult
+    public func schedule(_ request: ScheduleRequest) async throws -> ScheduledMessage {
+        try await connection.request("msg.schedule", body: request)
+    }
+
+    /// The caller's outbox in `sendAt` order, earliest first: pending schedules **and** the ones
+    /// settled in about the last 48 hours — sent, cancelled (``ScheduledMessage/error``
+    /// "cancelled by sender") or failed. See ``ScheduledMessage`` for telling them apart. 20 a page by
+    /// default, 100 at most. Page on ``Page/nextCursor``; ``Page/total`` is never present.
+    ///
+    /// 按 sendAt 从早到晚列出待发的，以及约 48 小时内已了结的（已发、已取消、失败）。
+    public func scheduled(_ request: PageRequest = .init()) async throws -> Page<ScheduledMessage> {
+        try await connection.request("msg.scheduled", body: request)
+    }
+
+    /// Cancels one of the caller's pending schedules. `1002` for an unknown id or someone else's;
+    /// `1006` when there is nothing left to cancel — being sent, already cancelled, or already sent or
+    /// failed, told apart only by the server's message. The entry stays listed, marked cancelled, for
+    /// about 48 hours.
+    public func cancelScheduled(_ request: ScheduleIdRequest) async throws {
+        try await connection.execute("msg.cancelScheduled", body: request)
+    }
+
+    /// ``cancelScheduled(_:)`` for a bare schedule id.
+    public func cancelScheduled(_ scheduleId: String) async throws {
+        try await cancelScheduled(ScheduleIdRequest(scheduleId))
+    }
+
+    // MARK: translation (T4)
+
+    /// Translates up to 50 messages of one conversation. Per-message failures come back inside the
+    /// result (``TranslatedMessage/error``); the call itself fails only as a whole.
+    ///
+    /// **A deployment without translation refuses it as an ordinary ``ImError``**: `1204 PlanExpired`
+    /// when the plan lacks the translation add-on, `1203 FeatureNotEnabled` when the plan has it but no
+    /// provider is configured — both checked before the request itself, both carrying the server's
+    /// message. Neither is retryable; do not latch either for longer than a session. The types are in
+    /// Translation.swift.
+    ///
+    /// 没有翻译能力的部署以普通 ImError 拒绝：套餐不含翻译回 1204，含翻译但没配服务商回 1203，都带服务端的原话，都不可重试。
+    public func translate(_ request: TranslateRequest) async throws -> TranslationResult {
+        try await connection.request("msg.translate", body: request)
+    }
 }
 
 // MARK: - conv
@@ -393,6 +451,36 @@ public struct ImConvNamespace: Sendable {
     /// `evt.conversationUpdate` with kind `"unread"`. Access errors are `1001`, `1103` and `1503`.
     public func markUnread(_ request: MarkUnreadRequest) async throws {
         try await connection.execute("conv.markUnread", body: request)
+    }
+
+    // MARK: folders (T4)
+
+    /// The caller's folders, all of them: **a plain array, not a ``Page``** (at most 20). Sort by
+    /// ``ConversationFolder/order``, then name. Nothing is pushed when a folder changes on another
+    /// device; call this again to pick it up. The types are in Folders.swift.
+    ///
+    /// 直接是数组而不是分页（至多 20 个）。别的设备改了文件夹不会推送，要重新调用。
+    public func folders() async throws -> [ConversationFolder] {
+        try await connection.request("conv.folders")
+    }
+
+    /// Creates a folder (no `folderId`) or replaces one, and answers it as stored — take the id from
+    /// here. Every tag must already be on one of the caller's conversations (`1001` otherwise); see
+    /// ``UpsertFolderRequest`` for the limits. A retried create makes a second folder.
+    @discardableResult
+    public func upsertFolder(_ request: UpsertFolderRequest) async throws -> ConversationFolder {
+        try await connection.request("conv.upsertFolder", body: request)
+    }
+
+    /// Deletes a folder; the conversations and their tags stay. `1002` for one the caller does not
+    /// have.
+    public func deleteFolder(_ request: FolderIdRequest) async throws {
+        try await connection.execute("conv.deleteFolder", body: request)
+    }
+
+    /// ``deleteFolder(_:)`` for a bare folder id.
+    public func deleteFolder(_ folderId: String) async throws {
+        try await deleteFolder(FolderIdRequest(folderId))
     }
 }
 

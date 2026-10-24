@@ -292,8 +292,8 @@ and a bug report mentioning `msg.forward` can be grepped for.
 | Namespace | Endpoints |
 |---|---|
 | `im.conn` | `heartbeat` `reauth` `sync` |
-| `im.msg` | `send` `sync` `history` `recall` `delete` `edit` `forward` `react` `receipt` `typing` · `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search` `receiptDetail` · tier 4: `streamBegin` `streamAppend` `streamComplete` `streamAbort` |
-| `im.conv` | `list` `get` `read` `unreadTotal` `setting` `delete` `clear` · `markUnread` |
+| `im.msg` | `send` `sync` `history` `recall` `delete` `edit` `forward` `react` `receipt` `typing` · `pin` `unpin` `pins` `favourite` `unfavourite` `favourites` `burn` `search` `receiptDetail` · tier 4: `streamBegin` `streamAppend` `streamComplete` `streamAbort` `schedule` `scheduled` `cancelScheduled` `translate` |
+| `im.conv` | `list` `get` `read` `unreadTotal` `setting` `delete` `clear` · `markUnread` · tier 4: `folders` `upsertFolder` `deleteFolder` |
 | `im.user` | `me` `profile` `batchProfile` `updateProfile` `presence` `subscribePresence` `unsubscribePresence` · `setStatus` |
 | `im.media` | `uploadTicket` `downloadUrl` |
 | `im.push` | `register` `unregister` `clicked` |
@@ -304,10 +304,10 @@ and a bug report mentioning `msg.forward` can be grepped for.
 | `im.desk` | `request` `accept` `transfer` `close` `status` `queue` `rate` `canned` `suggest` — tier 4, the customer-service desk |
 | `im.room` | `join` `quit` `send` `onlineCount` `memberList` `mute` `kick` — tier 4, chat rooms |
 
-That is tiers 0 to 3 of the client contract typed end to end, plus the nine `desk.*`, the seven
-`room.*` and the four `msg.stream*` of tier 4 — 93 endpoints; the names after the first `·` are
-tier 3. The other 14 endpoints of tier 4 (the E2EE key directory, translation, scheduling,
-conversation folders) go through `invoke` until they are typed.
+That is tiers 0 to 3 of the client contract typed end to end, plus, of tier 4, the nine `desk.*`,
+the seven `room.*`, the four `msg.stream*`, the three schedule calls, the three folder calls and
+`msg.translate` — 100 endpoints; the names after the first `·` are tier 3. The other 7 endpoints of
+tier 4 (the E2EE key directory, `keys.*`) go through `invoke` until they are typed.
 
 The desk has two audiences and the session decides which one you are: `request` and `rate` are the
 customer's, the rest an agent's, `close` either side's; the conversation itself is an ordinary chat
@@ -399,6 +399,83 @@ for await stream in im.streamEvents().assemble() {
   in either order; match them by `messageId`. Reset a long-lived `StreamAssembler` with `clear()` on
   reconnect (`assemble()` starts a fresh one per call).
 
+A scheduled message is written now and sent by the server later. `im.msg.schedule` answers a
+`ScheduledMessage` with the `scheduleId` to cancel it by; `im.msg.scheduled()` pages the outbox;
+`im.msg.cancelScheduled(scheduleId)` takes one back.
+
+```swift
+let entry = try await im.msg.schedule(ScheduleRequest(
+    sendAt: ImClock.nowMilliseconds() + 60 * 60_000,
+    content: ["text": .string("Stand-up in five minutes")],
+    groupId: "team"
+))
+try await im.msg.cancelScheduled(entry.scheduleId)
+```
+
+- **`ScheduleRequest` is flat and is not a `SendMessageRequest`.** The server binds the message
+  members at the top level beside `sendAt`, and there is no `options` and no `sendTime` on this
+  path. Address it by `conversationId`, else `groupId`, else `receiverId` (not the order
+  `streamBegin` uses); the sender must be allowed to write there exactly as for `msg.send`, checked
+  when scheduling. `clientMsgId` is optional and **not minted for you** — left `nil`, the server
+  keys the eventual send `sch-<scheduleId>`. `quoteMessageId` / `threadRootId` leave quoted.
+- **Limits** (`IM:Extras`): `sendAt` at least 10 seconds and at most 90 days ahead (`1001`
+  otherwise); 120 schedules created per user per hour (`1003`); 100 pending per user (`1006`).
+  **`msg.schedule` is not idempotent**, and the SDK never retries it: a retry after a lost reply
+  schedules twice — list first.
+- **It fires on the server's sweep**, every 15 seconds by default: on the first sweep after
+  `sendAt`, never before. The receiver gets an **ordinary `evt.message`** (the sender's devices the
+  usual self-sync) with a real seq, through `messages()`, cursors and gap repair like any other
+  message. Scheduling itself delivers nothing, moves no cursor, and **pushes no event**: another
+  device sees the outbox change only by calling `msg.scheduled` again.
+- **`ScheduledMessage` has no state field.** Pending: `messageId` and `error` both `nil`. Sent:
+  `messageId` set. Cancelled: `error == "cancelled by sender"`. Failed: `error` is the reason.
+  **Cancelled, sent and failed entries stay listed for about 48 hours**, so a cancel is not followed
+  by an empty list. `msg.scheduled` runs in `sendAt` order, 20 a page by default (100 at most).
+- `msg.cancelScheduled`: `1002` for an unknown schedule or someone else's. `1006` when there is
+  nothing left to cancel — it is being sent, it was cancelled already, or it was already sent or
+  failed — one code, told apart only by the server's message; a sent one is taken back with
+  `msg.recall`.
+
+A conversation folder is a saved filter over the conversation list — tags, optionally conversation
+types and "unread only" — that the server stores per user and the client applies.
+`im.conv.folders()` returns all of them as a plain array (no paging);
+`im.conv.upsertFolder(UpsertFolderRequest(name: …))` creates one (no `folderId`) or replaces one
+wholesale, and answers it as stored; `im.conv.deleteFolder(folderId)` removes it and leaves the
+conversations alone.
+
+- **Every tag must already be on one of your conversations** (`conv.setting`'s `tags`), or the save
+  is `1001`. Other limits: 20 folders per user (`1006`), 16 tags per folder, names and tags up to 64
+  characters, a `folderId` of 1–64 letters, digits, `-`, `_` or `.`.
+- `types` go out as integers; an empty list is stored as none and comes back absent (all types).
+  `order` below 0 is stored as 0. Sort by `order`, then `name`.
+- **Creating is not idempotent** — keep the `folderId` from the answer and send it on every later
+  save. Deleting one you do not have is `1002`. No event announces a folder change; re-read on
+  other devices.
+
+`im.msg.translate(TranslateRequest(conversationId:messageIds:targetLanguage:))` translates up to 50
+messages of one conversation and answers a `TranslationResult`: one `TranslatedMessage` per id, with
+`text`, `cached`, or an `error` for that message alone — a message that cannot be translated does
+not fail the call. The ids leave quoted. `sourceLanguage` is a hint; leave it `nil` to let the
+provider detect it.
+
+**The platform calls no model of its own, and most deployments refuse this call.** Both refusals are
+ordinary `ImError`s carrying the server's sentence, checked before anything else about the request:
+`1204 PlanExpired` when the tenant's plan does not include the translation add-on (Enterprise and
+up, or a trial), and `1203 FeatureNotEnabled` when the plan includes it but the deployment has no
+provider configured (`IM:Translation:Provider`).
+
+```swift
+do {
+    show(try await im.msg.translate(TranslateRequest(
+        conversationId: conversationId, messageIds: [message.messageId], targetLanguage: "zh-CN"
+    )))
+} catch let error as ImError where error.code == .featureNotEnabled || error.code == .planExpired {
+    hideTranslate(error.message)
+}
+```
+
+Neither is retryable; do not latch either beyond the session, since both are runtime settings.
+
 Three tier-3 behaviours are worth knowing before the first call. `im.msg.search` is **off by
 default** (the tenant's `EnableSearch`, `1203`) and rate limited per user *before* that check
 (`1003`), so debounce search-as-you-type. `im.group.setRole` sends only `.member` or `.admin` and
@@ -461,9 +538,9 @@ supported route rather than a workaround. It shares one code path with every typ
 timeouts, cancellation and error mapping behave identically — and it never touches a cursor.
 
 ```swift
-// msg.cancelScheduled is tier 4 and not yet typed here.
-try await im.invoke("msg.cancelScheduled", body: [
-    "scheduleId": .string(scheduleId),
+// keys.revoke is tier 4 and not yet typed here.
+try await im.invoke("keys.revoke", body: [
+    "deviceId": .string(deviceId),
 ] as [String: JSONValue], as: EmptyBody.self)
 ```
 

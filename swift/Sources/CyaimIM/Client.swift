@@ -964,9 +964,9 @@ public actor ImClient {
     /// an endpoint the next SDK release will type:
     ///
     /// ```swift
-    /// // msg.cancelScheduled is tier 4 and not yet typed here.
-    /// try await im.invoke("msg.cancelScheduled", body: [
-    ///     "scheduleId": .string(scheduleId),
+    /// // keys.revoke is tier 4 and not yet typed here.
+    /// try await im.invoke("keys.revoke", body: [
+    ///     "deviceId": .string(deviceId),
     /// ] as [String: JSONValue], as: EmptyBody.self)
     /// ```
     ///

@@ -13,6 +13,33 @@ First published release. The version is deliberately **0.9.0** rather than 1.0.0
 reserved for tiers 0 and 1 complete on all five SDKs, and until then the number would be a promise
 the family does not keep. Implements client contract **1.0**.
 
+### Added (2026-10-25, scheduling, folders, translation)
+
+- **Scheduled messages on `im.msg`**, typed as TypeScript, Kotlin, Dart and Unity have typed them
+  since 2026-10-22: `schedule`, `scheduled`, `cancelScheduled` (with a bare-id overload), with
+  `ScheduleRequest` / `ScheduleIdRequest` and `ScheduledMessage`. `ScheduleRequest` is the server's
+  flat shape — the message members beside `sendAt`, no `options`, no `sendTime` — with
+  `quoteMessageId` / `threadRootId` quoted, and leaves `clientMsgId` to the server when `nil` (it is
+  not minted, unlike `SendMessageRequest`'s). `ScheduledMessage` has no state field; its
+  documentation says how `messageId` and `error` tell pending, sent, cancelled ("cancelled by
+  sender") and failed apart. A fired schedule is an ordinary `evt.message`; nothing new is decoded.
+- **Conversation folders on `im.conv`**: `folders` (a plain array), `upsertFolder`, `deleteFolder`
+  (with a bare-id overload), with `UpsertFolderRequest` / `FolderIdRequest` and
+  `ConversationFolder`; `types` go out as integers and come back read leniently (a quoted or unknown
+  type still decodes).
+- **`im.msg.translate`** with `TranslateRequest` (ids quoted), `TranslationResult` and
+  `TranslatedMessage` (string ids decoded with every digit). A deployment without translation
+  answers `1203` / `1204`, which reach the caller as an ordinary `ImError` with the server's message.
+- Tests (`ScheduleTests`): every call's whole frame, minimal and full; replies with every field set
+  held to `payloadTypes`; `ScheduleRequest` pinned as `SendMessageRequest` minus `options` and
+  `sendTime` plus `sendAt`; scheduling proven to move no cursor and the fired message delivered as an
+  ordinary one; a refused schedule sent once and never retried; the 1203 / 1204 / 1002 paths and all
+  three 1006 sentences of a cancel.
+- The escape-hatch example in the README and on `invoke(_:body:as:)` is now `keys.revoke`.
+- Written without a Swift toolchain: the macOS job is the first thing that compiles it, and
+  `wire-samples/swift.json` has to be re-recorded from that job's artifact (five request types, three
+  of them also in their shortest form) before it goes green.
+
 ### Added (2026-10-25, streaming)
 
 - **The four `msg.stream*` endpoints of tier 4** on `im.msg`, typed as TypeScript, Kotlin, Dart and

@@ -31,7 +31,7 @@
     "implemented": {
       "typescript": 107,
       "kotlin": 107,
-      "swift": 93,
+      "swift": 100,
       "flutter": 107,
       "unity": 107
     }
@@ -178,7 +178,7 @@
       "implemented": {
         "typescript": 34,
         "kotlin": 34,
-        "swift": 20,
+        "swift": 27,
         "flutter": 34,
         "unity": 34
       },
@@ -331,7 +331,7 @@
       "implementedIn": {
         "typescript": true,
         "kotlin": true,
-        "swift": false,
+        "swift": true,
         "flutter": true,
         "unity": true
       }
@@ -347,7 +347,7 @@
       "implementedIn": {
         "typescript": true,
         "kotlin": true,
-        "swift": false,
+        "swift": true,
         "flutter": true,
         "unity": true
       }
@@ -363,7 +363,7 @@
       "implementedIn": {
         "typescript": true,
         "kotlin": true,
-        "swift": false,
+        "swift": true,
         "flutter": true,
         "unity": true
       }
@@ -476,7 +476,7 @@
       "implementedIn": {
         "typescript": true,
         "kotlin": true,
-        "swift": false,
+        "swift": true,
         "flutter": true,
         "unity": true
       }
@@ -1299,7 +1299,7 @@
       "implementedIn": {
         "typescript": true,
         "kotlin": true,
-        "swift": false,
+        "swift": true,
         "flutter": true,
         "unity": true
       }
@@ -1315,7 +1315,7 @@
       "implementedIn": {
         "typescript": true,
         "kotlin": true,
-        "swift": false,
+        "swift": true,
         "flutter": true,
         "unity": true
       }
@@ -1331,7 +1331,7 @@
       "implementedIn": {
         "typescript": true,
         "kotlin": true,
-        "swift": false,
+        "swift": true,
         "flutter": true,
         "unity": true
       }
