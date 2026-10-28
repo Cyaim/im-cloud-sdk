@@ -2,7 +2,12 @@ package com.cyaim.im.client
 
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.longOrNull
 
 /*
  * `desk.*` — the customer-service desk (T4): its requests, what it answers, its enumerations and
@@ -191,8 +196,8 @@ public data class DeskRequest(
     public val priority: Int? = null,
     /**
      * Opaque context the agent's workbench renders: order id, the page they were on. The engine
-     * copies out the keys it recognises (`desk.channel`, `desk.visitorId`, …) and leaves everything
-     * else here untouched.
+     * copies out the keys it recognises (`desk.channel`, `desk.visitorId`, …; [DeskContextKeys] names
+     * them) and leaves everything else here untouched.
      */
     public val context: JsonObject? = null,
 )
@@ -505,4 +510,303 @@ public data class DeskEvent(
         /** [event] of a frame about the agent rather than a session. */
         public const val AGENT: String = "desk.agent"
     }
+}
+
+// ---------------------------------------------------------------------------------- 1801-1807
+
+/**
+ * The seven desk notices a customer sees in their own transcript, as `content.code` carries them.
+ *
+ * **Not error codes**, although the same seven numbers are account error codes elsewhere on this
+ * platform (1801 is "account locked" there) — which is why [readDeskNotification] checks the content
+ * type as well as the range, and why these live here rather than on [ImErrorCode].
+ *
+ * 客服通知的七个码。同样七个数字在别处是账号错误码，所以读取时同时查内容类型。
+ */
+public object DeskNotificationCode {
+    /** The customer is waiting for an agent. */
+    public const val Queued: Int = 1801
+
+    /** An agent has taken the session. */
+    public const val Assigned: Int = 1802
+
+    /** Handed to another agent. The handover note is **not** in this line; it is internal. */
+    public const val Transferred: Int = 1803
+
+    public const val Closed: Int = 1804
+
+    /**
+     * The agent became unreachable and the session went back to the **front** of the queue. Its own
+     * code rather than a second [Queued], because "we are finding someone else for you" is a
+     * different sentence from "you are in the queue".
+     */
+    public const val Requeued: Int = 1805
+
+    /** Nobody could take the session and the desk gave up on it. */
+    public const val Abandoned: Int = 1806
+
+    /** Closed, and the customer is being asked to rate it. At most once per session; answer it with `desk.rate`. */
+    public const val RatingRequested: Int = 1807
+}
+
+/**
+ * One desk notice, read out of a message by [readDeskNotification]. A sealed type, so a `when` over
+ * the seven needs no `else` — and [code] says the same thing as the subtype, for a caller that keys
+ * on the number.
+ *
+ * Two absences on the shared members, and they are different on the wire: [skill] is **always
+ * present as a key and may be null**, because the server writes it into a dictionary where "omit
+ * nulls" does not reach; [agentId] is only written when there is one, and an empty string reads as
+ * null here.
+ *
+ * skill 的键总在、值可能是 null；agentId 则是有才写。两种不同的「没有」。
+ */
+public sealed interface DeskNotification {
+    /** One of [DeskNotificationCode]; fixed by the subtype. */
+    public val code: Int
+    public val sessionId: String
+    public val customerId: String
+
+    /** The skill it was queued on, or null. */
+    public val skill: String?
+
+    /** Present once an agent is involved. Never an empty string. */
+    public val agentId: String?
+
+    /** 1801 — the customer is waiting. */
+    public data class Queued(
+        override val sessionId: String = "",
+        override val customerId: String = "",
+        override val skill: String? = null,
+        override val agentId: String? = null,
+    ) : DeskNotification {
+        override val code: Int get() = DeskNotificationCode.Queued
+    }
+
+    /** 1802 — an agent has taken the session. [agentId] is who. */
+    public data class Assigned(
+        override val sessionId: String = "",
+        override val customerId: String = "",
+        override val skill: String? = null,
+        override val agentId: String? = null,
+    ) : DeskNotification {
+        override val code: Int get() = DeskNotificationCode.Assigned
+    }
+
+    /**
+     * 1803 — handed to another agent. [agentId] is the new one, [fromAgentId] the old.
+     *
+     * The handover note is deliberately **not** here: it is internal, and a customer reading
+     * "difficult, check the refund history first" in their own transcript is the failure this
+     * separation prevents.
+     */
+    public data class Transferred(
+        override val sessionId: String = "",
+        override val customerId: String = "",
+        override val skill: String? = null,
+        override val agentId: String? = null,
+        public val fromAgentId: String = "",
+    ) : DeskNotification {
+        override val code: Int get() = DeskNotificationCode.Transferred
+    }
+
+    /**
+     * 1804 — closed.
+     *
+     * [resolution] is present only when a person closed it and typed one; [reason] `"timeout"`
+     * ([DeskEndReason.Timeout]) marks the inactivity timer closing it instead. Both null means it was
+     * closed with nothing filled in.
+     */
+    public data class Closed(
+        override val sessionId: String = "",
+        override val customerId: String = "",
+        override val skill: String? = null,
+        override val agentId: String? = null,
+        public val resolution: String? = null,
+        public val reason: String? = null,
+    ) : DeskNotification {
+        override val code: Int get() = DeskNotificationCode.Closed
+    }
+
+    /**
+     * 1805 — the agent became unreachable and the session went back to the **front** of the queue.
+     * Say "we are finding someone else for you", not "you are in the queue": the difference is the
+     * whole reason the customer is not left in silence.
+     */
+    public data class Requeued(
+        override val sessionId: String = "",
+        override val customerId: String = "",
+        override val skill: String? = null,
+        override val agentId: String? = null,
+        public val previousAgentId: String = "",
+    ) : DeskNotification {
+        override val code: Int get() = DeskNotificationCode.Requeued
+    }
+
+    /** 1806 — nobody could take it and the desk gave up. [waitedSeconds] is how long they waited for that answer. */
+    public data class Abandoned(
+        override val sessionId: String = "",
+        override val customerId: String = "",
+        override val skill: String? = null,
+        override val agentId: String? = null,
+        public val waitedSeconds: Long = 0,
+    ) : DeskNotification {
+        override val code: Int get() = DeskNotificationCode.Abandoned
+    }
+
+    /**
+     * 1807 — closed, and the customer is being asked to rate it. Answer with `im.desk.rate`.
+     *
+     * At most once per session, and only when the deployment's rating window is open. [askResolved]
+     * says whether to show the "was your problem solved" question — a survey that asks it when the
+     * server will not store the answer wastes the one question a customer will answer.
+     */
+    public data class RatingRequested(
+        override val sessionId: String = "",
+        override val customerId: String = "",
+        override val skill: String? = null,
+        override val agentId: String? = null,
+        /** How long the customer has to answer. */
+        public val windowHours: Int = 0,
+        public val askResolved: Boolean = false,
+        /** The tags to offer alongside the stars. Empty when the centre configured none. */
+        public val starTags: List<String> = emptyList(),
+    ) : DeskNotification {
+        override val code: Int get() = DeskNotificationCode.RatingRequested
+    }
+}
+
+/**
+ * Reads a desk notice out of a message, or returns null when the message is not one. Never throws.
+ *
+ * **Desk events are messages, not a side channel**, which is what makes a transcript explain itself
+ * six months later: "you are in the queue", "Alice is with you now", "closed" sit in history and in
+ * incremental sync, in the right place relative to the conversation around them. The cost is that
+ * [ImClient.messages] now carries frames you must not draw as chat, and this is the test for them:
+ * call it first, render a notice when it answers, fall through to the normal path when it does not.
+ *
+ * Two things it deliberately checks together. The content type must be
+ * [MessageContentType.Notification] **and** `content.code` must be in 1801–1807, because the same
+ * seven numbers are account error codes elsewhere on this platform — a bare code check would
+ * eventually draw "your account is locked" onto a support transcript. And the numbers (`code`,
+ * `waitedSeconds`, `windowHours`) are read as a JSON integer **or a string holding one**, because the
+ * server is free to write a 64-bit value quoted.
+ *
+ * A member that is absent or of the wrong JSON kind reads as its default rather than failing the
+ * notice: an id as `""` (a number is kept as its literal), a string as null, a count as 0,
+ * `askResolved` as false unless it is the JSON `true`, and a `starTags` entry that is not a string is
+ * skipped.
+ *
+ * 客服事件本身就是消息，所以 messages 里会看到不能当聊天画的帧——这个函数就是那道判断。
+ * 它同时查内容类型与码值：光查码值，迟早会把「账号已锁定」画进一段工单记录里。
+ */
+public fun readDeskNotification(message: ImMessage?): DeskNotification? {
+    if (message == null || message.contentType != MessageContentType.Notification) return null
+
+    val content = message.content
+    val code = content.deskLong("code") ?: return null
+    if (code < DeskNotificationCode.Queued || code > DeskNotificationCode.RatingRequested) return null
+
+    val sessionId = content.deskId("sessionId")
+    val customerId = content.deskId("customerId")
+    val skill = content.deskString("skill")
+    val agentId = content.deskString("agentId")?.takeIf { it.isNotEmpty() }
+
+    return when (code.toInt()) {
+        DeskNotificationCode.Queued -> DeskNotification.Queued(sessionId, customerId, skill, agentId)
+
+        DeskNotificationCode.Assigned -> DeskNotification.Assigned(sessionId, customerId, skill, agentId)
+
+        DeskNotificationCode.Transferred -> DeskNotification.Transferred(
+            sessionId, customerId, skill, agentId,
+            fromAgentId = content.deskId("fromAgentId"),
+        )
+
+        DeskNotificationCode.Closed -> DeskNotification.Closed(
+            sessionId, customerId, skill, agentId,
+            resolution = content.deskString("resolution"),
+            reason = content.deskString("reason"),
+        )
+
+        DeskNotificationCode.Requeued -> DeskNotification.Requeued(
+            sessionId, customerId, skill, agentId,
+            previousAgentId = content.deskId("previousAgentId"),
+        )
+
+        DeskNotificationCode.Abandoned -> DeskNotification.Abandoned(
+            sessionId, customerId, skill, agentId,
+            waitedSeconds = content.deskLong("waitedSeconds") ?: 0L,
+        )
+
+        else -> DeskNotification.RatingRequested(
+            sessionId, customerId, skill, agentId,
+            windowHours = content.deskLong("windowHours")
+                ?.takeIf { it >= Int.MIN_VALUE && it <= Int.MAX_VALUE }
+                ?.toInt() ?: 0,
+            askResolved = (content["askResolved"] as? JsonPrimitive)?.takeUnless { it.isString }?.booleanOrNull == true,
+            starTags = (content["starTags"] as? JsonArray)
+                ?.mapNotNull { tag -> (tag as? JsonPrimitive)?.takeIf { it.isString }?.content }
+                .orEmpty(),
+        )
+    }
+}
+
+/** A JSON string, or null for anything else: absent, null, a number, an object. */
+private fun JsonObject.deskString(key: String): String? =
+    (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+/** A JSON integer, or a string holding one; null for anything else. */
+private fun JsonObject.deskLong(key: String): Long? {
+    val value = this[key] as? JsonPrimitive ?: return null
+    return if (value.isString) value.content.toLongOrNull() else value.longOrNull
+}
+
+/**
+ * An id: a string as it is, a number (an older server) as its literal — which, unlike a JavaScript
+ * number, has lost no precision — and `""` when absent, null, an object or an array.
+ */
+private fun JsonObject.deskId(key: String): String {
+    val value = this[key] as? JsonPrimitive ?: return ""
+    return if (value is JsonNull) "" else value.content
+}
+
+// ------------------------------------------------------------------------------- context keys
+
+/**
+ * The keys the customer-service product recognises inside [DeskRequest.context].
+ *
+ * A convention over the context that already crosses every surface untouched, rather than four more
+ * request fields. The engine copies out what it recognises and **leaves everything else in the
+ * context** for the workbench to render, so a tenant's own keys travel without a schema change. The
+ * `desk.` prefix is the reserved namespace; [Origin] has none because it predates the product.
+ *
+ * 引擎只抄它认得的键，其余原样留在 context 里给工作台渲染——租户自己的键因此不需要改 schema 就能到达。
+ */
+public object DeskContextKeys {
+    /** → [DeskSession.channel]. */
+    public const val Channel: String = "desk.channel"
+
+    /** → [DeskSession.visitorId]. */
+    public const val VisitorId: String = "desk.visitorId"
+
+    /** → [DeskSession.deskId]. */
+    public const val DeskId: String = "desk.deskId"
+
+    /** → [DeskSession.groupId]. The engine still routes on `skill`. */
+    public const val GroupId: String = "desk.groupId"
+
+    /** [OriginBot] when a bot handed the customer over. No `desk.` prefix: it predates the product. */
+    public const val Origin: String = "origin"
+
+    /** The value [Origin] takes for a bot handoff. */
+    public const val OriginBot: String = "bot"
+
+    /** The page the visitor was on. Rendered by the workbench; nothing is copied out of it. */
+    public const val Page: String = "desk.page"
+
+    /** What an anonymous visitor typed on the widget's first screen. */
+    public const val VisitorName: String = "desk.visitorName"
+
+    /** What an anonymous visitor typed on the widget's first screen. */
+    public const val VisitorEmail: String = "desk.visitorEmail"
 }

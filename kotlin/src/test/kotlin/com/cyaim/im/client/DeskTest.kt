@@ -9,6 +9,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -19,9 +20,11 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import java.io.File
+import java.lang.reflect.Modifier
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -557,6 +560,283 @@ class DeskTest {
         val inventory = ImJson.parseToJsonElement(inventoryFile().readText()).jsonObject
         val server = inventory.getValue("deskChanges").jsonObject.values.map { it.jsonPrimitive.content }
         assertEquals(server, DeskSessionChange.All)
+    }
+
+    // ---------------------------------------------------------------- the 1801-1807 notices
+
+    /** A desk notice, as it arrives inside an ordinary message on the customer's transcript. */
+    private fun notice(
+        contentType: MessageContentType = MessageContentType.Notification,
+        content: JsonObjectBuilder.() -> Unit,
+    ): ImMessage = ImMessage(
+        conversationId = "c1",
+        seq = 4,
+        appId = "demo",
+        conversationType = ConversationType.Single,
+        messageId = 350_598_345_233_801_216L,
+        clientMsgId = "desk-1801-x",
+        senderId = "desk",
+        contentType = contentType,
+        content = buildJsonObject(content),
+        sendTime = 1_755_000_000_000L,
+        createTime = 1_755_000_000_000L,
+    )
+
+    @Test
+    fun `readDeskNotification reads all seven codes with the extras each one carries`() {
+        val queued = readDeskNotification(
+            notice { put("code", 1801); put("sessionId", "ds_1"); put("customerId", "v_1"); put("skill", "billing") },
+        )
+        // The whole value: no agentId, because none was written.
+        assertEquals(DeskNotification.Queued(sessionId = "ds_1", customerId = "v_1", skill = "billing"), queued)
+        assertEquals(DeskNotificationCode.Queued, queued?.code)
+
+        val assigned = readDeskNotification(
+            notice {
+                put("code", 1802); put("sessionId", "ds_1"); put("customerId", "v_1")
+                put("skill", JsonNull); put("agentId", "a_7")
+            },
+        )
+        assertIs<DeskNotification.Assigned>(assigned)
+        assertEquals(DeskNotificationCode.Assigned, assigned.code)
+        assertEquals("a_7", assigned.agentId)
+        // `skill` is written into a dictionary, where "omit nulls" does not reach, so the key is there
+        // and the value is null. `agentId` is only written when there is one. Two different absences.
+        // skill 是写进字典的，「省略 null」管不到它：键在、值是 null。agentId 则是有才写。两种不同的「没有」。
+        assertNull(assigned.skill)
+
+        val transferred = readDeskNotification(
+            notice {
+                put("code", 1803); put("sessionId", "ds_1"); put("customerId", "v_1")
+                put("skill", JsonNull); put("agentId", "a_8"); put("fromAgentId", "a_7")
+            },
+        )
+        assertIs<DeskNotification.Transferred>(transferred)
+        assertEquals(DeskNotificationCode.Transferred, transferred.code)
+        assertEquals("a_7", transferred.fromAgentId)
+        assertEquals("a_8", transferred.agentId)
+
+        val closed = readDeskNotification(
+            notice {
+                put("code", 1804); put("sessionId", "ds_1"); put("customerId", "v_1")
+                put("skill", JsonNull); put("reason", "timeout")
+            },
+        )
+        assertIs<DeskNotification.Closed>(closed)
+        assertEquals(DeskNotificationCode.Closed, closed.code)
+        assertEquals(DeskEndReason.Timeout, closed.reason)
+        assertNull(closed.resolution)
+
+        val requeued = readDeskNotification(
+            notice {
+                put("code", 1805); put("sessionId", "ds_1"); put("customerId", "v_1")
+                put("skill", JsonNull); put("previousAgentId", "a_7")
+            },
+        )
+        assertIs<DeskNotification.Requeued>(requeued)
+        assertEquals(DeskNotificationCode.Requeued, requeued.code)
+        assertEquals("a_7", requeued.previousAgentId)
+
+        val abandoned = readDeskNotification(
+            notice {
+                put("code", 1806); put("sessionId", "ds_1"); put("customerId", "v_1")
+                put("skill", JsonNull); put("waitedSeconds", 903)
+            },
+        )
+        assertIs<DeskNotification.Abandoned>(abandoned)
+        assertEquals(DeskNotificationCode.Abandoned, abandoned.code)
+        assertEquals(903L, abandoned.waitedSeconds)
+
+        val rating = readDeskNotification(
+            notice {
+                put("code", 1807); put("sessionId", "ds_1"); put("customerId", "v_1"); put("skill", JsonNull)
+                put("windowHours", 24); put("askResolved", true)
+                putJsonArray("starTags") { add(JsonPrimitive("slow")); add(JsonPrimitive("wrong answer")) }
+            },
+        )
+        assertIs<DeskNotification.RatingRequested>(rating)
+        assertEquals(DeskNotificationCode.RatingRequested, rating.code)
+        assertEquals(listOf("slow", "wrong answer"), rating.starTags)
+        assertTrue(rating.askResolved)
+        assertEquals(24, rating.windowHours)
+    }
+
+    @Test
+    fun `readDeskNotification keeps a typed resolution and leaves both absent when nothing was filled in`() {
+        val typed = readDeskNotification(
+            notice {
+                put("code", 1804); put("sessionId", "ds_1"); put("customerId", "v_1")
+                put("skill", "billing"); put("agentId", "a_7"); put("resolution", "refunded")
+            },
+        )
+        assertEquals(
+            DeskNotification.Closed(
+                sessionId = "ds_1", customerId = "v_1", skill = "billing", agentId = "a_7", resolution = "refunded",
+            ),
+            typed,
+        )
+
+        val bare = readDeskNotification(
+            notice { put("code", 1804); put("sessionId", "ds_1"); put("customerId", "v_1"); put("skill", JsonNull) },
+        )
+        assertEquals(DeskNotification.Closed(sessionId = "ds_1", customerId = "v_1"), bare)
+    }
+
+    @Test
+    fun `readDeskNotification coerces the counts the server may have written as strings`() {
+        // `NumberHandling.AllowReadingFromString` runs in both directions in practice: a 64-bit value
+        // can arrive quoted. The code itself is read the same way.
+        // 服务端可以把 64 位数字写成字符串；码值与计数都按同一条规则读。
+        val abandoned = readDeskNotification(
+            notice {
+                put("code", "1806"); put("sessionId", "ds_1"); put("customerId", "v_1")
+                put("skill", JsonNull); put("waitedSeconds", "903")
+            },
+        )
+        assertIs<DeskNotification.Abandoned>(abandoned)
+        assertEquals(903L, abandoned.waitedSeconds)
+
+        val rating = readDeskNotification(
+            notice { put("code", 1807); put("sessionId", "ds_1"); put("customerId", "v_1"); put("windowHours", "48") },
+        )
+        assertIs<DeskNotification.RatingRequested>(rating)
+        assertEquals(48, rating.windowHours)
+    }
+
+    @Test
+    fun `readDeskNotification reads a member of the wrong kind as its default and never throws`() {
+        // A notice is half of a customer's transcript: one odd member must not make the whole line
+        // vanish, and it must not throw out of the message handler either.
+        // 一个字段类型不对，不能让整条通知消失，更不能从消息回调里抛出去。
+        val odd = readDeskNotification(
+            notice {
+                put("code", 1803)
+                put("sessionId", 360_381_357_961_969_667L) // an older server's numeric id: kept as its literal
+                // customerId absent
+                put("skill", 7)
+                put("agentId", "")
+                putJsonObject("fromAgentId") { put("id", "a_7") }
+            },
+        )
+        assertEquals(
+            DeskNotification.Transferred(sessionId = "360381357961969667", customerId = "", skill = null, agentId = null),
+            odd,
+            "an empty agentId is no agent, an object where an id belongs is no id",
+        )
+
+        val closed = readDeskNotification(
+            notice { put("code", 1804); put("sessionId", "ds_1"); put("resolution", 3); put("reason", true); put("agentId", 9) },
+        )
+        assertEquals(DeskNotification.Closed(sessionId = "ds_1"), closed)
+
+        val requeued = readDeskNotification(notice { put("code", 1805); put("previousAgentId", JsonNull) })
+        assertEquals(DeskNotification.Requeued(), requeued)
+
+        val abandoned = readDeskNotification(notice { put("code", 1806); put("waitedSeconds", "soon") })
+        assertEquals(DeskNotification.Abandoned(), abandoned, "a count that is not a number reads as 0")
+        val abandonedObject = readDeskNotification(notice { put("code", 1806); putJsonObject("waitedSeconds") {} })
+        assertEquals(DeskNotification.Abandoned(), abandonedObject)
+
+        val rating = readDeskNotification(
+            notice {
+                put("code", 1807)
+                put("windowHours", "a day")
+                put("askResolved", "true") // a string is not the JSON true
+                putJsonArray("starTags") {
+                    add(JsonPrimitive("slow")); add(JsonPrimitive(5)); add(JsonNull)
+                    add(buildJsonObject { put("tag", "x") }); add(JsonPrimitive("rude"))
+                }
+            },
+        )
+        assertEquals(DeskNotification.RatingRequested(starTags = listOf("slow", "rude")), rating)
+
+        val tagsNotAnArray = readDeskNotification(notice { put("code", 1807); put("starTags", "slow") })
+        assertIs<DeskNotification.RatingRequested>(tagsNotAnArray)
+        assertEquals(emptyList<String>(), tagsNotAnArray.starTags)
+        assertFalse(tagsNotAnArray.askResolved)
+    }
+
+    @Test
+    fun `readDeskNotification leaves an ordinary chat message alone`() {
+        // The reason this matters: desk notices travel down the same `messages` flow as chat, so the
+        // handler asks this first and falls through. A reader keyed on `code` alone would eventually
+        // hit a tenant's own notification and draw a support line into the wrong conversation.
+        val chat = notice(MessageContentType.Text) { put("code", 1801); put("text", "hello") }
+        assertNull(readDeskNotification(chat), "the code is right but the content type is not a notification")
+        assertNull(readDeskNotification(notice { put("text", "hello") }), "a notification with no code is not a desk notice")
+        assertNull(readDeskNotification(null))
+    }
+
+    @Test
+    fun `readDeskNotification refuses the account error codes that share these seven numbers`() {
+        // 1801 is `AccountLocked` on the server's own error table and 1804 is `PasswordTooWeak`. They
+        // never appear in `message.content`, and this is the assertion that keeps the two tables apart:
+        // a code outside the band is not a desk notice however plausible it looks.
+        // 1801 在服务端错误码表里是「账号已锁定」。这条断言守住的就是「两张表不能合并」。
+        assertNull(readDeskNotification(notice { put("code", 1800); put("sessionId", "ds_1"); put("customerId", "v_1") }))
+        assertNull(readDeskNotification(notice { put("code", 1808); put("sessionId", "ds_1"); put("customerId", "v_1") }))
+        assertNull(readDeskNotification(notice { put("code", 1500); put("sessionId", "ds_1"); put("customerId", "v_1") }))
+        // And a code that is not an integer at all is no code.
+        assertNull(readDeskNotification(notice { put("code", "18o1") }))
+        assertNull(readDeskNotification(notice { put("code", true) }))
+        assertNull(readDeskNotification(notice { put("code", JsonNull) }))
+        assertNull(readDeskNotification(notice { putJsonObject("code") { put("value", 1801) } }))
+    }
+
+    @Test
+    fun `readDeskNotification reads a notice decoded off the wire, and a when over it needs no else`() {
+        val message = ImJson.decodeFromString(
+            ImMessage.serializer(),
+            """{"conversationId":"c1","seq":"4","messageId":"350598345233801216","contentType":9,""" +
+                """"senderId":"desk","content":{"code":1802,"sessionId":"ds_1","customerId":"v_1",""" +
+                """"skill":null,"agentId":"a_7"}}""",
+        )
+        val read = assertNotNull(readDeskNotification(message))
+
+        // Exhaustive without an `else`: a new subtype is a compile error here, not a silent miss.
+        val sentence = when (read) {
+            is DeskNotification.Queued -> "queued"
+            is DeskNotification.Assigned -> "with ${read.agentId}"
+            is DeskNotification.Transferred -> "transferred"
+            is DeskNotification.Closed -> "closed"
+            is DeskNotification.Requeued -> "requeued"
+            is DeskNotification.Abandoned -> "abandoned"
+            is DeskNotification.RatingRequested -> "rate"
+        }
+        assertEquals("with a_7", sentence)
+    }
+
+    /**
+     * The constants are held to TypeScript's, where they were first written down: a key spelled
+     * differently here is a context value the engine silently fails to copy out. Read with regexes
+     * from source, as `VersionGuardTest` reads the manifests.
+     */
+    @Test
+    fun `DeskContextKeys and DeskNotificationCode are TypeScript's, name for name`() {
+        val root = inventoryFile().parentFile
+        fun block(file: String, start: String): List<String> {
+            val text = File(root, file).readText()
+            val from = text.indexOf(start)
+            assertTrue(from >= 0, "$start is not in $file")
+            return text.substring(from).lineSequence().drop(1).takeWhile { !it.trimStart().startsWith("}") }.toList()
+        }
+        val tsKeys = block("typescript/src/desk.ts", "export const DeskContextKeys = {")
+            .mapNotNull { Regex("""^\s*(\w+): '([^']*)',\s*$""").find(it) }
+            .associate { it.groupValues[1] to it.groupValues[2] }
+        val tsCodes = block("typescript/src/protocol.ts", "export const DeskNotificationCode = {")
+            .mapNotNull { Regex("""^\s*(\w+): (\d+),\s*$""").find(it) }
+            .associate { it.groupValues[1] to it.groupValues[2].toInt() }
+
+        fun constants(type: Class<*>, kind: Class<*>): Map<String, Any?> =
+            type.declaredFields
+                .filter { Modifier.isStatic(it.modifiers) && Modifier.isPublic(it.modifiers) && it.type == kind }
+                .associate { it.name to it.get(null) }
+
+        assertEquals(9, tsKeys.size, "parsed TypeScript's DeskContextKeys: $tsKeys")
+        assertEquals(tsKeys, constants(DeskContextKeys::class.java, String::class.java))
+        assertEquals(7, tsCodes.size, "parsed TypeScript's DeskNotificationCode: $tsCodes")
+        assertEquals(tsCodes, constants(DeskNotificationCode::class.java, Int::class.javaPrimitiveType!!))
+        assertEquals((1801..1807).toList(), tsCodes.values.sorted())
     }
 
     private fun inventoryFile(): File {

@@ -13,6 +13,29 @@ published as `ImSdk.contractVersion`.
 First published release. The version is deliberately below 1.0.0: `1.0.0` is reserved for contract
 tiers T0 and T1 complete on **all five** SDKs. Nothing before this was ever published.
 
+### Added (2026-10-28, desk notices)
+
+- **`readDeskNotification(message)`** reads the 1801–1807 desk notices out of an ordinary
+  `ImMessage`, as TypeScript's `readDeskNotification` does, into the sealed `DeskNotification`
+  (`Queued`, `Assigned`, `Transferred`, `Closed`, `Requeued`, `Abandoned`, `RatingRequested`, each
+  with its `code`). Null unless `contentType` is `Notification` **and** `content.code` is 1801–1807
+  — the same seven numbers are account error codes elsewhere. Never throws: an id of the wrong kind
+  reads as `""` (a numeric one as its literal), a string as null, a count as 0, `askResolved` is
+  true only for the JSON `true`, a `starTags` entry that is not a string is skipped, and an empty
+  `agentId` is none. `code`, `waitedSeconds` and `windowHours` are read from a JSON integer or a
+  string holding one; unlike TypeScript's `Number(…)`, a fraction, an exponent or padded whitespace
+  is not an integer here, so such a code is no notice and such a count is 0.
+- **`DeskNotificationCode`** (1801–1807) and **`DeskContextKeys`** (the nine context keys of
+  `DeskRequest.context`), with TypeScript's names and values.
+- Tests (`DeskTest`, 8 more): every code with the extras it carries; a typed resolution and a bare
+  close; quoted counts and a quoted code; members of the wrong kind read as defaults; a chat message,
+  a notification with no code and null all answer null; 1800 / 1808 / 1500 and non-integer codes
+  refused; a notice decoded off the wire with an exhaustive `when`; and the constants held to
+  `typescript/src/desk.ts` / `protocol.ts` name for name.
+- README: the desk section now describes the reader and the keys instead of saying there is none.
+- **Not compiled or run locally**: the machine this was written on has JDK 11 and the build needs
+  17. The SDK repository's CI is the first thing to compile and run it.
+
 ### Added (2026-10-22, key directory)
 
 - **`im.keys` — the end-to-end encryption key directory** (T4): `publish`, `upload`, `remaining`,

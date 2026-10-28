@@ -241,11 +241,34 @@ assignment around it.
   member's personal entries come back.
 - `im.deskEvents` is `evt.desk` decoded into `DeskEvent` — a session frame (`change` is one of
   `DeskSessionChange`, and `session` is null on a forced release) or the agent `takeover` frame.
-  The 1801–1807 notices a customer sees arrive as ordinary messages. Treat one as a desk notice
-  only when `contentType` is `MessageContentType.Notification` **and** `content.code` is 1801–1807:
-  the same seven numbers are account error codes elsewhere on this platform, so a bare code check
-  will one day draw "your account is locked" onto a support transcript. The TypeScript SDK's
-  `readDeskNotification` documents the fields each code carries; this SDK has no reader yet.
+- **The 1801–1807 notices a customer sees arrive as ordinary messages** on `im.messages` — which
+  is what keeps a transcript readable months later — so ask `readDeskNotification(message)` first
+  and fall through to your chat rendering when it answers null. It answers a notice only when
+  `contentType` is `MessageContentType.Notification` **and** `content.code` is 1801–1807: the same
+  seven numbers are account error codes elsewhere on this platform, and a bare code check will one
+  day draw "your account is locked" onto a support transcript. The answer is the sealed
+  `DeskNotification` — `Queued`, `Assigned`, `Transferred` (`fromAgentId`), `Closed` (`resolution`,
+  `reason` `"timeout"`), `Requeued` (`previousAgentId`), `Abandoned` (`waitedSeconds`) and
+  `RatingRequested` (`windowHours`, `askResolved`, `starTags`) — so a `when` over it needs no
+  `else`. `skill` may be null on any of them and `agentId` is null until an agent is involved. It
+  never throws: a member of the wrong JSON kind reads as its default (an id `""`, a count 0), and
+  the counts and the code are read whether the server wrote them as numbers or as quoted ones.
+
+  ```kotlin
+  im.messages.collect { message ->
+      when (val notice = readDeskNotification(message)) {
+          null -> showChat(message)
+          is DeskNotification.Queued -> showLine("You are in the queue")
+          is DeskNotification.Requeued -> showLine("We are finding someone else for you")
+          is DeskNotification.RatingRequested -> showSurvey(notice.sessionId, notice.starTags, notice.askResolved)
+          else -> showLine(notice.toString())
+      }
+  }
+  ```
+- **`DeskContextKeys` names the keys the engine copies out of `DeskRequest.context`** —
+  `desk.channel`, `desk.visitorId`, `desk.deskId`, `desk.groupId`, `origin` (`"bot"` for a bot
+  handoff), and `desk.page` / `desk.visitorName` / `desk.visitorEmail` for the workbench. Every other
+  key you put in the context travels to the workbench untouched.
 
 ### Chat rooms — `im.room` (T4)
 
