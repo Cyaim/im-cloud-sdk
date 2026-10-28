@@ -316,11 +316,36 @@ with the desk account. `DeskTransferRequest` is built with `.agent(…)`, `.skil
 so exactly one target goes out; a `DeskCloseRequest` with `inviteRating` left `nil` still invites a
 rating; `DeskStatusRequest` is also the heartbeat, so send it on a timer; `DeskSession.endReason` is
 a string where `state` is an integer. `im.deskEvents()` decodes `evt.desk` into `DeskEvent`.
-The 1801–1807 notices a customer sees arrive as ordinary messages. Treat one as a desk notice only
-when `contentType` is `.notification` **and** `content["code"]` is 1801–1807: the same seven
-numbers are account error codes elsewhere on this platform, so a bare code check will one day draw
-"your account is locked" onto a support transcript. The TypeScript SDK's `readDeskNotification`
-documents the fields each code carries; this SDK has no reader yet.
+**The 1801–1807 notices a customer sees arrive as ordinary messages** on `messages()` — which is
+what keeps a transcript readable months later — so ask `DeskNotification.read(message)` first and
+fall through to your chat rendering when it answers `nil`. It answers a notice only when
+`contentType` is `.notification` **and** `content["code"]` is 1801–1807: the same seven numbers are
+account error codes elsewhere on this platform, and a bare code check will one day draw "your
+account is locked" onto a support transcript. The answer carries `sessionId`, `customerId`, `skill`
+(may be `nil` on any of them), `agentId` (`nil` until an agent is involved) and a `kind` — `.queued`,
+`.assigned`, `.transferred(fromAgentId:)`, `.closed(resolution:reason:)` (`reason` `"timeout"` when
+the inactivity timer closed it), `.requeued(previousAgentId:)`, `.abandoned(waitedSeconds:)` and
+`.ratingRequested(windowHours:askResolved:starTags:)` — so a `switch` over it needs no `default`;
+`code` is the same thing as one of `ImDeskNotificationCode`. It never throws or traps: a member of
+the wrong JSON kind reads as its default (an id `""`, a count 0), and the counts and the code are read
+whether the server wrote them as numbers or as quoted ones.
+
+```swift
+for await message in im.messages() {
+    guard let notice = DeskNotification.read(message) else { showChat(message); continue }
+    switch notice.kind {
+    case .queued: showLine("You are in the queue")
+    case .requeued: showLine("We are finding someone else for you")
+    case let .ratingRequested(_, askResolved, starTags): showSurvey(notice.sessionId, starTags, askResolved)
+    default: showLine("\(notice.code)")
+    }
+}
+```
+
+`ImDeskContextKeys` names the keys the engine copies out of `DeskRequest.context` — `desk.channel`,
+`desk.visitorId`, `desk.deskId`, `desk.groupId`, `origin` (`ImDeskContextKeys.originBot`, `"bot"`, for
+a bot handoff), and `desk.page` / `desk.visitorName` / `desk.visitorEmail` for the workbench. Every
+other key you put in the context travels to the workbench untouched.
 
 A chat room — the live-stream comment wall, the broadcast lobby — trades every delivery guarantee
 for scale, and the client has to know which ones:

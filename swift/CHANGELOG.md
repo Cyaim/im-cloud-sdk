@@ -13,6 +13,34 @@ First published release. The version is deliberately **0.9.0** rather than 1.0.0
 reserved for tiers 0 and 1 complete on all five SDKs, and until then the number would be a promise
 the family does not keep. Implements client contract **1.0**.
 
+### Added (2026-10-28, desk notices)
+
+- **`DeskNotification.read(_:)`** reads the 1801–1807 desk notices out of an ordinary `ImMessage`,
+  as TypeScript's `readDeskNotification` does, into `DeskNotification`: the members every notice has
+  (`sessionId`, `customerId`, `skill`, `agentId`) and a `kind` — `.queued`, `.assigned`,
+  `.transferred(fromAgentId:)`, `.closed(resolution:reason:)`, `.requeued(previousAgentId:)`,
+  `.abandoned(waitedSeconds:)`, `.ratingRequested(windowHours:askResolved:starTags:)` — with `code`
+  derived from it. `nil` unless `contentType` is `.notification` **and** `content["code"]` is
+  1801–1807 — the same seven numbers are account error codes elsewhere. Never throws and never traps:
+  an id of the wrong kind reads as `""` (a number or a bool as its literal), a string member as `nil`,
+  a count as 0, `askResolved` is true only for the JSON `true`, a `starTags` entry that is not a
+  string is skipped, and an empty `agentId` is none. `code`, `waitedSeconds` and `windowHours` are
+  read from a JSON number or a string holding one; a code that is not a whole number is no notice
+  (TypeScript would read `1801.5` as a 1807), a fractional count is truncated, and a count too large
+  for its type reads as 0 rather than trapping in `Int64(_:)`. TypeScript's once-per-process warning
+  about a numeric id is not carried over.
+- **`ImDeskNotificationCode`** (1801–1807) and **`ImDeskContextKeys`** (the nine context keys of
+  `DeskRequest.context`), with TypeScript's values under this SDK's `Im…` / lowerCamel naming.
+- Tests (`DeskTests`, 8 more): every code with the extras it carries; a typed resolution and a bare
+  close; quoted counts, a quoted code and whole / fractional doubles; members of the wrong kind read
+  as defaults, including a count far past `Int64`; a chat message, a notification with no code and
+  `nil` all answer `nil`; 1800 / 1808 / 1500 and non-integer codes refused; a notice decoded off the
+  wire with an exhaustive `switch`; and the constants held to `typescript/src/desk.ts` /
+  `protocol.ts` name for name.
+- README: the desk section now describes the reader and the keys instead of saying there is none.
+- **Not compiled or run locally**: the machine this was written on has no Swift toolchain. The SDK
+  repository's macOS job is the first thing to compile and run it.
+
 ### Added (2026-10-25, key directory)
 
 - **`im.keys` — the end-to-end encryption key directory**, the last seven endpoints of tier 4,

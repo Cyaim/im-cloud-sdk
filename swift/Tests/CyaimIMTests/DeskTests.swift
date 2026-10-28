@@ -600,4 +600,291 @@ struct DeskTests {
         #expect(server.count == 13, "the inventory's deskChanges parsed to \(server.count) values")
         #expect(ImDeskSessionChange.all == server)
     }
+
+    // MARK: - The 1801-1807 notices
+
+    /// A desk notice, as it arrives inside an ordinary message on the customer's transcript —
+    /// decoded through `ImMessage`'s own decoder, the way `messages()` would hand it over.
+    private static func notice(
+        _ content: [String: JSONValue],
+        contentType: MessageContentType = .notification
+    ) throws -> ImMessage {
+        try JSONValue.object([
+            "appId": "demo",
+            "conversationId": "c1",
+            "conversationType": 1,
+            "seq": 4,
+            "messageId": "350598345233801216",
+            "clientMsgId": "desk-1801-x",
+            "senderId": "desk",
+            "senderPlatform": 100,
+            "contentType": .int(Int64(contentType.rawValue)),
+            "content": .object(content),
+            "sendTime": 1_755_000_000_000,
+            "createTime": 1_755_000_000_000,
+        ]).decoded(as: ImMessage.self)
+    }
+
+    @Test("DeskNotification.read reads all seven codes with the extras each one carries")
+    func noticeReadsAllSevenCodes() throws {
+        let queued = try DeskNotification.read(
+            Self.notice(["code": 1801, "sessionId": "ds_1", "customerId": "v_1", "skill": "billing"])
+        )
+        // The whole value: no agentId, because none was written.
+        #expect(queued == DeskNotification(sessionId: "ds_1", customerId: "v_1", skill: "billing", kind: .queued))
+        #expect(queued?.code == ImDeskNotificationCode.queued)
+
+        let assigned = try DeskNotification.read(
+            Self.notice(["code": 1802, "sessionId": "ds_1", "customerId": "v_1", "skill": .null, "agentId": "a_7"])
+        )
+        #expect(assigned?.code == ImDeskNotificationCode.assigned)
+        #expect(assigned?.agentId == "a_7")
+        // `skill` is written into a dictionary, where "omit nulls" does not reach, so the key is there
+        // and the value is null. `agentId` is only written when there is one. Two different absences.
+        // skill 是写进字典的，「省略 null」管不到它：键在、值是 null。agentId 则是有才写。两种不同的「没有」。
+        #expect(assigned == DeskNotification(sessionId: "ds_1", customerId: "v_1", skill: nil, agentId: "a_7", kind: .assigned))
+
+        let transferred = try DeskNotification.read(
+            Self.notice([
+                "code": 1803, "sessionId": "ds_1", "customerId": "v_1", "skill": .null, "agentId": "a_8",
+                "fromAgentId": "a_7",
+            ])
+        )
+        #expect(transferred?.code == ImDeskNotificationCode.transferred)
+        #expect(transferred == DeskNotification(
+            sessionId: "ds_1", customerId: "v_1", agentId: "a_8", kind: .transferred(fromAgentId: "a_7")
+        ))
+
+        let closed = try DeskNotification.read(
+            Self.notice(["code": 1804, "sessionId": "ds_1", "customerId": "v_1", "skill": .null, "reason": "timeout"])
+        )
+        #expect(closed?.code == ImDeskNotificationCode.closed)
+        #expect(closed?.kind == .closed(resolution: nil, reason: ImDeskEndReason.timeout))
+
+        let requeued = try DeskNotification.read(
+            Self.notice(["code": 1805, "sessionId": "ds_1", "customerId": "v_1", "skill": .null, "previousAgentId": "a_7"])
+        )
+        #expect(requeued?.code == ImDeskNotificationCode.requeued)
+        #expect(requeued?.kind == .requeued(previousAgentId: "a_7"))
+
+        let abandoned = try DeskNotification.read(
+            Self.notice(["code": 1806, "sessionId": "ds_1", "customerId": "v_1", "skill": .null, "waitedSeconds": 903])
+        )
+        #expect(abandoned?.code == ImDeskNotificationCode.abandoned)
+        #expect(abandoned?.kind == .abandoned(waitedSeconds: 903))
+
+        let rating = try DeskNotification.read(
+            Self.notice([
+                "code": 1807, "sessionId": "ds_1", "customerId": "v_1", "skill": .null,
+                "windowHours": 24, "askResolved": true, "starTags": ["slow", "wrong answer"],
+            ])
+        )
+        #expect(rating?.code == ImDeskNotificationCode.ratingRequested)
+        #expect(rating?.kind == .ratingRequested(windowHours: 24, askResolved: true, starTags: ["slow", "wrong answer"]))
+    }
+
+    @Test("a 1804 keeps a typed resolution, and leaves both absent when nothing was filled in")
+    func noticeClosedResolution() throws {
+        let typed = try DeskNotification.read(
+            Self.notice([
+                "code": 1804, "sessionId": "ds_1", "customerId": "v_1", "skill": "billing", "agentId": "a_7",
+                "resolution": "refunded",
+            ])
+        )
+        #expect(typed == DeskNotification(
+            sessionId: "ds_1", customerId: "v_1", skill: "billing", agentId: "a_7",
+            kind: .closed(resolution: "refunded", reason: nil)
+        ))
+
+        let bare = try DeskNotification.read(
+            Self.notice(["code": 1804, "sessionId": "ds_1", "customerId": "v_1", "skill": .null])
+        )
+        #expect(bare == DeskNotification(sessionId: "ds_1", customerId: "v_1", kind: .closed(resolution: nil, reason: nil)))
+    }
+
+    @Test("DeskNotification.read coerces the counts the server may have written as strings")
+    func noticeCoercesQuotedNumbers() throws {
+        // `NumberHandling.AllowReadingFromString` runs in both directions in practice: a 64-bit value
+        // can arrive quoted. The code itself is read the same way.
+        // 服务端可以把 64 位数字写成字符串；码值与计数都按同一条规则读。
+        let abandoned = try DeskNotification.read(
+            Self.notice(["code": "1806", "sessionId": "ds_1", "customerId": "v_1", "skill": .null, "waitedSeconds": "903"])
+        )
+        #expect(abandoned?.kind == .abandoned(waitedSeconds: 903))
+
+        let rating = try DeskNotification.read(
+            Self.notice(["code": 1807, "sessionId": "ds_1", "customerId": "v_1", "windowHours": "48"])
+        )
+        #expect(rating?.kind == .ratingRequested(windowHours: 48, askResolved: false, starTags: []))
+
+        // A whole number written with a fraction part is still that number, as `Number("1806.0")` is
+        // in TypeScript; a fractional count is truncated rather than lost.
+        let wholeDouble = try DeskNotification.read(Self.notice(["code": 1806.0, "waitedSeconds": 903.7]))
+        #expect(wholeDouble?.kind == .abandoned(waitedSeconds: 903))
+        let quotedFraction = try DeskNotification.read(Self.notice(["code": "1806.0", "waitedSeconds": "903.7"]))
+        #expect(quotedFraction?.kind == .abandoned(waitedSeconds: 903))
+    }
+
+    @Test("DeskNotification.read reads a member of the wrong kind as its default and never traps")
+    func noticeWrongKindsReadAsDefaults() throws {
+        // A notice is half of a customer's transcript: one odd member must not make the whole line
+        // vanish, and it must not trap inside the message handler either.
+        // 一个字段类型不对，不能让整条通知消失，更不能在消息回调里崩掉。
+        let odd = try DeskNotification.read(
+            Self.notice([
+                "code": 1803,
+                "sessionId": .int(360_381_357_961_969_667), // an older server's numeric id: kept as its literal
+                // customerId absent
+                "skill": 7,
+                "agentId": "",
+                "fromAgentId": ["id": "a_7"],
+            ])
+        )
+        #expect(
+            odd == DeskNotification(sessionId: "360381357961969667", kind: .transferred(fromAgentId: "")),
+            "an empty agentId is no agent, a number is no skill, an object where an id belongs is no id"
+        )
+
+        let closed = try DeskNotification.read(
+            Self.notice(["code": 1804, "sessionId": "ds_1", "resolution": 3, "reason": true, "agentId": 9])
+        )
+        #expect(closed == DeskNotification(sessionId: "ds_1", kind: .closed(resolution: nil, reason: nil)))
+
+        let requeued = try DeskNotification.read(Self.notice(["code": 1805, "previousAgentId": .null, "customerId": true]))
+        #expect(requeued == DeskNotification(customerId: "true", kind: .requeued(previousAgentId: "")))
+
+        let soon = try DeskNotification.read(Self.notice(["code": 1806, "waitedSeconds": "soon"]))
+        #expect(soon == DeskNotification(kind: .abandoned(waitedSeconds: 0)), "a count that is not a number reads as 0")
+        let object = try DeskNotification.read(Self.notice(["code": 1806, "waitedSeconds": [:]]))
+        #expect(object == DeskNotification(kind: .abandoned(waitedSeconds: 0)))
+        // Far past Int64: `Int64(_:)` would trap here, and a trap in a message handler is a crash.
+        let huge = try DeskNotification.read(Self.notice(["code": 1806, "waitedSeconds": 1e30]))
+        #expect(huge == DeskNotification(kind: .abandoned(waitedSeconds: 0)))
+        let hugeQuoted = try DeskNotification.read(Self.notice(["code": 1806, "waitedSeconds": "1e30"]))
+        #expect(hugeQuoted == DeskNotification(kind: .abandoned(waitedSeconds: 0)))
+
+        let rating = try DeskNotification.read(
+            Self.notice([
+                "code": 1807,
+                "windowHours": "a day",
+                "askResolved": "true", // a string is not the JSON true
+                "starTags": ["slow", 5, .null, ["tag": "x"], "rude"],
+            ])
+        )
+        #expect(rating == DeskNotification(kind: .ratingRequested(windowHours: 0, askResolved: false, starTags: ["slow", "rude"])))
+
+        let tagsNotAnArray = try DeskNotification.read(Self.notice(["code": 1807, "starTags": "slow", "askResolved": 1]))
+        #expect(tagsNotAnArray?.kind == .ratingRequested(windowHours: 0, askResolved: false, starTags: []))
+    }
+
+    @Test("DeskNotification.read leaves an ordinary chat message alone")
+    func noticeLeavesChatAlone() throws {
+        // The reason this matters: desk notices travel down the same `messages()` stream as chat, so
+        // the handler asks this first and falls through. A reader keyed on `code` alone would
+        // eventually hit a tenant's own notification and draw a support line into the wrong
+        // conversation.
+        let chat = try Self.notice(["code": 1801, "text": "hello"], contentType: .text)
+        #expect(DeskNotification.read(chat) == nil, "the code is right but the content type is not a notification")
+        let noCode = try Self.notice(["text": "hello"])
+        #expect(DeskNotification.read(noCode) == nil, "a notification with no code is not a desk notice")
+        #expect(DeskNotification.read(nil) == nil)
+    }
+
+    @Test("DeskNotification.read refuses the account error codes that share these seven numbers")
+    func noticeRefusesCodesOutsideTheBand() throws {
+        // 1801 is `AccountLocked` on the server's own error table and 1804 is `PasswordTooWeak`. They
+        // never appear in `message.content`, and this is the assertion that keeps the two tables apart:
+        // a code outside the band is not a desk notice however plausible it looks.
+        // 1801 在服务端错误码表里是「账号已锁定」。这条断言守住的就是「两张表不能合并」。
+        for code: JSONValue in [1800, 1808, 1500] {
+            let message = try Self.notice(["code": code, "sessionId": "ds_1", "customerId": "v_1"])
+            #expect(DeskNotification.read(message) == nil, "\(code)")
+        }
+        // And a code that is not a whole number is no code.
+        for code: JSONValue in [1801.5, "1801.5", "18o1", "", true, .null, ["value": 1801], [1801]] {
+            let message = try Self.notice(["code": code])
+            #expect(DeskNotification.read(message) == nil, "\(code)")
+        }
+    }
+
+    @Test("a notice decoded off the wire reads, and a switch over its kind needs no default")
+    func noticeDecodedOffTheWire() throws {
+        let json = #"{"conversationId":"c1","seq":"4","messageId":"350598345233801216","contentType":9,"senderId":"desk","content":{"code":1802,"sessionId":"ds_1","customerId":"v_1","skill":null,"agentId":"a_7"}}"#
+        let message = try JSONDecoder().decode(ImMessage.self, from: Data(json.utf8))
+        let read = try #require(DeskNotification.read(message))
+
+        // Exhaustive without a `default`: a new case is a compile error here, not a silent miss.
+        let sentence: String
+        switch read.kind {
+        case .queued: sentence = "queued"
+        case .assigned: sentence = "with \(read.agentId ?? "?")"
+        case .transferred: sentence = "transferred"
+        case .closed: sentence = "closed"
+        case .requeued: sentence = "requeued"
+        case .abandoned: sentence = "abandoned"
+        case .ratingRequested: sentence = "rate"
+        }
+        #expect(sentence == "with a_7")
+        #expect(read.skill == nil)
+    }
+
+    /// The constants are held to TypeScript's, where they were first written down: a key spelled
+    /// differently here is a context value the engine silently fails to copy out. Read line by line
+    /// from source with regexes, as `changeValuesMatchTheInventory` reads the inventory.
+    @Test("ImDeskContextKeys and ImDeskNotificationCode are TypeScript's, name for name")
+    func deskConstantsMatchTypeScript() throws {
+        let root = try Self.inventoryURL().deletingLastPathComponent()
+
+        func block(_ file: String, _ start: String, _ pattern: String) throws -> [String: String] {
+            let text = try String(contentsOf: root.appendingPathComponent(file), encoding: .utf8)
+            let from = try #require(text.range(of: start), "\(start) is not in \(file)")
+            let expression = try NSRegularExpression(pattern: pattern)
+            var found: [String: String] = [:]
+            // `.newlines` rather than splitting on "\n": a CRLF file's "\r\n" is one Character.
+            for line in text[from.upperBound...].components(separatedBy: .newlines).dropFirst() {
+                if line.trimmingCharacters(in: .whitespaces).hasPrefix("}") { break }
+                let range = NSRange(line.startIndex ..< line.endIndex, in: line)
+                guard let match = expression.firstMatch(in: line, range: range),
+                      let name = Range(match.range(at: 1), in: line),
+                      let value = Range(match.range(at: 2), in: line)
+                else { continue }
+                found[String(line[name])] = String(line[value])
+            }
+            return found
+        }
+
+        let typeScriptKeys = try block(
+            "typescript/src/desk.ts", "export const DeskContextKeys = {", #"^\s*(\w+): '([^']*)',\s*$"#
+        )
+        let typeScriptCodes = try block(
+            "typescript/src/protocol.ts", "export const DeskNotificationCode = {", #"^\s*(\w+): (\d+),\s*$"#
+        )
+
+        let keys: [String: String] = [
+            "Channel": ImDeskContextKeys.channel,
+            "VisitorId": ImDeskContextKeys.visitorId,
+            "DeskId": ImDeskContextKeys.deskId,
+            "GroupId": ImDeskContextKeys.groupId,
+            "Origin": ImDeskContextKeys.origin,
+            "OriginBot": ImDeskContextKeys.originBot,
+            "Page": ImDeskContextKeys.page,
+            "VisitorName": ImDeskContextKeys.visitorName,
+            "VisitorEmail": ImDeskContextKeys.visitorEmail,
+        ]
+        let codes: [String: String] = [
+            "Queued": String(ImDeskNotificationCode.queued),
+            "Assigned": String(ImDeskNotificationCode.assigned),
+            "Transferred": String(ImDeskNotificationCode.transferred),
+            "Closed": String(ImDeskNotificationCode.closed),
+            "Requeued": String(ImDeskNotificationCode.requeued),
+            "Abandoned": String(ImDeskNotificationCode.abandoned),
+            "RatingRequested": String(ImDeskNotificationCode.ratingRequested),
+        ]
+
+        #expect(typeScriptKeys.count == 9, "parsed TypeScript's DeskContextKeys: \(typeScriptKeys)")
+        #expect(keys == typeScriptKeys)
+        #expect(typeScriptCodes.count == 7, "parsed TypeScript's DeskNotificationCode: \(typeScriptCodes)")
+        #expect(codes == typeScriptCodes)
+        #expect(typeScriptCodes.values.compactMap { Int($0) }.sorted() == Array(1801 ... 1807))
+    }
 }

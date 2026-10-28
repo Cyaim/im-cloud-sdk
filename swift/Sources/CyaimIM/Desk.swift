@@ -131,7 +131,8 @@ public struct DeskRequest: Encodable, Sendable, Hashable {
     public var priority: Int?
 
     /// Opaque context the agent's workbench renders. The engine copies out the keys it recognises
-    /// (`desk.channel`, `desk.visitorId`, …) and leaves everything else untouched.
+    /// (`desk.channel`, `desk.visitorId`, …; ``ImDeskContextKeys`` names them) and leaves everything
+    /// else untouched.
     public var context: [String: JSONValue]?
 
     public init(skill: String? = nil, priority: Int? = nil, context: [String: JSONValue]? = nil) {
@@ -588,4 +589,265 @@ public struct DeskEvent: Decodable, Sendable, Hashable {
         connectionId = c.imString(.connectionId)
         memberId = c.imString(.memberId)
     }
+}
+
+// MARK: - 1801–1807 notices
+
+/// The seven desk notices a customer sees in their own transcript, as `content["code"]` carries them.
+///
+/// **Not error codes**, although the same seven numbers are account error codes elsewhere on this
+/// platform — 1801 is `AccountLocked` on the server's own error table, 1804 `PasswordTooWeak` — and
+/// the two never meet: these live in `message.content`, those in a reply's `code`. That is why
+/// ``DeskNotification/read(_:)`` checks the content type as well as the range, and why these are
+/// plain integers here rather than members of ``ImErrorCode``.
+///
+/// 客服通知的七个码。同样七个数字在别处是账号错误码，所以读取时同时查内容类型。
+public enum ImDeskNotificationCode {
+    /// The customer is waiting for an agent.
+    public static let queued = 1801
+    /// An agent has taken the session.
+    public static let assigned = 1802
+    /// Handed to another agent. The handover note is **not** in this line; it is internal.
+    public static let transferred = 1803
+    public static let closed = 1804
+    /// The agent became unreachable and the session went back to the **front** of the queue. Its own
+    /// code rather than a second ``queued``, because "we are finding someone else for you" is a
+    /// different sentence from "you are in the queue".
+    public static let requeued = 1805
+    /// Nobody could take the session and the desk gave up on it.
+    public static let abandoned = 1806
+    /// Closed, and the customer is being asked to rate it. At most once per session; answer it with
+    /// `desk.rate`.
+    public static let ratingRequested = 1807
+}
+
+/// One desk notice, read out of an ordinary message by ``read(_:)``.
+///
+/// What every notice carries sits on the struct; what one code adds rides on its ``Kind``, so a
+/// `switch` over ``kind`` needs no `default` and a code added later is a compile error at every
+/// such `switch` rather than a silent miss. ``code`` says the same thing as ``kind``, as a number.
+///
+/// Two absences on the shared members, and they are different on the wire: ``skill`` is **always
+/// present as a key and may be null**, because the server writes it into a dictionary where "omit
+/// nulls" does not reach; ``agentId`` is only written when there is one, and an empty string reads
+/// as `nil` here.
+///
+/// skill 的键总在、值可能是 null；agentId 则是有才写。两种不同的「没有」。
+public struct DeskNotification: Sendable, Hashable {
+    /// What one code adds to the members every notice has.
+    public enum Kind: Sendable, Hashable {
+        /// 1801 — the customer is waiting.
+        case queued
+        /// 1802 — an agent has taken the session. ``DeskNotification/agentId`` is who.
+        case assigned
+        /// 1803 — handed to another agent. ``DeskNotification/agentId`` is the new one,
+        /// `fromAgentId` the old.
+        ///
+        /// The handover note is deliberately **not** here: it is internal, and a customer reading
+        /// "difficult, check the refund history first" in their own transcript is the failure this
+        /// separation prevents.
+        case transferred(fromAgentId: String)
+        /// 1804 — closed. `resolution` is present only when a person closed it and typed one;
+        /// `reason` `"timeout"` (``ImDeskEndReason/timeout``) marks the inactivity timer closing it
+        /// instead. Both `nil` means it was closed with nothing filled in.
+        case closed(resolution: String?, reason: String?)
+        /// 1805 — the agent became unreachable and the session went back to the **front** of the
+        /// queue. Say "we are finding someone else for you", not "you are in the queue": the
+        /// difference is the whole reason the customer is not left in silence.
+        case requeued(previousAgentId: String)
+        /// 1806 — nobody could take it and the desk gave up. `waitedSeconds` is how long they waited
+        /// for that answer.
+        case abandoned(waitedSeconds: Int64)
+        /// 1807 — closed, and the customer is being asked to rate it. Answer with `im.desk.rate`.
+        ///
+        /// At most once per session, and only when the deployment's rating window is open.
+        /// `windowHours` is how long the customer has to answer. `askResolved` says whether to show
+        /// the "was your problem solved" question — a survey that asks it when the server will not
+        /// store the answer wastes the one question a customer will answer. `starTags` are the tags
+        /// to offer alongside the stars, empty when the centre configured none.
+        case ratingRequested(windowHours: Int, askResolved: Bool, starTags: [String])
+    }
+
+    public let sessionId: String
+    public let customerId: String
+    /// The skill it was queued on, or `nil`.
+    public let skill: String?
+    /// Present once an agent is involved. Never an empty string.
+    public let agentId: String?
+    /// Which notice this is, with what that code carries.
+    public let kind: Kind
+
+    /// One of ``ImDeskNotificationCode``; fixed by ``kind``.
+    public var code: Int {
+        switch kind {
+        case .queued: return ImDeskNotificationCode.queued
+        case .assigned: return ImDeskNotificationCode.assigned
+        case .transferred: return ImDeskNotificationCode.transferred
+        case .closed: return ImDeskNotificationCode.closed
+        case .requeued: return ImDeskNotificationCode.requeued
+        case .abandoned: return ImDeskNotificationCode.abandoned
+        case .ratingRequested: return ImDeskNotificationCode.ratingRequested
+        }
+    }
+
+    public init(sessionId: String = "", customerId: String = "", skill: String? = nil, agentId: String? = nil, kind: Kind) {
+        self.sessionId = sessionId
+        self.customerId = customerId
+        self.skill = skill
+        self.agentId = agentId
+        self.kind = kind
+    }
+
+    /// Reads a desk notice out of a message, or returns `nil` when the message is not one. Never
+    /// throws and never traps.
+    ///
+    /// **Desk events are messages, not a side channel**, which is what makes a transcript explain
+    /// itself six months later: "you are in the queue", "Alice is with you now", "closed" sit in
+    /// history and in incremental sync, in the right place relative to the conversation around them.
+    /// The cost is that ``ImClient/messages()`` now carries messages you must not draw as chat, and
+    /// this is the test for them: call it first, render a notice when it answers, fall through to the
+    /// normal path when it does not.
+    ///
+    /// Two things it deliberately checks together. The content type must be
+    /// ``MessageContentType/notification`` **and** `content["code"]` must be in 1801–1807, because
+    /// the same seven numbers are account error codes elsewhere on this platform — a bare code check
+    /// would eventually draw "your account is locked" onto a support transcript. And the numbers
+    /// (`code`, `waitedSeconds`, `windowHours`) are read from a JSON number **or a string holding
+    /// one**, because the server is free to write a 64-bit value quoted.
+    ///
+    /// A member that is absent or of the wrong JSON kind reads as its default rather than failing the
+    /// notice, as TypeScript's reader does: an id as `""` (a number or a bool is kept as its
+    /// literal), a string member as `nil` (a number is **not** turned into one), a count as 0,
+    /// `askResolved` as `false` unless it is the JSON `true`, and a `starTags` entry that is not a
+    /// string is skipped. A code that is not a whole number is no notice; a fractional count is
+    /// truncated, and one too large for its type reads as 0.
+    ///
+    /// 客服事件本身就是消息，所以 messages() 里会看到不能当聊天画的消息——这个函数就是那道判断。
+    /// 它同时查内容类型与码值：光查码值，迟早会把「账号已锁定」画进一段工单记录里。
+    public static func read(_ message: ImMessage?) -> DeskNotification? {
+        guard let message, message.contentType == .notification else { return nil }
+
+        let content = message.content
+        guard let code = noticeCode(content["code"]),
+              code >= Int64(ImDeskNotificationCode.queued),
+              code <= Int64(ImDeskNotificationCode.ratingRequested)
+        else { return nil }
+
+        let kind: Kind
+        switch Int(code) {
+        case ImDeskNotificationCode.queued:
+            kind = .queued
+        case ImDeskNotificationCode.assigned:
+            kind = .assigned
+        case ImDeskNotificationCode.transferred:
+            kind = .transferred(fromAgentId: noticeId(content["fromAgentId"]))
+        case ImDeskNotificationCode.closed:
+            kind = .closed(resolution: content["resolution"]?.stringValue, reason: content["reason"]?.stringValue)
+        case ImDeskNotificationCode.requeued:
+            kind = .requeued(previousAgentId: noticeId(content["previousAgentId"]))
+        case ImDeskNotificationCode.abandoned:
+            kind = .abandoned(waitedSeconds: noticeCount(content["waitedSeconds"]) ?? 0)
+        default:
+            kind = .ratingRequested(
+                windowHours: noticeCount(content["windowHours"]).flatMap { Int(exactly: $0) } ?? 0,
+                askResolved: content["askResolved"]?.boolValue == true,
+                starTags: content["starTags"]?.arrayValue?.compactMap(\.stringValue) ?? []
+            )
+        }
+
+        let agentId = content["agentId"]?.stringValue
+        return DeskNotification(
+            sessionId: noticeId(content["sessionId"]),
+            customerId: noticeId(content["customerId"]),
+            skill: content["skill"]?.stringValue,
+            agentId: agentId?.isEmpty == false ? agentId : nil,
+            kind: kind
+        )
+    }
+}
+
+/// The code: a whole number from a JSON number or a string holding one (`"1806"`, `"1806.0"`);
+/// `nil` for a fraction, NaN, an infinity, a value out of range and every other kind.
+private func noticeCode(_ value: JSONValue?) -> Int64? {
+    switch value {
+    case let .int(number)?:
+        return number
+    case let .double(number)?:
+        return Int64(exactly: number)
+    case let .string(text)?:
+        return Int64(text) ?? Double(text).flatMap { Int64(exactly: $0) }
+    default:
+        return nil
+    }
+}
+
+/// A count: a JSON number or a string holding one, truncated toward zero; `nil` for NaN, an
+/// infinity, a value out of range and every other kind. `Int64(exactly:)` on the truncated value is
+/// what keeps an out-of-range `Double` from trapping, which `Int64(_:)` would.
+private func noticeCount(_ value: JSONValue?) -> Int64? {
+    switch value {
+    case let .int(number)?:
+        return number
+    case let .double(number)?:
+        return noticeTruncated(number)
+    case let .string(text)?:
+        return Int64(text) ?? Double(text).flatMap(noticeTruncated)
+    default:
+        return nil
+    }
+}
+
+private func noticeTruncated(_ number: Double) -> Int64? {
+    guard number.isFinite else { return nil }
+    return Int64(exactly: number.rounded(.towardZero))
+}
+
+/// An id: a string as it is, a number (an older server) or a bool as its literal, and `""` when
+/// absent, null, an object or an array. A whole `Double` is written without its `.0`, as
+/// JavaScript's `String(…)` writes it.
+private func noticeId(_ value: JSONValue?) -> String {
+    switch value {
+    case let .string(text)?:
+        return text
+    case let .int(number)?:
+        return String(number)
+    case let .double(number)?:
+        if let whole = Int64(exactly: number) { return String(whole) }
+        return String(number)
+    case let .bool(flag)?:
+        return String(flag)
+    default:
+        return ""
+    }
+}
+
+// MARK: - Context keys
+
+/// The keys the customer-service product recognises inside ``DeskRequest/context``.
+///
+/// A convention over the context that already crosses every surface untouched, rather than four more
+/// request fields. The engine copies out what it recognises and **leaves everything else in the
+/// context** for the workbench to render, so a tenant's own keys travel without a schema change. The
+/// `desk.` prefix is the reserved namespace; ``origin`` has none because it predates the product.
+///
+/// 引擎只抄它认得的键，其余原样留在 context 里给工作台渲染——租户自己的键因此不需要改 schema 就能到达。
+public enum ImDeskContextKeys {
+    /// → ``DeskSession/channel``.
+    public static let channel = "desk.channel"
+    /// → ``DeskSession/visitorId``.
+    public static let visitorId = "desk.visitorId"
+    /// → ``DeskSession/deskId``.
+    public static let deskId = "desk.deskId"
+    /// → ``DeskSession/groupId``. The engine still routes on `skill`.
+    public static let groupId = "desk.groupId"
+    /// ``originBot`` when a bot handed the customer over. No `desk.` prefix: it predates the product.
+    public static let origin = "origin"
+    /// The value ``origin`` takes for a bot handoff.
+    public static let originBot = "bot"
+    /// The page the visitor was on. Rendered by the workbench; nothing is copied out of it.
+    public static let page = "desk.page"
+    /// What an anonymous visitor typed on the widget's first screen.
+    public static let visitorName = "desk.visitorName"
+    /// What an anonymous visitor typed on the widget's first screen.
+    public static let visitorEmail = "desk.visitorEmail"
 }

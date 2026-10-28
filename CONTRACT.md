@@ -325,9 +325,9 @@ targets (`room.*`, `msg.stream*`, scheduling, folders, `msg.translate`, `keys.*`
 TypeScript, Flutter, Kotlin and Unity on 2026-10-22 and on Swift on 2026-10-25 — written, like the
 nine, with no Swift toolchain and first compiled by the macOS job — which is when the row above went
 from `9` to a tick. Two things
-remain TypeScript's alone and are worth naming rather than discovering: `readDeskNotification`
-(the 1801–1807 notice read out of an ordinary message) and `DeskContextKeys` — the other four read
-those notices from the message content and the context keys from SPEC-06 directly. Swift's nine
+were TypeScript's alone until 2026-10-28: `readDeskNotification` (the 1801–1807 notice read out of
+an ordinary message, checking the content type as well as the code) and `DeskContextKeys` — since
+then all five have both, Swift as `DeskNotification.read(_:)` and `ImDeskContextKeys`. Swift's nine
 were written on a machine with no Swift toolchain; the SDK repository's macOS job was the first thing
 to compile them (build and every test green on its first run, run 37904357569), and its recording of
 the eight desk request bodies is committed unchanged as `wire-samples/swift.json`, so the platform's

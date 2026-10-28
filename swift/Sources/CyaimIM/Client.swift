@@ -337,8 +337,9 @@ public actor ImClient {
     /// `evt.desk`, decoded: what happened to a desk session, or to this agent's workbench.
     ///
     /// Not an endpoint, so it lives here rather than on ``desk``. Frames arrive for **agents**; a
-    /// customer's half of the desk is the 1801–1807 notices in ``messages()``. A frame whose `event`
-    /// this build does not know does not decode, and is skipped rather than delivered half-built.
+    /// customer's half of the desk is the 1801–1807 notices in ``messages()``, read with
+    /// ``DeskNotification/read(_:)``. A frame whose `event` this build does not know does not decode,
+    /// and is skipped rather than delivered half-built.
     ///
     /// 坐席侧的 evt.desk。event 不认识的帧解不开，在这里被跳过，而不是半成品地交给应用。
     public nonisolated func deskEvents() -> AsyncStream<DeskEvent> {
