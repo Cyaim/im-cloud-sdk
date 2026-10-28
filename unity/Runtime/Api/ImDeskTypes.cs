@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Globalization;
 using Cyaim.Im.Json;
 
 namespace Cyaim.Im
@@ -186,7 +188,8 @@ namespace Cyaim.Im
 
         /// <summary>
         /// Opaque context the agent's workbench renders. The engine copies out the keys it
-        /// recognises (<c>desk.channel</c>, <c>desk.visitorId</c>, …) and leaves the rest untouched.
+        /// recognises (<see cref="ImDeskContextKeys"/>: <c>desk.channel</c>, <c>desk.visitorId</c>, …)
+        /// and leaves the rest untouched.
         /// </summary>
         public JsonValue Context { get; set; }
 
@@ -839,5 +842,444 @@ namespace Cyaim.Im
             ConnectionId = json["connectionId"].AsString();
             MemberId = json["memberId"].AsString();
         }
+    }
+
+    // ---------------------------------------------------------------------- 1801-1807
+
+    /// <summary>
+    /// The seven codes a desk notice carries in its content's <c>code</c>: 1801–1807.
+    /// </summary>
+    /// <remarks>
+    /// <b>The same seven numbers are account error codes elsewhere on this platform</b> — 1801 is
+    /// <c>AccountLocked</c> on the server's error table and 1804 <c>PasswordTooWeak</c>. These are
+    /// only ever read out of a <see cref="ImMessageContentType.Notification"/> message's content,
+    /// never out of an error, which is why <see cref="ImDeskNotification.Read"/> checks both.
+    /// 同样七个数字在别处是账号错误码；这里的只从通知消息的 content 里读。
+    /// </remarks>
+    public static class ImDeskNotificationCode
+    {
+        /// <summary>The customer is waiting for an agent.</summary>
+        public const int Queued = 1801;
+
+        /// <summary>An agent has taken the session.</summary>
+        public const int Assigned = 1802;
+
+        /// <summary>Handed to another agent. The handover note is <b>not</b> in this line; it is internal.</summary>
+        public const int Transferred = 1803;
+
+        /// <summary>Closed.</summary>
+        public const int Closed = 1804;
+
+        /// <summary>
+        /// The agent became unreachable and the session went back to the <b>front</b> of the queue.
+        /// Its own code rather than a second <see cref="Queued"/>, because "we are finding someone
+        /// else for you" is a different sentence from "you are in the queue".
+        /// </summary>
+        public const int Requeued = 1805;
+
+        /// <summary>Nobody could take the session and the desk gave up on it.</summary>
+        public const int Abandoned = 1806;
+
+        /// <summary>Closed, and the customer is being asked to rate it. At most once per session; answer it with <c>desk.rate</c>.</summary>
+        public const int RatingRequested = 1807;
+    }
+
+    /// <summary>
+    /// A desk notice read out of an ordinary message — one of seven sealed subclasses, told apart by
+    /// type or by <see cref="Code"/>. <see cref="Read"/> is the reader.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Desk events are messages, not a side channel</b>, which is what makes a transcript explain
+    /// itself six months later: "you are in the queue", "Alice is with you now", "closed" sit in
+    /// history and in incremental sync, in the right place relative to the conversation around them.
+    /// The cost is that <see cref="ImClient.MessageReceived"/> now delivers frames a game must not
+    /// draw as chat. Call <see cref="Read"/> first, render a notice when it answers, fall through to
+    /// the normal path when it returns null.
+    /// </para>
+    /// <para>
+    /// The members every code carries live here; the extras live on the subclass. A C#
+    /// <c>switch</c> over the subclasses is not checked for exhaustiveness, so give it a
+    /// <c>default</c> — a newer server may add a code this build does not read, and
+    /// <see cref="Read"/> returns null for it today.
+    /// 客服事件本身就是消息，所以 MessageReceived 里会看到不能当聊天画的帧——Read 就是那道判断。
+    /// </para>
+    /// </remarks>
+    public abstract class ImDeskNotification
+    {
+        internal ImDeskNotification()
+        {
+        }
+
+        /// <summary>One of <see cref="ImDeskNotificationCode"/>; fixed by the subclass.</summary>
+        public abstract int Code { get; }
+
+        /// <summary>The desk session. Empty when the notice did not carry one.</summary>
+        public string SessionId { get; internal set; }
+
+        /// <summary>The customer the session is for. Empty when the notice did not carry one.</summary>
+        public string CustomerId { get; internal set; }
+
+        /// <summary>
+        /// The skill it was queued on, or null. The server always writes the key — into a dictionary,
+        /// where "omit nulls" does not reach — so null here is a written null, not an absence.
+        /// </summary>
+        public string Skill { get; internal set; }
+
+        /// <summary>Present once an agent is involved, null before. Never an empty string.</summary>
+        public string AgentId { get; internal set; }
+
+        /// <summary>
+        /// Reads a desk notice out of a message, or returns null when the message is not one. Never
+        /// throws.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Two things it checks together: <see cref="ImMessage.ContentType"/> must be
+        /// <see cref="ImMessageContentType.Notification"/> <b>and</b> the content's <c>code</c> must
+        /// be 1801–1807, because the same seven numbers are account error codes elsewhere — a bare
+        /// <c>code</c> check would one day draw "your account is locked" onto a support transcript.
+        /// The content must be a JSON object.
+        /// </para>
+        /// <para>
+        /// A member of the wrong kind reads as its default rather than losing the whole line: an id
+        /// that is not a string reads as its literal when it is a number or a boolean and as empty
+        /// otherwise; <see cref="Skill"/>, <see cref="AgentId"/> and the closing strings are read only
+        /// from a JSON string (an empty <c>agentId</c> is no agent); a count is read from a JSON
+        /// number or a string holding one (<c>"903"</c>, <c>"9.03e2"</c>), with a fraction cut off,
+        /// and is 0 otherwise; <c>askResolved</c> is true only for the JSON <c>true</c>; a
+        /// <c>starTags</c> entry that is not a string is skipped. A <c>code</c> that is not a whole
+        /// number is no notice. Member names are matched without regard to case, as everywhere in
+        /// this SDK's <see cref="JsonValue"/>.
+        /// </para>
+        /// 同时查内容类型与码值：光查码值，迟早会把「账号已锁定」画进一段工单记录里。
+        /// </remarks>
+        public static ImDeskNotification Read(ImMessage message)
+        {
+            if (message == null || message.ContentType != ImMessageContentType.Notification)
+            {
+                return null;
+            }
+
+            var content = message.Content;
+            if (content == null || !content.IsObject)
+            {
+                return null;
+            }
+
+            long code;
+            if (!TryReadNumber(content["code"], false, out code)
+                || code < ImDeskNotificationCode.Queued
+                || code > ImDeskNotificationCode.RatingRequested)
+            {
+                return null;
+            }
+
+            ImDeskNotification notice;
+            switch ((int)code)
+            {
+                case ImDeskNotificationCode.Queued:
+                    notice = new ImDeskQueuedNotification();
+                    break;
+
+                case ImDeskNotificationCode.Assigned:
+                    notice = new ImDeskAssignedNotification();
+                    break;
+
+                case ImDeskNotificationCode.Transferred:
+                    notice = new ImDeskTransferredNotification { FromAgentId = Id(content["fromAgentId"]) };
+                    break;
+
+                case ImDeskNotificationCode.Closed:
+                    notice = new ImDeskClosedNotification
+                    {
+                        Resolution = Text(content["resolution"]),
+                        Reason = Text(content["reason"]),
+                    };
+                    break;
+
+                case ImDeskNotificationCode.Requeued:
+                    notice = new ImDeskRequeuedNotification { PreviousAgentId = Id(content["previousAgentId"]) };
+                    break;
+
+                case ImDeskNotificationCode.Abandoned:
+                    notice = new ImDeskAbandonedNotification { WaitedSeconds = Count(content["waitedSeconds"]) };
+                    break;
+
+                default:
+                    var askResolved = content["askResolved"];
+                    notice = new ImDeskRatingRequestedNotification
+                    {
+                        WindowHours = Count(content["windowHours"]),
+                        AskResolved = askResolved.Kind == JsonKind.Bool && askResolved.AsBool(),
+                        StarTags = Strings(content["starTags"]),
+                    };
+                    break;
+            }
+
+            notice.SessionId = Id(content["sessionId"]);
+            notice.CustomerId = Id(content["customerId"]);
+            notice.Skill = Text(content["skill"]);
+
+            var agentId = Text(content["agentId"]);
+            notice.AgentId = string.IsNullOrEmpty(agentId) ? null : agentId;
+
+            return notice;
+        }
+
+        // An id: a string as it is, a number or a boolean as its literal (an older server's numeric
+        // id), anything else as empty.
+        private static string Id(JsonValue value)
+        {
+            return value.AsString(string.Empty);
+        }
+
+        // A string member: a JSON string or null. Stricter than AsString, which would turn 7 into "7".
+        private static string Text(JsonValue value)
+        {
+            return value.Kind == JsonKind.String ? value.AsString() : null;
+        }
+
+        private static long Count(JsonValue value)
+        {
+            long count;
+            return TryReadNumber(value, true, out count) ? count : 0;
+        }
+
+        // The strings of an array, skipping every entry that is not one. Never null.
+        private static List<string> Strings(JsonValue value)
+        {
+            var result = new List<string>();
+            foreach (var item in value.Items)
+            {
+                if (item.Kind == JsonKind.String)
+                {
+                    result.Add(item.AsString());
+                }
+            }
+
+            return result;
+        }
+
+        // A JSON number, or a string holding one ("903", " 903 ", "9.03e2"), since the server is free
+        // to write a 64-bit value quoted. With truncate a fraction is cut off; without, a value that
+        // is not whole is refused. NaN, the infinities and anything outside a long are refused.
+        // 服务端可以把 64 位数字写成字符串；码值必须是整数，计数的小数部分截掉。
+        private static bool TryReadNumber(JsonValue value, bool truncate, out long result)
+        {
+            result = 0;
+            double real;
+
+            if (value.Kind == JsonKind.Number)
+            {
+                var integral = value.AsLong();
+                real = value.AsDouble();
+                if ((double)integral == real && real > -9.2233720368547758E18 && real < 9.2233720368547758E18)
+                {
+                    result = integral;
+                    return true;
+                }
+            }
+            else if (value.Kind == JsonKind.String)
+            {
+                var text = value.AsString();
+                long parsed;
+                if (long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed))
+                {
+                    result = parsed;
+                    return true;
+                }
+
+                if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out real))
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
+
+            if (double.IsNaN(real) || double.IsInfinity(real)
+                || real <= -9.2233720368547758E18 || real >= 9.2233720368547758E18)
+            {
+                return false;
+            }
+
+            var whole = Math.Truncate(real);
+            if (whole != real && !truncate)
+            {
+                return false;
+            }
+
+            result = (long)whole;
+            return true;
+        }
+    }
+
+    /// <summary>1801 — the customer is waiting.</summary>
+    public sealed class ImDeskQueuedNotification : ImDeskNotification
+    {
+        /// <inheritdoc/>
+        public override int Code
+        {
+            get { return ImDeskNotificationCode.Queued; }
+        }
+    }
+
+    /// <summary>1802 — an agent has taken the session. <see cref="ImDeskNotification.AgentId"/> is who.</summary>
+    public sealed class ImDeskAssignedNotification : ImDeskNotification
+    {
+        /// <inheritdoc/>
+        public override int Code
+        {
+            get { return ImDeskNotificationCode.Assigned; }
+        }
+    }
+
+    /// <summary>
+    /// 1803 — handed to another agent. <see cref="ImDeskNotification.AgentId"/> is the new one,
+    /// <see cref="FromAgentId"/> the old.
+    /// </summary>
+    /// <remarks>
+    /// The handover note is deliberately <b>not</b> here: it is internal, and a customer reading
+    /// "difficult, check the refund history first" in their own transcript is the failure this
+    /// separation prevents.
+    /// </remarks>
+    public sealed class ImDeskTransferredNotification : ImDeskNotification
+    {
+        /// <inheritdoc/>
+        public override int Code
+        {
+            get { return ImDeskNotificationCode.Transferred; }
+        }
+
+        /// <summary>The agent who handed it on. Empty when the notice did not carry one.</summary>
+        public string FromAgentId { get; internal set; }
+    }
+
+    /// <summary>1804 — closed.</summary>
+    /// <remarks>
+    /// <see cref="Resolution"/> is present only when a person closed it and typed one;
+    /// <see cref="Reason"/> <c>"timeout"</c> (<see cref="ImDeskEndReason.Timeout"/>) marks the
+    /// inactivity timer closing it instead. Both null means it was closed with nothing filled in.
+    /// </remarks>
+    public sealed class ImDeskClosedNotification : ImDeskNotification
+    {
+        /// <inheritdoc/>
+        public override int Code
+        {
+            get { return ImDeskNotificationCode.Closed; }
+        }
+
+        /// <summary>What the closing person typed, or null.</summary>
+        public string Resolution { get; internal set; }
+
+        /// <summary><c>"timeout"</c> when the inactivity timer closed it, or another value a newer server writes, or null.</summary>
+        public string Reason { get; internal set; }
+    }
+
+    /// <summary>
+    /// 1805 — the agent became unreachable and the session went back to the <b>front</b> of the queue.
+    /// </summary>
+    /// <remarks>
+    /// Its own code rather than a second 1801 so a game can say "we are finding someone else for
+    /// you", which is a different sentence from "you are in the queue" — and the difference is the
+    /// whole reason the customer is not left in silence.
+    /// </remarks>
+    public sealed class ImDeskRequeuedNotification : ImDeskNotification
+    {
+        /// <inheritdoc/>
+        public override int Code
+        {
+            get { return ImDeskNotificationCode.Requeued; }
+        }
+
+        /// <summary>The agent who became unreachable. Empty when the notice did not carry one.</summary>
+        public string PreviousAgentId { get; internal set; }
+    }
+
+    /// <summary>1806 — nobody could take it and the desk gave up.</summary>
+    public sealed class ImDeskAbandonedNotification : ImDeskNotification
+    {
+        /// <inheritdoc/>
+        public override int Code
+        {
+            get { return ImDeskNotificationCode.Abandoned; }
+        }
+
+        /// <summary>How long the customer waited for that answer, in seconds.</summary>
+        public long WaitedSeconds { get; internal set; }
+    }
+
+    /// <summary>
+    /// 1807 — closed, and the customer is being asked to rate it. Answer with
+    /// <see cref="ImDeskApi.RateAsync"/>.
+    /// </summary>
+    /// <remarks>
+    /// At most once per session, and only when the deployment's rating window is open.
+    /// <see cref="AskResolved"/> says whether to show the "was your problem solved" question — a
+    /// survey that asks it when the server will not store the answer wastes the one question a
+    /// customer will answer.
+    /// </remarks>
+    public sealed class ImDeskRatingRequestedNotification : ImDeskNotification
+    {
+        /// <inheritdoc/>
+        public override int Code
+        {
+            get { return ImDeskNotificationCode.RatingRequested; }
+        }
+
+        /// <summary>How long the customer has to answer, in hours.</summary>
+        public long WindowHours { get; internal set; }
+
+        /// <summary>Whether to ask "was your problem solved".</summary>
+        public bool AskResolved { get; internal set; }
+
+        /// <summary>The tags to offer alongside the stars. Empty when the centre configured none; never null.</summary>
+        public List<string> StarTags { get; internal set; }
+    }
+
+    // ---------------------------------------------------------------------- context keys
+
+    /// <summary>
+    /// The keys the customer-service product recognises inside <see cref="ImDeskRequest.Context"/>.
+    /// </summary>
+    /// <remarks>
+    /// A convention over the context that already crosses every surface untouched, rather than four
+    /// more request fields. The engine copies out what it recognises and <b>leaves everything else in
+    /// the context</b> for the workbench to render, so a tenant's own keys travel without a schema
+    /// change. The <c>desk.</c> prefix is the reserved namespace; <see cref="Origin"/> has none
+    /// because it predates the product.
+    /// 引擎只抄它认得的键，其余原样留在 context 里给工作台渲染——租户自己的键因此不需要改 schema 就能到达。
+    /// </remarks>
+    public static class ImDeskContextKeys
+    {
+        /// <summary>→ <see cref="ImDeskSession.Channel"/>.</summary>
+        public const string Channel = "desk.channel";
+
+        /// <summary>→ <see cref="ImDeskSession.VisitorId"/>.</summary>
+        public const string VisitorId = "desk.visitorId";
+
+        /// <summary>→ <see cref="ImDeskSession.DeskId"/>.</summary>
+        public const string DeskId = "desk.deskId";
+
+        /// <summary>→ <see cref="ImDeskSession.GroupId"/>. The engine still routes on <c>skill</c>.</summary>
+        public const string GroupId = "desk.groupId";
+
+        /// <summary><see cref="OriginBot"/> when a bot handed the customer over. No <c>desk.</c> prefix: it predates the product.</summary>
+        public const string Origin = "origin";
+
+        /// <summary>The value <see cref="Origin"/> takes for a bot handoff.</summary>
+        public const string OriginBot = "bot";
+
+        /// <summary>The page the visitor was on. Rendered by the workbench; nothing is copied out of it.</summary>
+        public const string Page = "desk.page";
+
+        /// <summary>What an anonymous visitor typed on the widget's first screen.</summary>
+        public const string VisitorName = "desk.visitorName";
+
+        /// <summary>What an anonymous visitor typed on the widget's first screen.</summary>
+        public const string VisitorEmail = "desk.visitorEmail";
     }
 }

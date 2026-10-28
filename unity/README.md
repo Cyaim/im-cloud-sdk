@@ -229,11 +229,60 @@ itself is an ordinary chat with the desk account. `ImDeskTransferRequest` is bui
 null still invites a rating; `ImDeskStatusRequest` is also the heartbeat, and takes its status as a
 constructor argument (`new ImDeskStatusRequest(ImAgentStatus.Available)`) because the default, 0, is
 `Offline` and the server accepts it; `ImDeskSession.EndReason` is a string where `State` is an integer. `im.OnDeskEvent(handler)` decodes `evt.desk` into
-`ImDeskEvent`. The 1801–1807 notices a player sees arrive as ordinary messages. Treat one as a desk
-notice only when `ContentType` is `ImMessageContentType.Notification` **and** the content's `code`
-is 1801–1807: the same seven numbers are account error codes elsewhere on this platform, so a bare
-code check will one day draw "your account is locked" onto a support transcript. The TypeScript
-SDK's `readDeskNotification` documents the fields each code carries; this SDK has no reader yet.
+`ImDeskEvent`.
+
+### Desk notices (1801–1807) and the context keys
+
+The notices a player sees — queued, assigned, transferred, closed, requeued, abandoned, "please rate
+us" — arrive as **ordinary messages** on `MessageReceived`, so they sit in history and in sync in the
+right place. Ask `ImDeskNotification.Read` first and fall through to your chat rendering when it
+answers null:
+
+```csharp
+im.MessageReceived += m =>
+{
+    var notice = ImDeskNotification.Read(m);
+    if (notice == null) { ShowChat(m); return; }
+
+    switch (notice)
+    {
+        case ImDeskQueuedNotification _:        ShowNotice("You are in the queue"); break;
+        case ImDeskAssignedNotification a:      ShowNotice(a.AgentId + " is with you now"); break;
+        case ImDeskTransferredNotification _:   ShowNotice("Handed to a colleague"); break;
+        case ImDeskClosedNotification c:        ShowNotice(c.Resolution == null ? "Closed" : "Closed: " + c.Resolution); break;
+        case ImDeskRequeuedNotification _:      ShowNotice("We are finding someone else for you"); break;
+        case ImDeskAbandonedNotification x:     ShowNotice("Nobody could take it after " + x.WaitedSeconds + "s"); break;
+        case ImDeskRatingRequestedNotification r: ShowSurvey(r.WindowHours, r.AskResolved, r.StarTags); break; // answer with im.Desk.RateAsync
+        default: ShowChat(m); break;
+    }
+};
+```
+
+Each subclass also answers its `Code` (`ImDeskNotificationCode`); C# does not check that `switch` for
+exhaustiveness, so keep the `default`. The reader answers only when `ContentType` is
+`ImMessageContentType.Notification` **and** the content's `code` is 1801–1807: the same seven numbers
+are account error codes elsewhere on this platform, so a bare code check would one day draw "your
+account is locked" onto a support transcript. It never throws, and reads as TypeScript's
+`readDeskNotification` does: a member of the wrong kind reads as its default (an id as `""`, a
+string as null, a count as 0, `AskResolved` true only for the JSON `true`, non-string `StarTags`
+skipped), an empty `agentId` is none, and `code` / `waitedSeconds` / `windowHours` may arrive quoted.
+The handover note of a transfer is internal and is never in the 1803 line.
+
+`ImDeskContextKeys` names the keys the engine recognises in `ImDeskRequest.Context` —
+`desk.channel`, `desk.visitorId`, `desk.deskId`, `desk.groupId`, `origin` (`bot` for a bot handoff),
+`desk.page`, `desk.visitorName`, `desk.visitorEmail`. It copies those out and leaves every other key
+in the context for the workbench, so your own keys travel too:
+
+```csharp
+await im.Desk.RequestAsync(new ImDeskRequest
+{
+    Skill = "billing",
+    Context = JsonValue.NewObject()
+        .Set(ImDeskContextKeys.Channel, "app")
+        .Set(ImDeskContextKeys.Page, "/orders/42")
+        .Set("orderId", "42"),
+});
+```
 
 ### Chat rooms
 

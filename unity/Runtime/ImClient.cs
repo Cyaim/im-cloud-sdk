@@ -443,8 +443,9 @@ namespace Cyaim.Im
         /// <remarks>
         /// Not an endpoint, so it lives here rather than on <see cref="Desk"/>. Frames arrive for
         /// agents; a player's half of the desk is the 1801–1807 notices in
-        /// <see cref="MessageReceived"/>. A frame whose <c>event</c> this build does not know is
-        /// dropped here rather than delivered half-built.
+        /// <see cref="MessageReceived"/>, which <see cref="ImDeskNotification.Read"/> tells apart
+        /// from chat. A frame whose <c>event</c> this build does not know is dropped here rather
+        /// than delivered half-built.
         /// 坐席侧的 evt.desk。event 不认识的帧在这里丢掉，而不是半成品地交给应用。
         /// </remarks>
         public IDisposable OnDeskEvent(Action<ImDeskEvent> handler)

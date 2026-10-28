@@ -10,6 +10,38 @@ to ask which platform.
 
 ### Added
 
+- **Desk notices (1801–1807)**: `ImDeskNotification.Read(message)` reads them out of an ordinary
+  `ImMessage`, as TypeScript's `readDeskNotification` does, into the abstract `ImDeskNotification`
+  (`SessionId`, `CustomerId`, `Skill`, `AgentId`, and `Code`) and its seven sealed subclasses —
+  `ImDeskQueuedNotification`, `…Assigned…`, `…Transferred…` with `FromAgentId`, `…Closed…` with
+  `Resolution` / `Reason`, `…Requeued…` with `PreviousAgentId`, `…Abandoned…` with `WaitedSeconds`,
+  `…RatingRequested…` with `WindowHours` / `AskResolved` / `StarTags`. Null unless `ContentType` is
+  `ImMessageContentType.Notification` **and** the content is an object whose `code` is 1801–1807 —
+  the same seven numbers are account error codes elsewhere. Never throws: an id of the wrong kind
+  reads as `""` (a number or bool as its literal), a string member as null (stricter than
+  `JsonValue.AsString`, which would turn a number into text — TypeScript does not), a count as 0,
+  `AskResolved` is true only for the JSON `true`, a `starTags` entry that is not a string is skipped
+  (stricter than `AsStringList`), and an empty `agentId` is none. `code`, `waitedSeconds` and
+  `windowHours` are read from a JSON number or a string holding one (`"903"`, `" 903 "`, `"9.03e2"`).
+  Where TypeScript keeps a fraction, this does not: a code that is not a whole number is no notice
+  (in TypeScript `1801.5` falls through to the 1807 branch), and a fractional count is cut off, since
+  both counts are `long`. Member names match without regard to case, as everywhere in `JsonValue`
+  (TypeScript's do not); a numeric id keeps every digit (TypeScript's has already lost precision).
+- **`ImDeskNotificationCode`** (1801–1807) and **`ImDeskContextKeys`** (the nine context keys of
+  `ImDeskRequest.Context`), with TypeScript's names and values. `ImClient.OnDeskEvent` and
+  `ImDeskRequest.Context` now point at them.
+- `DeskTests`, 8 more cases (23 in the class): every code with the extras it carries; a typed
+  resolution and a bare close; quoted counts, a quoted code and whole numbers in other spellings,
+  fractions cut off; members of the wrong kind read as defaults; a chat message, a notification with
+  no code, content that is not an object and null all answer null; 1800 / 1808 / 1500 and non-whole
+  codes refused; a notice decoded off the wire, read through a `switch`, and PascalCase member names;
+  and the constants held to `typescript/src/desk.ts` / `protocol.ts` name for name.
+- README: a "Desk notices (1801–1807) and the context keys" section replaces "this SDK has no reader
+  yet".
+- Run locally (Windows, no Unity): `Runtime/` compiled against the UnityEngine shim
+  (`IM.Tests.UnitySdkCompile`, 0 warnings) and the suite run by `IM.Tests.UnitySdk`, 321 passed, 0
+  failed. Not run in the Unity Editor or on a device, and the README snippets are not compiled.
+
 - **The key directory — the seven `keys.*` endpoints of T4 (end-to-end encryption)** on the new
   `im.Keys`: `PublishAsync`, `UploadAsync`, `RemainingAsync`, `ClaimAsync` (also `(userId, deviceId)`),
   `DevicesAsync`, `RevokeAsync` (also `(deviceId)`), `SafetyNumberAsync` (also `(peerUserId)`), with

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Cyaim.Im.Json;
 using NUnit.Framework;
@@ -9,7 +10,8 @@ using NUnit.Framework;
 namespace Cyaim.Im.Tests
 {
     /// <summary>
-    /// <c>desk.*</c> — the nine customer-service verbs, and the <c>evt.desk</c> frame.
+    /// <c>desk.*</c> — the nine customer-service verbs, the <c>evt.desk</c> frame, and the 1801–1807
+    /// notices read out of ordinary messages.
     /// </summary>
     /// <remarks>
     /// Every verb is asserted on the frame it puts on the wire — target and the whole body, by JSON
@@ -564,6 +566,360 @@ namespace Cyaim.Im.Tests
 
             Assert.That(server, Has.Count.EqualTo(13), "the inventory's deskChanges parsed to the wrong size");
             Assert.That(ImDeskSessionChange.All, Is.EqualTo(server));
+        }
+
+        // ------------------------------------------------------------------ 1801-1807 notices
+        //
+        // Translated from typescript/test/desk.test.ts ("the 1801-1807 notices are messages and have
+        // to be read as such"), plus this SDK's lenient decoding: quoted numbers, members of the
+        // wrong kind, member names in another case.
+        // 照 TypeScript 的测试逐条对译，外加本 SDK 的宽松解码。
+
+        /// <summary>A desk notice, as it arrives inside an ordinary message on the customer's transcript.</summary>
+        private static ImMessage Notice(JsonValue content, ImMessageContentType contentType = ImMessageContentType.Notification)
+        {
+            return ImMessage.FromJson(JsonValue.NewObject()
+                .Set("appId", "demo")
+                .Set("conversationId", "c1")
+                .Set("conversationType", 1L)
+                .Set("seq", 4L)
+                .Set("messageId", "350598345233801216")
+                .Set("clientMsgId", "desk-1801-x")
+                .Set("senderId", "desk")
+                .Set("senderPlatform", 100L)
+                .Set("contentType", (long)contentType)
+                .Set("content", content)
+                .Set("sendTime", 1755000000000L)
+                .Set("createTime", 1755000000000L));
+        }
+
+        /// <summary>The members every notice carries, with <c>skill</c> written as a null.</summary>
+        private static JsonValue NoticeContent(JsonValue code)
+        {
+            return JsonValue.NewObject()
+                .Set("code", code)
+                .Set("sessionId", "ds_1")
+                .Set("customerId", "v_1")
+                .Set("skill", JsonValue.Null);
+        }
+
+        private static JsonValue NoticeContent(long code)
+        {
+            return NoticeContent(JsonValue.Of(code));
+        }
+
+        [Test]
+        public void Notices_read_all_seven_codes_with_the_extras_each_one_carries()
+        {
+            var queued = ImDeskNotification.Read(Notice(NoticeContent(1801).Set("skill", "billing")));
+            Assert.That(queued, Is.InstanceOf<ImDeskQueuedNotification>());
+            Assert.That(queued.Code, Is.EqualTo(ImDeskNotificationCode.Queued));
+            Assert.That(queued.SessionId, Is.EqualTo("ds_1"));
+            Assert.That(queued.CustomerId, Is.EqualTo("v_1"));
+            Assert.That(queued.Skill, Is.EqualTo("billing"));
+            Assert.That(queued.AgentId, Is.Null, "agentId is only written when there is one");
+
+            var assigned = ImDeskNotification.Read(Notice(NoticeContent(1802).Set("agentId", "a_7")));
+            Assert.That(assigned, Is.InstanceOf<ImDeskAssignedNotification>());
+            Assert.That(assigned.Code, Is.EqualTo(ImDeskNotificationCode.Assigned));
+            Assert.That(assigned.AgentId, Is.EqualTo("a_7"));
+            // `skill` is written into a dictionary, where "omit nulls" does not reach, so the key is
+            // there and the value is null. `agentId` is only written when there is one.
+            // skill 是写进字典的，「省略 null」管不到它：键在、值是 null。agentId 则是有才写。
+            Assert.That(assigned.Skill, Is.Null);
+
+            var transferred = ImDeskNotification.Read(Notice(NoticeContent(1803)
+                .Set("agentId", "a_8")
+                .Set("fromAgentId", "a_7"))) as ImDeskTransferredNotification;
+            Assert.That(transferred, Is.Not.Null);
+            Assert.That(transferred.Code, Is.EqualTo(ImDeskNotificationCode.Transferred));
+            Assert.That(transferred.AgentId, Is.EqualTo("a_8"));
+            Assert.That(transferred.FromAgentId, Is.EqualTo("a_7"));
+
+            var closed = ImDeskNotification.Read(Notice(NoticeContent(1804).Set("reason", "timeout"))) as ImDeskClosedNotification;
+            Assert.That(closed, Is.Not.Null);
+            Assert.That(closed.Code, Is.EqualTo(ImDeskNotificationCode.Closed));
+            Assert.That(closed.Reason, Is.EqualTo(ImDeskEndReason.Timeout));
+            Assert.That(closed.Resolution, Is.Null);
+
+            var requeued = ImDeskNotification.Read(Notice(NoticeContent(1805).Set("previousAgentId", "a_7"))) as ImDeskRequeuedNotification;
+            Assert.That(requeued, Is.Not.Null);
+            Assert.That(requeued.Code, Is.EqualTo(ImDeskNotificationCode.Requeued));
+            Assert.That(requeued.PreviousAgentId, Is.EqualTo("a_7"));
+
+            var abandoned = ImDeskNotification.Read(Notice(NoticeContent(1806).Set("waitedSeconds", 903L))) as ImDeskAbandonedNotification;
+            Assert.That(abandoned, Is.Not.Null);
+            Assert.That(abandoned.Code, Is.EqualTo(ImDeskNotificationCode.Abandoned));
+            Assert.That(abandoned.WaitedSeconds, Is.EqualTo(903));
+
+            var rating = ImDeskNotification.Read(Notice(NoticeContent(1807)
+                .Set("windowHours", 24L)
+                .Set("askResolved", true)
+                .Set("starTags", JsonValue.ArrayOf(new[] { "slow", "wrong answer" })))) as ImDeskRatingRequestedNotification;
+            Assert.That(rating, Is.Not.Null);
+            Assert.That(rating.Code, Is.EqualTo(ImDeskNotificationCode.RatingRequested));
+            Assert.That(rating.StarTags, Is.EqualTo(new[] { "slow", "wrong answer" }));
+            Assert.That(rating.AskResolved, Is.True);
+            Assert.That(rating.WindowHours, Is.EqualTo(24));
+
+            var bareRating = ImDeskNotification.Read(Notice(NoticeContent(1807))) as ImDeskRatingRequestedNotification;
+            Assert.That(bareRating.StarTags, Is.Not.Null.And.Empty, "no tags configured reads as empty, never null");
+            Assert.That(bareRating.AskResolved, Is.False);
+            Assert.That(bareRating.WindowHours, Is.EqualTo(0));
+        }
+
+        [Test]
+        public void A_closed_notice_keeps_a_typed_resolution_and_leaves_both_null_when_nothing_was_filled_in()
+        {
+            var typed = (ImDeskClosedNotification)ImDeskNotification.Read(Notice(NoticeContent(1804)
+                .Set("agentId", "a_7")
+                .Set("resolution", "refunded")));
+            Assert.That(typed.Resolution, Is.EqualTo("refunded"));
+            Assert.That(typed.Reason, Is.Null);
+            Assert.That(typed.AgentId, Is.EqualTo("a_7"));
+
+            var bare = (ImDeskClosedNotification)ImDeskNotification.Read(Notice(NoticeContent(1804)));
+            Assert.That(bare.Resolution, Is.Null);
+            Assert.That(bare.Reason, Is.Null);
+        }
+
+        [Test]
+        public void Notices_coerce_the_counts_and_the_code_the_server_may_have_written_as_strings()
+        {
+            // `NumberHandling.AllowReadingFromString` runs in both directions in practice: a 64-bit
+            // value can arrive quoted.
+            // 服务端可以把 64 位数字写成字符串。
+            var abandoned = (ImDeskAbandonedNotification)ImDeskNotification.Read(Notice(NoticeContent(1806).Set("waitedSeconds", "903")));
+            Assert.That(abandoned.WaitedSeconds, Is.EqualTo(903));
+
+            var large = (ImDeskAbandonedNotification)ImDeskNotification.Read(Notice(NoticeContent(1806).Set("waitedSeconds", "4294967296")));
+            Assert.That(large.WaitedSeconds, Is.EqualTo(4294967296L), "a count past 32 bits is kept whole");
+
+            var rating = (ImDeskRatingRequestedNotification)ImDeskNotification.Read(Notice(NoticeContent(1807).Set("windowHours", "24")));
+            Assert.That(rating.WindowHours, Is.EqualTo(24));
+
+            foreach (var spelling in new[] { JsonValue.Of("9.03e2"), JsonValue.Of(" 903 "), JsonValue.Of(903.0), JsonValue.Of("903.7"), JsonValue.Of(903.7) })
+            {
+                var read = (ImDeskAbandonedNotification)ImDeskNotification.Read(Notice(NoticeContent(1806).Set("waitedSeconds", spelling)));
+                Assert.That(read.WaitedSeconds, Is.EqualTo(903), "waitedSeconds " + spelling.ToJson() + " (a fraction is cut off)");
+            }
+
+            foreach (var code in new[] { JsonValue.Of("1806"), JsonValue.Of(" 1806 "), JsonValue.Of("+1806"), JsonValue.Of("1.806e3"), JsonValue.Of(1806.0) })
+            {
+                Assert.That(ImDeskNotification.Read(Notice(NoticeContent(code))), Is.InstanceOf<ImDeskAbandonedNotification>(), "code " + code.ToJson());
+            }
+        }
+
+        [Test]
+        public void A_notice_member_of_the_wrong_kind_reads_as_its_default_and_never_throws()
+        {
+            // A notice is half of a customer's transcript: one odd member must not make the whole
+            // line vanish, and it must not throw out of the message handler either.
+            // 一个字段类型不对，不能让整条通知消失，更不能从消息回调里抛出去。
+            var transferred = (ImDeskTransferredNotification)ImDeskNotification.Read(Notice(JsonValue.NewObject()
+                .Set("code", 1803L)
+                .Set("sessionId", 360381357961969667L) // an older server's numeric id: kept as its literal
+                // customerId absent
+                .Set("skill", 7L)
+                .Set("agentId", "")
+                .Set("fromAgentId", JsonValue.NewObject().Set("id", "a_7"))));
+            Assert.That(transferred.SessionId, Is.EqualTo("360381357961969667"));
+            Assert.That(transferred.CustomerId, Is.EqualTo(string.Empty));
+            Assert.That(transferred.Skill, Is.Null, "a number is not a skill; AsString would have said \"7\"");
+            Assert.That(transferred.AgentId, Is.Null, "an empty agentId is no agent");
+            Assert.That(transferred.FromAgentId, Is.EqualTo(string.Empty), "an object where an id belongs is no id");
+
+            var closed = (ImDeskClosedNotification)ImDeskNotification.Read(Notice(JsonValue.NewObject()
+                .Set("code", 1804L)
+                .Set("sessionId", "ds_1")
+                .Set("resolution", 3L)
+                .Set("reason", true)
+                .Set("agentId", 9L)));
+            Assert.That(closed.SessionId, Is.EqualTo("ds_1"));
+            Assert.That(closed.Resolution, Is.Null);
+            Assert.That(closed.Reason, Is.Null);
+            Assert.That(closed.AgentId, Is.Null);
+
+            var requeued = (ImDeskRequeuedNotification)ImDeskNotification.Read(Notice(JsonValue.NewObject()
+                .Set("code", 1805L)
+                .Set("previousAgentId", JsonValue.Null)
+                .Set("customerId", JsonValue.NewArray().Add(JsonValue.Of("v_1")))));
+            Assert.That(requeued.PreviousAgentId, Is.EqualTo(string.Empty));
+            Assert.That(requeued.SessionId, Is.EqualTo(string.Empty));
+            Assert.That(requeued.CustomerId, Is.EqualTo(string.Empty), "an array where an id belongs is no id");
+            Assert.That(requeued.Skill, Is.Null);
+
+            foreach (var waited in new[] { JsonValue.Of("soon"), JsonValue.NewObject(), JsonValue.Of(true), JsonValue.Of("NaN"), JsonValue.Of("Infinity"), JsonValue.Of(""), JsonValue.Of("1e40") })
+            {
+                var abandoned = (ImDeskAbandonedNotification)ImDeskNotification.Read(Notice(JsonValue.NewObject()
+                    .Set("code", 1806L)
+                    .Set("waitedSeconds", waited)));
+                Assert.That(abandoned.WaitedSeconds, Is.EqualTo(0), "a count that is not a finite number in range (" + waited.ToJson() + ") reads as 0");
+            }
+
+            var rating = (ImDeskRatingRequestedNotification)ImDeskNotification.Read(Notice(JsonValue.NewObject()
+                .Set("code", 1807L)
+                .Set("windowHours", "a day")
+                .Set("askResolved", "true") // a string is not the JSON true
+                .Set("starTags", JsonValue.NewArray()
+                    .Add(JsonValue.Of("slow"))
+                    .Add(JsonValue.Of(5L))
+                    .Add(JsonValue.Null)
+                    .Add(JsonValue.NewObject().Set("tag", "x"))
+                    .Add(JsonValue.Of("rude")))));
+            Assert.That(rating.WindowHours, Is.EqualTo(0));
+            Assert.That(rating.AskResolved, Is.False);
+            Assert.That(rating.StarTags, Is.EqualTo(new[] { "slow", "rude" }), "AsStringList would have kept 5 as \"5\"");
+
+            var tagsNotAList = (ImDeskRatingRequestedNotification)ImDeskNotification.Read(Notice(JsonValue.NewObject()
+                .Set("code", 1807L)
+                .Set("starTags", "slow")
+                .Set("askResolved", 1L)));
+            Assert.That(tagsNotAList.StarTags, Is.Not.Null.And.Empty);
+            Assert.That(tagsNotAList.AskResolved, Is.False, "only the JSON true is true, not 1");
+        }
+
+        [Test]
+        public void Notices_leave_an_ordinary_chat_message_alone()
+        {
+            // Desk notices travel down the same MessageReceived path as chat, so the handler asks
+            // this first and falls through. A reader keyed on `code` alone would eventually hit a
+            // tenant's own notification and draw a support line into the wrong conversation.
+            var chat = Notice(NoticeContent(1801).Set("text", "hello"), ImMessageContentType.Text);
+            Assert.That(ImDeskNotification.Read(chat), Is.Null, "the code is right but the content type is not a notification");
+            Assert.That(ImDeskNotification.Read(Notice(JsonValue.NewObject().Set("text", "hello"))), Is.Null,
+                "a notification with no code is not a desk notice");
+            Assert.That(ImDeskNotification.Read(null), Is.Null);
+
+            foreach (var content in new[] { JsonValue.Null, JsonValue.Of("1801"), JsonValue.NewArray().Add(NoticeContent(1801)) })
+            {
+                Assert.That(ImDeskNotification.Read(Notice(content)), Is.Null, "content " + content.ToJson() + " is not an object");
+            }
+        }
+
+        [Test]
+        public void Notices_refuse_the_account_error_codes_that_share_these_seven_numbers()
+        {
+            // 1801 is `AccountLocked` on the server's own error table and 1804 is `PasswordTooWeak`.
+            // They never appear in `message.content`, and this is the assertion that keeps the two
+            // tables apart: a code outside the band is not a desk notice however plausible it looks.
+            // 1801 在服务端错误码表里是「账号已锁定」。这条断言守住的就是「两张表不能合并」。
+            foreach (var code in new[] { 1800L, 1808L, 1500L })
+            {
+                Assert.That(ImDeskNotification.Read(Notice(NoticeContent(code))), Is.Null, code.ToString());
+            }
+
+            // And a code that is not a whole number is no code.
+            foreach (var code in new[]
+            {
+                JsonValue.Of("18o1"), JsonValue.Of(true), JsonValue.Null, JsonValue.Of(1801.5), JsonValue.Of("1806.5"),
+                JsonValue.Of("NaN"), JsonValue.Of("Infinity"), JsonValue.Of(""),
+                JsonValue.NewObject().Set("value", 1801L), JsonValue.NewArray().Add(JsonValue.Of(1801L)),
+            })
+            {
+                Assert.That(ImDeskNotification.Read(Notice(NoticeContent(code))), Is.Null, "code " + code.ToJson());
+            }
+        }
+
+        [Test]
+        public void A_notice_decoded_off_the_wire_is_read_and_a_switch_over_it_names_every_subclass()
+        {
+            var message = ImMessage.FromJson(JsonValue.Parse(
+                "{\"conversationId\":\"c1\",\"seq\":\"4\",\"messageId\":\"350598345233801216\",\"contentType\":9,"
+                + "\"senderId\":\"desk\",\"content\":{\"code\":1802,\"sessionId\":\"ds_1\",\"customerId\":\"v_1\","
+                + "\"skill\":null,\"agentId\":\"a_7\"}}"));
+
+            string Sentence(ImDeskNotification notice)
+            {
+                // C# does not check a switch over subclasses for exhaustiveness, so it needs a default:
+                // a code a newer server adds is null from Read today, never a half-built notice.
+                switch (notice)
+                {
+                    case ImDeskQueuedNotification _: return "queued";
+                    case ImDeskAssignedNotification assigned: return "with " + assigned.AgentId;
+                    case ImDeskTransferredNotification _: return "transferred";
+                    case ImDeskClosedNotification _: return "closed";
+                    case ImDeskRequeuedNotification _: return "requeued";
+                    case ImDeskAbandonedNotification _: return "abandoned";
+                    case ImDeskRatingRequestedNotification _: return "rate";
+                    default: return "chat";
+                }
+            }
+
+            Assert.That(Sentence(ImDeskNotification.Read(message)), Is.EqualTo("with a_7"));
+
+            // Member names are matched as everywhere in this SDK's JsonValue: without regard to case.
+            // 成员名与本 SDK 的 JsonValue 一样不分大小写。
+            var pascal = ImDeskNotification.Read(ImMessage.FromJson(JsonValue.Parse(
+                "{\"contentType\":9,\"content\":{\"Code\":\"1806\",\"SessionId\":\"ds_1\",\"WaitedSeconds\":12}}")));
+            Assert.That(pascal, Is.InstanceOf<ImDeskAbandonedNotification>());
+            Assert.That(pascal.SessionId, Is.EqualTo("ds_1"));
+            Assert.That(((ImDeskAbandonedNotification)pascal).WaitedSeconds, Is.EqualTo(12));
+        }
+
+        /// <summary>
+        /// The constants are held to TypeScript's, where they were first written down: a key spelled
+        /// differently here is a context value the engine silently fails to copy out.
+        /// </summary>
+        [Test]
+        public void The_notice_codes_and_the_context_keys_are_typescripts_name_for_name()
+        {
+            Dictionary<string, string> Block(string path, string start, string linePattern)
+            {
+                var text = File.ReadAllText(Path.Combine(SdkRoot(), path));
+                var from = text.IndexOf(start, StringComparison.Ordinal);
+                Assert.That(from, Is.GreaterThanOrEqualTo(0), start + " is not in " + path);
+
+                var entries = new Dictionary<string, string>();
+                var lines = text.Substring(from).Replace("\r\n", "\n").Split('\n');
+                for (var i = 1; i < lines.Length && !lines[i].TrimStart().StartsWith("}", StringComparison.Ordinal); i++)
+                {
+                    var match = Regex.Match(lines[i], linePattern);
+                    if (match.Success)
+                    {
+                        entries[match.Groups[1].Value] = match.Groups[2].Value;
+                    }
+                }
+
+                return entries;
+            }
+
+            var keys = Block(Path.Combine("typescript", "src", "desk.ts"), "export const DeskContextKeys = {", @"^\s*(\w+): '([^']*)',\s*$");
+            Assert.That(keys, Has.Count.EqualTo(9), "parsed TypeScript's DeskContextKeys to the wrong size");
+            Assert.That(new Dictionary<string, string>
+            {
+                { "Channel", ImDeskContextKeys.Channel },
+                { "VisitorId", ImDeskContextKeys.VisitorId },
+                { "DeskId", ImDeskContextKeys.DeskId },
+                { "GroupId", ImDeskContextKeys.GroupId },
+                { "Origin", ImDeskContextKeys.Origin },
+                { "OriginBot", ImDeskContextKeys.OriginBot },
+                { "Page", ImDeskContextKeys.Page },
+                { "VisitorName", ImDeskContextKeys.VisitorName },
+                { "VisitorEmail", ImDeskContextKeys.VisitorEmail },
+            }, Is.EquivalentTo(keys));
+
+            var codes = Block(Path.Combine("typescript", "src", "protocol.ts"), "export const DeskNotificationCode = {", @"^\s*(\w+): (\d+),\s*$");
+            Assert.That(codes, Has.Count.EqualTo(7), "parsed TypeScript's DeskNotificationCode to the wrong size");
+            Assert.That(new Dictionary<string, string>
+            {
+                { "Queued", ImDeskNotificationCode.Queued.ToString() },
+                { "Assigned", ImDeskNotificationCode.Assigned.ToString() },
+                { "Transferred", ImDeskNotificationCode.Transferred.ToString() },
+                { "Closed", ImDeskNotificationCode.Closed.ToString() },
+                { "Requeued", ImDeskNotificationCode.Requeued.ToString() },
+                { "Abandoned", ImDeskNotificationCode.Abandoned.ToString() },
+                { "RatingRequested", ImDeskNotificationCode.RatingRequested.ToString() },
+            }, Is.EquivalentTo(codes));
+
+            // And each subclass answers the code its name says.
+            Assert.That(new ImDeskQueuedNotification().Code, Is.EqualTo(1801));
+            Assert.That(new ImDeskAssignedNotification().Code, Is.EqualTo(1802));
+            Assert.That(new ImDeskTransferredNotification().Code, Is.EqualTo(1803));
+            Assert.That(new ImDeskClosedNotification().Code, Is.EqualTo(1804));
+            Assert.That(new ImDeskRequeuedNotification().Code, Is.EqualTo(1805));
+            Assert.That(new ImDeskAbandonedNotification().Code, Is.EqualTo(1806));
+            Assert.That(new ImDeskRatingRequestedNotification().Code, Is.EqualTo(1807));
         }
 
         private static string SdkRoot([CallerFilePath] string here = null)
