@@ -2,7 +2,9 @@
   "$comment": "RECORDED by SDK/swift/Tests/CyaimIMTests/WireSampleRecorderTests.swift from JSONEncoder, the encoder every typed method hands its request to. Do not edit by hand; re-record with IM_RECORD_WIRE_SAMPLES=1 swift test (in SDK/swift). Judged against the server's real socket binder by IM.Server/tests/IM.Tests.Unit/SdkWireSampleBindingTests.cs in the platform repository.",
   "sdk": "swift",
   "omitted": {
-    "RecallMessageRequest.asAdmin": "MsgController.Recall forces it false for every socket call; recalling as an admin is a server-API capability, so no client type carries it"
+    "RecallMessageRequest.asAdmin": "MsgController.Recall forces it false for every socket call; recalling as an admin is a server-API capability, so no client type carries it",
+    "PublishKeysRequest.deviceId": "KeysController.Publish overwrites it with the connection's device, so a device can only publish for itself; no client type carries it",
+    "PublishKeysRequest.platform": "KeysController.Publish overwrites it with the connection's platform; no client type carries it"
   },
   "samples": [
     {"type":"ReauthRequest","via":"JSONEncoder(ReauthRequest)","body":{"token":"token-2"}},
@@ -65,6 +67,33 @@
     {"type":"DeskStatusRequest","via":"JSONEncoder(DeskStatusRequest)","body":{"maxConcurrent":4,"status":2}},
     {"type":"DeskRateRequest","via":"JSONEncoder(DeskRateRequest)","body":{"comment":"wire","resolved":false,"score":2,"sessionId":"ds_1","starTags":["slow"]}},
     {"type":"DeskSuggestRequest","via":"JSONEncoder(DeskSuggestRequest)","body":{"sessionId":"ds_1"}},
-    {"type":"DeskCannedRequest","via":"JSONEncoder(DeskCannedRequest)","body":{"ownerMemberId":"m_1","scope":"personal","skill":"billing"}}
+    {"type":"DeskCannedRequest","via":"JSONEncoder(DeskCannedRequest)","body":{"ownerMemberId":"m_1","scope":"personal","skill":"billing"}},
+    {"type":"RoomIdRequest","via":"JSONEncoder(RoomIdRequest)","body":{"roomId":"lobby"}},
+    {"type":"RoomCursorRequest","via":"JSONEncoder(RoomCursorRequest)","body":{"cursor":"members:2","limit":20,"roomId":"lobby"}},
+    {"type":"RoomSendRequest","via":"JSONEncoder(RoomSendRequest)","body":{"message":{"clientMsgId":"room-wire","content":{"count":3,"gift":"rocket"},"contentType":100,"extensions":{"combo":7},"mentionAll":true,"mentionedUserIds":["alice"],"options":{"countUnread":false,"expireIn":5000,"moderationBypass":true,"needReceipt":true,"noSelfSync":true,"offlinePush":false,"onlineOnly":true,"persistent":false,"priority":0,"pushConfig":{"badgeCount":false,"body":"a rocket","channelId":"im_rooms","payload":{"deepLink":"app://lobby"},"sound":"ding.caf","title":"Lobby"},"updateConversation":false},"sendTime":1758412790000},"roomId":"lobby"}},
+    {"type":"RoomMuteRequest","via":"JSONEncoder(RoomMuteRequest)","body":{"roomId":"lobby","untilMs":1758499200000,"userId":"bob"}},
+    {"type":"RoomKickRequest","via":"JSONEncoder(RoomKickRequest)","body":{"roomId":"lobby","userId":"bob"}},
+    {"type":"BeginStreamRequest","via":"JSONEncoder(BeginStreamRequest)","body":{"clientMsgId":"stream-wire","contentType":2,"conversationId":"s_alice_bob","extensions":{"model":"m-1"},"groupId":"team","options":{"countUnread":false,"expireIn":5000,"moderationBypass":true,"needReceipt":true,"noSelfSync":true,"offlinePush":false,"onlineOnly":true,"persistent":false,"priority":2,"pushConfig":{"badgeCount":false,"body":"is typing","channelId":"im_ai","payload":{"deepLink":"app://chat"},"sound":"ding.caf","title":"Assistant"},"updateConversation":false},"placeholder":{"avatar":"bots/a.png","name":"Assistant"},"receiverId":"bob"}},
+    {"type":"StreamAppendRequest","via":"JSONEncoder(StreamAppendRequest)","body":{"delta":"Hel","streamId":"st_1"}},
+    {"type":"CompleteStreamRequest","via":"JSONEncoder(CompleteStreamRequest)","body":{"content":{"text":"Hello"},"extensions":{"tokens":3},"streamId":"st_1"}},
+    {"type":"StreamAbortRequest","via":"JSONEncoder(StreamAbortRequest)","body":{"reason":"the model failed","streamId":"st_1"}},
+    {"type":"ScheduleRequest","via":"JSONEncoder(ScheduleRequest) every field","body":{"clientMsgId":"sched-1","content":{"objectKey":"demo/alice/a.png","width":640},"contentType":2,"conversationId":"c_wire","conversationType":2,"extensions":{"campaign":"birthday"},"groupId":"team","mentionAll":true,"mentionedUserIds":["bob","carol"],"quoteMessageId":"360381357961969667","receiverId":"bob","sendAt":1758412790000,"threadRootId":"7"}},
+    {"type":"ScheduleRequest","via":"JSONEncoder(ScheduleRequest) minimal","body":{"content":{"text":"later"},"contentType":1,"mentionAll":false,"mentionedUserIds":[],"receiverId":"bob","sendAt":1758412790000}},
+    {"type":"ScheduleIdRequest","via":"JSONEncoder(ScheduleIdRequest)","body":{"scheduleId":"sch_1"}},
+    {"type":"UpsertFolderRequest","via":"JSONEncoder(UpsertFolderRequest) every field","body":{"folderId":"f_work","name":"Work","order":2,"tags":["work","clients"],"types":[1,2],"unreadOnly":true}},
+    {"type":"UpsertFolderRequest","via":"JSONEncoder(UpsertFolderRequest) minimal","body":{"name":"Work","order":0,"tags":[],"unreadOnly":false}},
+    {"type":"FolderIdRequest","via":"JSONEncoder(FolderIdRequest)","body":{"folderId":"f_work"}},
+    {"type":"TranslateRequest","via":"JSONEncoder(TranslateRequest) every field","body":{"conversationId":"c_wire","messageIds":["360381357961969667","7"],"sourceLanguage":"en","targetLanguage":"zh-CN"}},
+    {"type":"TranslateRequest","via":"JSONEncoder(TranslateRequest) minimal","body":{"conversationId":"c_wire","messageIds":["360381357961969667"],"targetLanguage":"ja"}},
+    {"type":"PublishKeysRequest","via":"JSONEncoder(PublishKeysRequest) every field","body":{"algorithm":"x3dh-ed25519-aes256gcm-v1","identityKey":"AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=","oneTimePreKeys":[{"keyId":"otk_1","publicKey":"b3RrLTE="}],"signedPreKey":{"createdAt":1758412790000,"keyId":"spk_1","publicKey":"ISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0A=","signature":"c2lnbmF0dXJl"}}},
+    {"type":"PublishKeysRequest","via":"JSONEncoder(PublishKeysRequest) minimal","body":{"identityKey":"AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=","oneTimePreKeys":[],"signedPreKey":{"createdAt":0,"keyId":"spk_1","publicKey":"ISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0A=","signature":"c2lnbmF0dXJl"}}},
+    {"type":"UploadOneTimeKeysRequest","via":"JSONEncoder(UploadOneTimeKeysRequest)","body":{"keys":[{"keyId":"otk_2","publicKey":"b3RrLTI="}]}},
+    {"type":"RemainingKeysRequest","via":"JSONEncoder(RemainingKeysRequest) every field","body":{"deviceId":"device-2"}},
+    {"type":"RemainingKeysRequest","via":"JSONEncoder(RemainingKeysRequest) minimal","body":{}},
+    {"type":"ClaimBundleRequest","via":"JSONEncoder(ClaimBundleRequest)","body":{"deviceId":"device-9","userId":"bob"}},
+    {"type":"DeviceKeysRequest","via":"JSONEncoder(DeviceKeysRequest) every field","body":{"userId":"bob"}},
+    {"type":"DeviceKeysRequest","via":"JSONEncoder(DeviceKeysRequest) minimal","body":{}},
+    {"type":"RevokeDeviceRequest","via":"JSONEncoder(RevokeDeviceRequest)","body":{"deviceId":"device-2"}},
+    {"type":"SafetyNumberRequest","via":"JSONEncoder(SafetyNumberRequest)","body":{"peerUserId":"bob"}}
   ]
 }
