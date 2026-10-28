@@ -243,6 +243,9 @@ public struct StreamEvent: Sendable, Hashable {
     public let senderId: String
 
     /// 0 for the opening frame, 1… for pieces, one past the last piece for the terminal frame.
+    ///
+    /// The server writes a 32-bit integer. A decoded frame whose index is not one — not an integer,
+    /// or outside that range — reads as 0, as a frame with no index does.
     public let index: Int
 
     /// ``StreamPhase/delta`` only.
@@ -310,7 +313,11 @@ public struct StreamEvent: Sendable, Hashable {
             streamId: streamId,
             conversationId: frame["conversationId"]?.stringValue ?? "",
             senderId: frame["senderId"]?.stringValue ?? "",
-            index: StreamEvent.integer(frame["index"]).flatMap { Int(exactly: $0) } ?? 0,
+            // A C# int on the server. Out of that range it is not an index the server wrote, and is
+            // read as absent rather than kept for the assembler's arithmetic to overflow on; Kotlin's
+            // toInt() makes 0 of Long.MIN_VALUE and -1 of Long.MAX_VALUE, which assemble the same way.
+            // 服务端写的是 32 位 int；超出这个范围的不是服务端写的 index，按缺省读成 0，不留给拼装去溢出。
+            index: StreamEvent.integer(frame["index"]).flatMap { Int32(exactly: $0) }.map { Int($0) } ?? 0,
             delta: frame["delta"]?.stringValue,
             done: frame["done"]?.boolValue ?? false,
             // The server writes the id as a string (it passes 2^53); an older one wrote a number.
@@ -488,8 +495,10 @@ public struct StreamAssembler: Sendable {
             stream.pieces[event.index] = event.delta ?? ""
             stream.newest = max(stream.newest, event.index)
             while true {
-                let nextIndex = stream.joined + 1
-                guard let next = stream.pieces.removeValue(forKey: nextIndex) else { break }
+                // joined grows one piece at a time and cannot reach Int.max; checked all the same,
+                // since a trap here would take the host app down with it.
+                let (nextIndex, overflow) = stream.joined.addingReportingOverflow(1)
+                guard !overflow, let next = stream.pieces.removeValue(forKey: nextIndex) else { break }
                 stream.text += next
                 stream.joined = nextIndex
             }
@@ -498,8 +507,13 @@ public struct StreamAssembler: Sendable {
             live.removeValue(forKey: event.streamId)
             order.removeAll { $0 == event.streamId }
             remember(event.streamId)
-            // The terminal index is one past the last piece, so it says how many there were.
-            stream.newest = max(stream.newest, event.index - 1)
+            // The terminal index is one past the last piece, so it says how many there were. One at 0
+            // or below says none, and is not subtracted from: `Int.min - 1` traps, and a public
+            // StreamEvent can carry any Int.
+            // 终止帧的 index 是最后一片的下一个；≤ 0 表示没有分片，不做减法（Int.min - 1 会陷入）。
+            if event.index > 0 {
+                stream.newest = max(stream.newest, event.index - 1)
+            }
             let status: StreamStatus = event.phase == .completed ? .completed : .aborted
             return StreamAssembler.snapshot(stream, status, event)
         }

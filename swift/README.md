@@ -507,8 +507,8 @@ let fingerprint = try await im.keys.safetyNumber("bob") // "12345 67890 …" —
 
 - **`keys.claim` consumes.** Each claim hands out one one-time prekey and deletes it (first in,
   first out), so `remaining` drops by one. It is **not idempotent: never retry it after a lost
-  reply as if it were, and never prefetch** — the SDK never reissues it on its own, whatever the
-  code. When the pool is empty the claim still succeeds, with `oneTimePreKey` `nil`. Claiming your
+  reply as if it were, and never prefetch** — the SDK never reissues it, beyond the one renewal on
+  `1101 TokenExpired` that every call gets (a call refused for its token did not run). When the pool is empty the claim still succeeds, with `oneTimePreKey` `nil`. Claiming your
   own device is allowed and drains your own pool.
 - **`keys.publish` replaces and keeps the pool.** Identity key, signed prekey and algorithm are
   replaced; the one-time pool is kept and the new keys appended — unless the identity key changed,

@@ -120,7 +120,7 @@ struct KeysTests {
                     channel.reply(to: request, data: .null)
                 }
             default:
-                // publish, upload and revoke acknowledge the way the server does: no payload.
+                // publish and upload acknowledge the way the server does: no payload.
                 channel.reply(to: request, data: .null)
             }
         })

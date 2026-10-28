@@ -504,6 +504,68 @@ struct StreamTests {
         #expect(StreamEvent.fromData(nil) == nil)
     }
 
+    @Test("an index outside the server's 32-bit range reads as 0, as an absent one does, and cannot trap the assembler")
+    func outOfRangeIndexReadsAsAbsent() throws {
+        // Int64.min is the frame that trapped: as a terminal index it made the assembler compute
+        // Int.min - 1 and took the host app down. Kotlin's toInt() reads it as 0 and Int64.max as -1,
+        // both of which assemble as an index of 0 does: an opening, or a terminal frame that says
+        // nothing about lost pieces; a non-integer reads as 0 there too. Just past the 32-bit edges
+        // Kotlin's truncation lands on Int.MIN_VALUE / Int.MAX_VALUE instead — no server writes
+        // either, and Swift reads them as 0 like every other index the server could not have written.
+        func frame(index: JSONValue, done: Bool) -> JSONValue {
+            var members: [String: JSONValue] = [
+                "streamId": .string("st_9f2c"),
+                "conversationId": .string("s_alice_bob"),
+                "senderId": .string("alice"),
+                "index": index,
+                "done": .bool(done),
+            ]
+            if done {
+                members["messageId"] = .string(String(Self.bigId))
+                members["seq"] = .int(5)
+            } else {
+                members["delta"] = .string("x")
+            }
+            return .object(members)
+        }
+
+        let outOfRange: [JSONValue] = [
+            .int(Int64.min),
+            .int(Int64.max),
+            .int(Int64(Int32.max) + 1),
+            .int(Int64(Int32.min) - 1),
+            .string(String(Int64.min)),
+            .string("99999999999999999999"),
+            .double(Double(Int64.min)),
+        ]
+        for raw in outOfRange {
+            let piece = try Self.event(frame(index: raw, done: false))
+            #expect(piece.index == 0, "\(raw)")
+            #expect(piece.phase == .begin, "a piece with no readable index is an opening, as on Kotlin: \(raw)")
+
+            let end = try Self.event(frame(index: raw, done: true))
+            #expect(end.index == 0, "\(raw)")
+            #expect(end.phase == .completed, "\(raw)")
+
+            var assembler = StreamAssembler()
+            try Self.feed(&assembler, Self.beginFrame(), Self.deltaFrame(1, "a"))
+            let doneResult = assembler.accept(end)
+            let done = try #require(doneResult, "\(raw)")
+            #expect(done.status == .completed, "\(raw)")
+            #expect(done.text == "a", "\(raw)")
+            #expect(done.intact, "the terminal index says nothing was lost: \(raw)")
+            #expect(done.messageId == Self.bigId, "\(raw)")
+        }
+
+        // The edges of the range are still indices.
+        let highest = try Self.event(frame(index: .int(Int64(Int32.max)), done: false))
+        #expect(highest.index == Int(Int32.max))
+        #expect(highest.phase == .delta)
+        let lowest = try Self.event(frame(index: .string(String(Int32.min)), done: false))
+        #expect(lowest.index == Int(Int32.min))
+        #expect(lowest.phase == .begin)
+    }
+
     @Test("evt.stream frames come out of streamEvents() and never reach messages() or a cursor")
     func streamFramesStayOutOfMessagesAndCursors() async throws {
         let store = RecordingCursorStore()
@@ -674,6 +736,50 @@ struct StreamTests {
 
         #expect(done.status == .aborted)
         #expect(!done.intact)
+    }
+
+    @Test("no index a StreamEvent can carry traps the assembler, Int.min and Int.max included")
+    func extremeIndicesNeverTrap() throws {
+        // StreamEvent's initialiser is public, so an app can hand the assembler any Int. A trap here
+        // ends the test process, which is how this test fails.
+        func extreme(_ index: Int, done: Bool = false, messageId: Int64? = nil, streamId: String = "st_9f2c") -> StreamEvent {
+            StreamEvent(
+                streamId: streamId,
+                conversationId: "s_alice_bob",
+                senderId: "alice",
+                index: index,
+                delta: done ? nil : "x",
+                done: done,
+                messageId: messageId
+            )
+        }
+
+        // The terminal frame that trapped: at Int.min it says no pieces, and Int.min - 1 is never computed.
+        var assembler = StreamAssembler()
+        try Self.feed(&assembler, Self.beginFrame(), Self.deltaFrame(1, "a"))
+        let openingAgain = assembler.accept(extreme(Int.min))
+        #expect(openingAgain == nil, "at or below 0 it is an opening, and this stream is already open")
+        let endResult = assembler.accept(extreme(Int.min, done: true, messageId: Self.bigId))
+        let end = try #require(endResult)
+        #expect(end.status == .completed)
+        #expect(end.text == "a")
+        #expect(end.intact, "a terminal index at or below 0 says nothing was lost")
+        #expect(end.messageId == Self.bigId)
+
+        // At the other end: a piece at Int.max waits past the hole like any piece ahead of a missing
+        // one, and a terminal frame at Int.max says pieces were lost.
+        var far = StreamAssembler()
+        try Self.feed(&far, Self.beginFrame("st_far"), Self.deltaFrame(1, "a", streamId: "st_far"))
+        let heldResult = far.accept(extreme(Int.max, streamId: "st_far"))
+        let held = try #require(heldResult)
+        #expect(held.text == "a", "the text stops at the hole")
+        #expect(!held.intact)
+        let stoppedResult = far.accept(extreme(Int.max, done: true, streamId: "st_far"))
+        let stopped = try #require(stoppedResult)
+        #expect(stopped.status == .aborted, "done without a message id")
+        #expect(stopped.text == "a")
+        #expect(!stopped.intact)
+        #expect(far.active.isEmpty)
     }
 
     @Test("a mid-stream join is accepted and marked not intact")

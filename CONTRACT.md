@@ -35,24 +35,25 @@ SDK's published sources (`sdk/typescript/src`, `sdk/kotlin/src/main`, `sdk/swift
 |---|---|---|---|
 | `sdk/typescript` | **53 / 53** | 107 (100.0%) | T3 (0) + T4 (0) |
 | `sdk/kotlin` | **53 / 53** | 107 (100.0%) | T3 (0) + T4 (0) |
-| `sdk/swift` | **53 / 53** | 82 (76.6%) | T3 (0) + T4 (25) |
+| `sdk/swift` | **53 / 53** | 107 (100.0%) | T3 (0) + T4 (0) |
 | `sdk/flutter` | **53 / 53** | 107 (100.0%) | T3 (0) + T4 (0) |
 | `sdk/unity` | **53 / 53** | 107 (100.0%) | T3 (0) + T4 (0) |
 
 Every row adds up to 107 — what is typed, plus what is left. The nine above T0–T3 on every row are
 the `desk.*` family, typed for 客服云 — in TypeScript since 2026-09-07, and on the other four since
-2026-10-09, which is when the five rows became one row again. Since 2026-10-22 four rows carry twenty-five
-more: the `room.*` family (seven), message streaming (`msg.streamBegin` / `streamAppend` /
+2026-10-09, which is when the five rows became one row again. The other twenty-five are T4 too:
+the `room.*` family (seven), message streaming (`msg.streamBegin` / `streamAppend` /
 `streamComplete` / `streamAbort`, four), scheduled messages (`msg.schedule` / `msg.scheduled` /
 `msg.cancelScheduled`, three), conversation folders (`conv.folders` / `conv.upsertFolder` /
 `conv.deleteFolder`, three), `msg.translate`, and the `keys.*` family (`keys.publish` / `upload` /
 `remaining` / `claim` / `devices` / `revoke` / `safetyNumber`, seven), the end-to-end encryption key
-directory, typed in TypeScript, Kotlin, Dart and Unity. Those four rows now type all 107; nothing on them is
-left to `invoke()`. Swift's row still reads 82
-because no Swift toolchain was available to build and record any of them; until they are typed there, §3's
-"all five" column counts none of them, since that column is the intersection. All twenty-five are T4 work, which is why the
-first column still reads 53 on all five; §3 explains why one family typed everywhere does not make
-T4 partly done.
+directory — typed in TypeScript, Kotlin, Dart and Unity since 2026-10-22, and in Swift since
+2026-10-25, which made the five rows one row again: every SDK types all 107, and nothing on any of
+them is left to `invoke()`. Swift's twenty-five, like its T3 and its `desk.*`, were written on a
+machine with no Swift toolchain; the SDK repository's macOS job is the first thing that compiled
+them (build and all 223 tests green at `8404a93`, run 40141031080), and for Swift "typed" means that
+job is green (§3). All twenty-five are T4 work, which is why the first column still reads 53 on all
+five.
 
 **T3 has been typed on all five since 2026-09-21**, which is why it reads `0` under *remaining* on
 every row and why the middle column moved by exactly twenty everywhere. The first column keeps its
@@ -64,11 +65,12 @@ produce, and it is the one worth asserting in CI: five SDKs that each type a *di
 score the same on this table and still fail every customer who ships on two platforms.
 `ContractInventoryParityTests` now asserts it, along with every number in the table above.
 
-Since 2026-09-21 only **T4 is deliberately untyped** — not missing; T3 is typed on all five. A
-customer can call all 107 endpoints today;
-25 of them without types on the weakest SDK (Swift, at 82) and none on the other four, which type all 107 — against payload shapes they must read out of the server's C# source. Say
-that plainly in a sales conversation — it is a real cost, and it is one the buyer discovers in
-their first sprint if you do not.
+Since 2026-10-25 **every tier is typed on all five** — T4 was the last, deliberately left until
+customers asked, and closed on Swift that day. A customer can call all 107 endpoints today;
+0 of them without types on the weakest SDK — none reaches for `invoke()` and a payload shape read
+out of the server's C# source. Say that plainly in a sales conversation, and say the other half
+with it: the next endpoint the server grows starts untyped everywhere, and this number is the one
+that will say so.
 
 > **How this table was wrong until 2026-09-14 — which is worth more than the corrected numbers.**
 > It read `49 / 49` and `of 107 total`: the 2026-08-23 measurement, left untouched while the server
@@ -235,7 +237,7 @@ choosing against the weakest one.
 | **T1** | 1:1 chat MVP | 18 | **18 ✅** | The smallest set that ships a two-person chat app a customer would launch. |
 | **T2** | Social graph and groups | 32 | **32 ✅** | What turns a chat into a messenger: contacts, blocking, groups, presence, reporting. |
 | **T3** | Competitive parity | 20 | **20 ✅** | Not needed to ship, needed to win: the rows a buyer ticks against 融云 / 环信 / 网易云信. |
-| **T4** | Specialist verticals | 34 | 9 | Service desk, E2EE, live rooms, AI streaming, scheduling, folders. The nine are `desk.*`. |
+| **T4** | Specialist verticals | 34 | **34 ✅** | Service desk, E2EE, live rooms, AI streaming, scheduling, folders. Typed on all five since 2026-10-25. |
 
 **T0–T2 are complete on all five, and have been since 2026-08-28** — 51 targets each that day, when
 the two newest, `moderation.report` and `push.clicked`, were typed; **53 since 2026-08-29**, when
@@ -318,10 +320,11 @@ removing seven published endpoints did not force a MAJOR bump, and when that sto
 **`desk.*` is typed on all five as of 2026-10-09** — TypeScript first, on 2026-09-07, and Kotlin,
 Swift, Flutter and Unity together on 2026-10-09, each with the nine verbs, every payload type they
 reference, the `evt.desk` frame decoded, and its change values asserted against `deskChanges`
-(§4.5). That makes the family done by §3.1's definition and the tier still not: the other 25 T4
-targets are typed on TypeScript, Flutter, Kotlin and Unity as of 2026-10-22 (`room.*`, `msg.stream*`,
-scheduling, folders, `msg.translate`, `keys.*`) but not yet on Swift, which is why the row above reads
-`9` rather than a tick. Two things
+(§4.5). That made the family done by §3.1's definition and the tier still not: the other 25 T4
+targets (`room.*`, `msg.stream*`, scheduling, folders, `msg.translate`, `keys.*`) were typed on
+TypeScript, Flutter, Kotlin and Unity on 2026-10-22 and on Swift on 2026-10-25 — written, like the
+nine, with no Swift toolchain and first compiled by the macOS job — which is when the row above went
+from `9` to a tick. Two things
 remain TypeScript's alone and are worth naming rather than discovering: `readDeskNotification`
 (the 1801–1807 notice read out of an ordinary message) and `DeskContextKeys` — the other four read
 those notices from the message content and the context keys from SPEC-06 directly. Swift's nine
@@ -330,7 +333,7 @@ to compile them (build and every test green on its first run, run 37904357569), 
 the eight desk request bodies is committed unchanged as `wire-samples/swift.json`, so the platform's
 `SdkWireSampleBindingTests` judges all five SDKs' desk bodies — the temporary exemption it carried for
 Swift in between is empty again.
-desk.* 自 2026-10-09 起五端都已类型化：这一族按 §3.1 算做完了，T4 这一层仍没有——其余 25 条五端都没做。
+desk.* 自 2026-10-09 起五端都已类型化；其余 25 条 2026-10-22 在四端、2026-10-25 在 Swift 类型化，T4 这一层自此五端做完。
 
 What follows is the paragraph as it stood while TypeScript was the only one, kept because its
 argument — type a family whole or not at all — is the one the other four then followed.

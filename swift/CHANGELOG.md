@@ -26,7 +26,8 @@ the family does not keep. Implements client contract **1.0**.
   both from the connection. `remaining` and `devices` default to the connected device / the caller's
   own (an empty body); `remaining` answers a bare `Int`, `devices` a plain array, `safetyNumber` a
   bare `String`. `claim` consumes a one-time prekey, is documented as non-idempotent and is never
-  reissued by the SDK; an empty pool decodes as `oneTimePreKey == nil`. No `e2ee.enabled` gate and no
+  reissued by the SDK beyond the one renewal on `1101 TokenExpired` that every call gets (a call
+  refused for its token did not run); an empty pool decodes as `oneTimePreKey == nil`. No `e2ee.enabled` gate and no
   events, as the server has none. With this every endpoint of the contract (107) is typed here.
 - Tests (`KeysTests`): every call's whole frame on both overloads, nested `signedPreKey` /
   `oneTimePreKeys[]` / `keys[]` names exact; replies with every field set held to `payloadTypes`;
@@ -85,11 +86,16 @@ the family does not keep. Implements client contract **1.0**.
   `.completed` / `.aborted`; the message id read as a string or a number; read by hand, never
   throws). `StreamAssembler` and `streamEvents().assemble()` join the pieces by index — duplicates
   ignored, the text stopping at a missing piece, a hole or a mid-stream join marked not `intact` and
-  never repaired, nothing reopening one of the last 256 finished streams.
+  never repaired, nothing reopening one of the last 256 finished streams. An index outside the
+  server's 32-bit range reads as 0, as an absent one does (Kotlin's `toInt()` makes 0 and -1 of
+  `Long.MIN_VALUE` and `Long.MAX_VALUE`, which assemble the same way), and the assembler does no
+  arithmetic that can trap on any `Int` a `StreamEvent` carries — a malformed frame cannot crash
+  the host app.
 - Tests: every call's whole frame, replies with every field set held to `payloadTypes`, each phase,
   the assembly in every order the server produces, the terminal frame before and after the stored
-  message, the pieces proven to stay out of `messages()`, cursors and `msg.sync`, and the stored
-  message still repaired when it skips a seq.
+  message, the pieces proven to stay out of `messages()`, cursors and `msg.sync`, the stored
+  message still repaired when it skips a seq, and indices out of the server's range or at `Int.min`
+  / `Int.max` decoded and assembled without a trap.
 - Written without a Swift toolchain: the macOS job is the first thing that compiles it, and
   `wire-samples/swift.json` has to be re-recorded from that job's artifact (four stream request
   bodies) before it goes green.
