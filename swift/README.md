@@ -322,7 +322,7 @@ fall through to your chat rendering when it answers `nil`. It answers a notice o
 `contentType` is `.notification` **and** `content["code"]` is 1801–1807: the same seven numbers are
 account error codes elsewhere on this platform, and a bare code check will one day draw "your
 account is locked" onto a support transcript. The answer carries `sessionId`, `customerId`, `skill`
-(may be `nil` on any of them), `agentId` (`nil` until an agent is involved) and a `kind` — `.queued`,
+(`nil` when the session has none), `agentId` (`nil` until an agent is involved) and a `kind` — `.queued`,
 `.assigned`, `.transferred(fromAgentId:)`, `.closed(resolution:reason:)` (`reason` `"timeout"` when
 the inactivity timer closed it), `.requeued(previousAgentId:)`, `.abandoned(waitedSeconds:)` and
 `.ratingRequested(windowHours:askResolved:starTags:)` — so a `switch` over it needs no `default`;
