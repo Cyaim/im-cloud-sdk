@@ -16,6 +16,7 @@ library;
 
 import 'api.dart' show ImDeskApi;
 import 'json.dart';
+import 'protocol.dart' show ImErrorCode, ImMessage, ImMessageContentType;
 import 'requests.dart';
 
 // ---------------------------------------------------------------------------- enumerations
@@ -188,7 +189,8 @@ class ImDeskRequest implements ImRequestBody {
   final int? priority;
 
   /// Opaque context the agent's workbench renders. The engine copies out the keys it recognises
-  /// (`desk.channel`, `desk.visitorId`, …) and leaves everything else untouched.
+  /// (`desk.channel`, `desk.visitorId`, …; [ImDeskContextKeys] names them) and leaves everything
+  /// else untouched.
   final Map<String, Object?>? context;
 
   @override
@@ -758,4 +760,385 @@ class ImDeskEvent {
 
   /// `desk.agent` — the console member behind the agent.
   final String? memberId;
+}
+
+// ---------------------------------------------------------------------------- 1801-1807
+
+/// The seven desk notices a customer sees in their own transcript, as `content['code']` carries
+/// them.
+///
+/// **Not error codes**, although the same seven numbers are account error codes elsewhere on this
+/// platform — 1801 is "account locked" on the server's own error table, 1804 "password too weak".
+/// The two never meet, because these live in `message.content` and those in a reply's `code`; they
+/// are two tables and have to stay two tables, which is why [readDeskNotification] checks the content
+/// type as well as the range, and why these live here rather than on [ImErrorCode].
+///
+/// 同样的七个数字在别处是账号面的错误码。两者从不出现在同一个位置，所以读取时同时查内容类型。
+abstract final class ImDeskNotificationCode {
+  /// The customer is waiting for an agent.
+  static const int queued = 1801;
+
+  /// An agent has taken the session.
+  static const int assigned = 1802;
+
+  /// Handed to another agent. The handover note is **not** in this line; it is internal.
+  static const int transferred = 1803;
+
+  static const int closed = 1804;
+
+  /// The agent became unreachable and the session went back to the **front** of the queue. Its own
+  /// code rather than a second [queued], because "we are finding someone else for you" is a
+  /// different sentence from "you are in the queue".
+  static const int requeued = 1805;
+
+  /// Nobody could take the session and the desk gave up on it.
+  static const int abandoned = 1806;
+
+  /// Closed, and the customer is being asked to rate it. At most once per session; answer it with
+  /// `im.desk.rate`.
+  static const int ratingRequested = 1807;
+}
+
+/// One desk notice, read out of a message by [readDeskNotification]. A sealed class, so a `switch`
+/// over the seven subtypes needs no default branch — and [code] says the same thing as the subtype,
+/// for a caller that keys on the number.
+///
+/// Two absences on the shared members, and they are different on the wire: [skill] is **always
+/// present as a key and may be null**, because the server writes it into a dictionary where "omit
+/// nulls" does not reach; [agentId] is only written when there is one, and an empty string reads as
+/// null here.
+///
+/// skill 的键总在、值可能是 null；agentId 则是有才写。两种不同的「没有」。
+sealed class ImDeskNotification {
+  const ImDeskNotification({
+    this.sessionId = '',
+    this.customerId = '',
+    this.skill,
+    this.agentId,
+  });
+
+  /// One of [ImDeskNotificationCode]; fixed by the subtype.
+  int get code;
+
+  final String sessionId;
+  final String customerId;
+
+  /// The skill it was queued on, or null.
+  final String? skill;
+
+  /// Present once an agent is involved. Never an empty string.
+  final String? agentId;
+}
+
+/// 1801 — the customer is waiting.
+class ImDeskQueuedNotification extends ImDeskNotification {
+  const ImDeskQueuedNotification({
+    super.sessionId,
+    super.customerId,
+    super.skill,
+    super.agentId,
+  });
+
+  @override
+  int get code => ImDeskNotificationCode.queued;
+}
+
+/// 1802 — an agent has taken the session. [agentId] is who.
+class ImDeskAssignedNotification extends ImDeskNotification {
+  const ImDeskAssignedNotification({
+    super.sessionId,
+    super.customerId,
+    super.skill,
+    super.agentId,
+  });
+
+  @override
+  int get code => ImDeskNotificationCode.assigned;
+}
+
+/// 1803 — handed to another agent. [agentId] is the new one, [fromAgentId] the old.
+///
+/// The handover note is deliberately **not** here: it is internal, and a customer reading
+/// "difficult, check the refund history first" in their own transcript is the failure this
+/// separation prevents.
+class ImDeskTransferredNotification extends ImDeskNotification {
+  const ImDeskTransferredNotification({
+    super.sessionId,
+    super.customerId,
+    super.skill,
+    super.agentId,
+    this.fromAgentId = '',
+  });
+
+  @override
+  int get code => ImDeskNotificationCode.transferred;
+
+  final String fromAgentId;
+}
+
+/// 1804 — closed.
+///
+/// [resolution] is present only when a person closed it and typed one; [reason] `'timeout'`
+/// ([ImDeskEndReason.timeout]) marks the inactivity timer closing it instead. Both null means it was
+/// closed with nothing filled in.
+class ImDeskClosedNotification extends ImDeskNotification {
+  const ImDeskClosedNotification({
+    super.sessionId,
+    super.customerId,
+    super.skill,
+    super.agentId,
+    this.resolution,
+    this.reason,
+  });
+
+  @override
+  int get code => ImDeskNotificationCode.closed;
+
+  final String? resolution;
+  final String? reason;
+}
+
+/// 1805 — the agent became unreachable and the session went back to the **front** of the queue.
+///
+/// Say "we are finding someone else for you", not "you are in the queue": the difference is the
+/// whole reason the customer is not left in silence.
+class ImDeskRequeuedNotification extends ImDeskNotification {
+  const ImDeskRequeuedNotification({
+    super.sessionId,
+    super.customerId,
+    super.skill,
+    super.agentId,
+    this.previousAgentId = '',
+  });
+
+  @override
+  int get code => ImDeskNotificationCode.requeued;
+
+  final String previousAgentId;
+}
+
+/// 1806 — nobody could take it and the desk gave up. [waitedSeconds] is how long they waited for
+/// that answer.
+class ImDeskAbandonedNotification extends ImDeskNotification {
+  const ImDeskAbandonedNotification({
+    super.sessionId,
+    super.customerId,
+    super.skill,
+    super.agentId,
+    this.waitedSeconds = 0,
+  });
+
+  @override
+  int get code => ImDeskNotificationCode.abandoned;
+
+  final int waitedSeconds;
+}
+
+/// 1807 — closed, and the customer is being asked to rate it. Answer with `im.desk.rate`
+/// ([ImDeskRateRequest]).
+///
+/// At most once per session, and only when the deployment's rating window is open. [askResolved]
+/// says whether to show the "was your problem solved" question — a survey that asks it when the
+/// server will not store the answer wastes the one question a customer will answer.
+class ImDeskRatingRequestedNotification extends ImDeskNotification {
+  const ImDeskRatingRequestedNotification({
+    super.sessionId,
+    super.customerId,
+    super.skill,
+    super.agentId,
+    this.windowHours = 0,
+    this.askResolved = false,
+    this.starTags = const <String>[],
+  });
+
+  @override
+  int get code => ImDeskNotificationCode.ratingRequested;
+
+  /// How long the customer has to answer.
+  final int windowHours;
+  final bool askResolved;
+
+  /// The tags to offer alongside the stars. Empty when the centre configured none.
+  final List<String> starTags;
+}
+
+/// Reads a desk notice out of a message, or returns null when the message is not one. Never throws.
+///
+/// **Desk events are messages, not a side channel**, which is what makes a transcript explain itself
+/// six months later: "you are in the queue", "Alice is with you now", "closed" sit in history and in
+/// incremental sync, in the right place relative to the conversation around them. The cost is that
+/// `ImClient.messages` now carries frames you must not draw as chat, and this is the test for them:
+/// call it first, render a notice when it answers, fall through to the normal path when it does not.
+///
+/// Two things it deliberately checks together. The content type must be
+/// [ImMessageContentType.notification] **and** `content['code']` must be in 1801–1807, because the
+/// same seven numbers are account error codes elsewhere on this platform — a bare code check would
+/// eventually draw "your account is locked" onto a support transcript. And the numbers (`code`,
+/// `waitedSeconds`, `windowHours`) are read from a JSON number **or a string holding one**, because
+/// the server is free to write a 64-bit value quoted.
+///
+/// A member that is absent or of the wrong JSON kind reads as its default rather than failing the
+/// notice, as TypeScript's reader does: an id as `''` (a number or a bool is kept as its literal), a
+/// string member as null (a number is **not** turned into one here), a count as 0, `askResolved` as
+/// false unless it is the JSON `true`, and a `starTags` entry that is not a string is skipped. A
+/// code that is not a whole number is no notice; a fractional count is truncated.
+///
+/// 客服事件本身就是消息，所以 messages 里会看到不能当聊天画的帧——这个函数就是那道判断。
+/// 它同时查内容类型与码值：光查码值，迟早会把「账号已锁定」画进一段工单记录里。
+ImDeskNotification? readDeskNotification(ImMessage? message) {
+  if (message == null || message.contentType != ImMessageContentType.notification) return null;
+
+  final Map<String, dynamic> content = message.content;
+
+  final num? code = _deskNumber(content['code']);
+  if (code == null || code != code.truncate()) return null;
+  if (code < ImDeskNotificationCode.queued || code > ImDeskNotificationCode.ratingRequested) {
+    return null;
+  }
+
+  final String sessionId = _deskId(content['sessionId']);
+  final String customerId = _deskId(content['customerId']);
+  final String? skill = _deskString(content['skill']);
+  final String? agentId = switch (_deskString(content['agentId'])) {
+    final String id when id.isNotEmpty => id,
+    _ => null,
+  };
+
+  switch (code.truncate()) {
+    case ImDeskNotificationCode.queued:
+      return ImDeskQueuedNotification(
+        sessionId: sessionId,
+        customerId: customerId,
+        skill: skill,
+        agentId: agentId,
+      );
+
+    case ImDeskNotificationCode.assigned:
+      return ImDeskAssignedNotification(
+        sessionId: sessionId,
+        customerId: customerId,
+        skill: skill,
+        agentId: agentId,
+      );
+
+    case ImDeskNotificationCode.transferred:
+      return ImDeskTransferredNotification(
+        sessionId: sessionId,
+        customerId: customerId,
+        skill: skill,
+        agentId: agentId,
+        fromAgentId: _deskId(content['fromAgentId']),
+      );
+
+    case ImDeskNotificationCode.closed:
+      return ImDeskClosedNotification(
+        sessionId: sessionId,
+        customerId: customerId,
+        skill: skill,
+        agentId: agentId,
+        resolution: _deskString(content['resolution']),
+        reason: _deskString(content['reason']),
+      );
+
+    case ImDeskNotificationCode.requeued:
+      return ImDeskRequeuedNotification(
+        sessionId: sessionId,
+        customerId: customerId,
+        skill: skill,
+        agentId: agentId,
+        previousAgentId: _deskId(content['previousAgentId']),
+      );
+
+    case ImDeskNotificationCode.abandoned:
+      return ImDeskAbandonedNotification(
+        sessionId: sessionId,
+        customerId: customerId,
+        skill: skill,
+        agentId: agentId,
+        waitedSeconds: _deskNumber(content['waitedSeconds'])?.truncate() ?? 0,
+      );
+
+    default:
+      final Object? starTags = content['starTags'];
+      return ImDeskRatingRequestedNotification(
+        sessionId: sessionId,
+        customerId: customerId,
+        skill: skill,
+        agentId: agentId,
+        windowHours: _deskNumber(content['windowHours'])?.truncate() ?? 0,
+        askResolved: content['askResolved'] == true,
+        starTags: starTags is List
+            ? <String>[
+                for (final Object? tag in starTags)
+                  if (tag is String) tag,
+              ]
+            : const <String>[],
+      );
+  }
+}
+
+/// A JSON string, or null for anything else: absent, null, a number, a bool, an object.
+///
+/// Stricter than `imString`, which turns a number into its text: TypeScript's reader keeps a
+/// string member only when it is a string, and so does this one.
+String? _deskString(Object? value) => value is String ? value : null;
+
+/// A finite number, from a JSON number or a string holding one (`'903'`, `'1e3'`); null for anything
+/// else, and for NaN and the infinities — which is what keeps the `truncate()` calls above from
+/// throwing. A quoted 64-bit integer parses exactly on the VM.
+num? _deskNumber(Object? value) {
+  final num? number = switch (value) {
+    final num n => n,
+    final String text => num.tryParse(text),
+    _ => null,
+  };
+  return number != null && number.isFinite ? number : null;
+}
+
+/// An id: a string as it is, a number (an older server) or a bool as its literal, and `''` when
+/// absent, null, an object or an array.
+String _deskId(Object? value) => switch (value) {
+      final String text => text,
+      final num number => number.toString(),
+      final bool flag => flag.toString(),
+      _ => '',
+    };
+
+// ---------------------------------------------------------------------------- context keys
+
+/// The keys the customer-service product recognises inside [ImDeskRequest.context].
+///
+/// A convention over the context that already crosses every surface untouched, rather than four more
+/// request fields. The engine copies out what it recognises and **leaves everything else in the
+/// context** for the workbench to render, so a tenant's own keys travel without a schema change. The
+/// `desk.` prefix is the reserved namespace; [origin] has none because it predates the product.
+///
+/// 引擎只抄它认得的键，其余原样留在 context 里给工作台渲染——租户自己的键因此不需要改 schema 就能到达。
+abstract final class ImDeskContextKeys {
+  /// → [ImDeskSession.channel].
+  static const String channel = 'desk.channel';
+
+  /// → [ImDeskSession.visitorId].
+  static const String visitorId = 'desk.visitorId';
+
+  /// → [ImDeskSession.deskId].
+  static const String deskId = 'desk.deskId';
+
+  /// → [ImDeskSession.groupId]. The engine still routes on `skill`.
+  static const String groupId = 'desk.groupId';
+
+  /// [originBot] when a bot handed the customer over. No `desk.` prefix: it predates the product.
+  static const String origin = 'origin';
+
+  /// The value [origin] takes for a bot handoff.
+  static const String originBot = 'bot';
+
+  /// The page the visitor was on. Rendered by the workbench; nothing is copied out of it.
+  static const String page = 'desk.page';
+
+  /// What an anonymous visitor typed on the widget's first screen.
+  static const String visitorName = 'desk.visitorName';
+
+  /// What an anonymous visitor typed on the widget's first screen.
+  static const String visitorEmail = 'desk.visitorEmail';
 }

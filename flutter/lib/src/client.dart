@@ -248,7 +248,8 @@ class ImClient {
   /// `evt.desk`, decoded: what happened to a desk session, or to this agent's workbench.
   ///
   /// Not an endpoint, so it lives here rather than on [desk]. Frames arrive for **agents**; a
-  /// customer's half of the desk is the 1801–1807 notices in [messages]. A frame whose `event` this
+  /// customer's half of the desk is the 1801–1807 notices in [messages], which
+  /// [readDeskNotification] tells apart from chat. A frame whose `event` this
   /// build does not know is dropped here rather than delivered half-built.
   ///
   /// 坐席侧的 evt.desk。event 不认识的帧在这里丢掉，而不是半成品地交给应用。

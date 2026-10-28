@@ -9,6 +9,36 @@ First published release. It is deliberately **not** `1.0.0` — `1.0.0` is reser
 tiers T0 and T1 complete on all five platforms with §5 and §6 implemented everywhere. The previous
 `1.0.0` in this manifest had never been published and was a promise the SDK did not keep.
 
+### Added (2026-10-28, desk notices)
+
+- **`readDeskNotification(message)`** reads the 1801–1807 desk notices out of an ordinary
+  `ImMessage`, as TypeScript's `readDeskNotification` does, into the sealed `ImDeskNotification`
+  (`ImDeskQueuedNotification`, `…Assigned…`, `…Transferred…` with `fromAgentId`, `…Closed…` with
+  `resolution` / `reason`, `…Requeued…` with `previousAgentId`, `…Abandoned…` with `waitedSeconds`,
+  `…RatingRequested…` with `windowHours` / `askResolved` / `starTags`; each with its `code`). Null
+  unless `contentType` is `ImMessageContentType.notification` **and** `content['code']` is 1801–1807
+  — the same seven numbers are account error codes elsewhere. Never throws: an id of the wrong kind
+  reads as `''` (a number or bool as its literal), a string member as null (stricter than the
+  package's `imString`, which would turn a number into text — TypeScript does not), a count as 0,
+  `askResolved` is true only for the JSON `true`, a `starTags` entry that is not a string is skipped,
+  and an empty `agentId` is none. `code`, `waitedSeconds` and `windowHours` are read from a JSON
+  number or a string holding one (`num.tryParse`, so `'903'` and `'1.805e3'` both read). Where
+  TypeScript keeps a fraction, this does not: a code that is not a whole number is no notice (in
+  TypeScript `1801.5` falls through to the 1807 branch), and a fractional count is truncated, since
+  the fields are `int`.
+- **`ImDeskNotificationCode`** (1801–1807) and **`ImDeskContextKeys`** (the nine context keys of
+  `ImDeskRequest.context`), with TypeScript's values under lowerCamel names.
+- `test/desk_test.dart`, 8 more cases (22 in the file): every code with the extras it carries; a typed
+  resolution and a bare close; quoted counts, a quoted code and whole numbers in other spellings;
+  members of the wrong kind read as defaults; a chat message, a notification with no code and null
+  all answer null; 1800 / 1808 / 1500 and non-whole codes refused; a notice decoded off the wire with
+  an exhaustive `switch`; and the constants held to `typescript/src/desk.ts` / `protocol.ts` name for
+  name.
+- README: a "Desk notices (1801–1807) and the context keys" section replaces "this SDK has no reader
+  yet", with the README's two snippets checked by `dart analyze`; the Testing count is now 212.
+- Run locally (Dart 3.10.2, Windows): `dart test` 212 passed, `dart analyze` no issues. Not run on the
+  web compiler.
+
 ### Added (2026-10-22)
 
 - **Key directory (T4)**: `im.keys.publish` / `upload` / `remaining` / `claim` / `devices` / `revoke` /

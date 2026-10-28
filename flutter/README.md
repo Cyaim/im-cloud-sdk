@@ -257,12 +257,54 @@ with the desk account. `ImDeskTransferRequest` has only the `.agent`, `.skill` a
 constructors, so exactly one target goes out; an `ImDeskCloseRequest` with `inviteRating` left null
 still invites a rating; `ImDeskStatusRequest` is also the heartbeat, so send it on a timer;
 `ImDeskSession.endReason` is a string where `state` is an integer. `im.deskEvents` decodes
-`evt.desk` into `ImDeskEvent`. The 1801–1807 notices a customer sees arrive as ordinary messages.
-Treat one as a desk notice only when `contentType` is `ImMessageContentType.notification` **and**
-`content['code']` is 1801–1807: the same seven numbers are account error codes elsewhere on this
-platform, so a bare code check will one day draw "your account is locked" onto a support
-transcript. The TypeScript SDK's `readDeskNotification` documents the fields each code carries;
-this SDK has no reader yet.
+`evt.desk` into `ImDeskEvent`.
+
+### Desk notices (1801–1807) and the context keys
+
+The notices a customer sees — queued, assigned, transferred, closed, requeued, abandoned, "please
+rate us" — arrive as **ordinary messages** in `im.messages`, so they sit in history and in sync in
+the right place. Ask `readDeskNotification` first and fall through to your chat rendering when it
+answers null:
+
+```dart
+im.messages.listen((ImMessage message) {
+  final ImDeskNotification? notice = readDeskNotification(message);
+  if (notice == null) return renderChat(message);
+
+  final String line = switch (notice) {
+    ImDeskQueuedNotification() => 'You are in the queue',
+    ImDeskAssignedNotification(:final String? agentId) => '$agentId is with you now',
+    ImDeskTransferredNotification() => 'Handed to a colleague',
+    ImDeskClosedNotification(:final String? resolution) => 'Closed${resolution == null ? '' : ': $resolution'}',
+    ImDeskRequeuedNotification() => 'We are finding someone else for you',
+    ImDeskAbandonedNotification(:final int waitedSeconds) => 'Nobody could take it after ${waitedSeconds}s',
+    ImDeskRatingRequestedNotification() => 'How did we do?', // answer with im.desk.rate
+  };
+  renderNotice(line);
+});
+```
+
+`ImDeskNotification` is sealed, so that `switch` needs no default; each subtype also carries its
+`code` (`ImDeskNotificationCode`). The reader answers only when `contentType` is
+`ImMessageContentType.notification` **and** `content['code']` is 1801–1807: the same seven numbers
+are account error codes elsewhere on this platform, so a bare code check would one day draw "your
+account is locked" onto a support transcript. It never throws, and reads as TypeScript's
+`readDeskNotification` does: a member of the wrong kind reads as its default (an id as `''`, a
+string as null, a count as 0, `askResolved` true only for the JSON `true`, non-string `starTags`
+skipped), an empty `agentId` is none, and `code` / `waitedSeconds` / `windowHours` may arrive quoted.
+The handover note of a transfer is internal and is never in the 1803 line.
+
+`ImDeskContextKeys` names the keys the engine recognises in `ImDeskRequest.context` —
+`desk.channel`, `desk.visitorId`, `desk.deskId`, `desk.groupId`, `origin` (`bot` for a bot handoff),
+`desk.page`, `desk.visitorName`, `desk.visitorEmail`. It copies those out and leaves every other key
+in the context for the workbench, so your own keys travel too:
+
+```dart
+await im.desk.request(const ImDeskRequest(
+  skill: 'billing',
+  context: <String, Object?>{ImDeskContextKeys.channel: 'app', ImDeskContextKeys.page: '/orders/42', 'orderId': '42'},
+));
+```
 
 ### Chat rooms — best-effort, `seq` 0, never repaired
 
@@ -643,7 +685,7 @@ dart pub get
 dart test
 ```
 
-100 cases, no Flutter toolchain required — the suite runs under the plain Dart SDK, which is worth
+212 cases, no Flutter toolchain required — the suite runs under the plain Dart SDK, which is worth
 preserving. It drives a fake socket, because every behaviour worth testing here is defined by what
 happens when a socket dies and a real one cannot be made to die on cue. The 26 conformance cases
 from `sdk/CONTRACT.md` §10 are named and numbered in `test/cursor_test.dart`, `test/push_test.dart`,
