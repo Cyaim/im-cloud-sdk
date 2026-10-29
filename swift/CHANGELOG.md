@@ -13,6 +13,33 @@ First published release. The version is deliberately **0.9.0** rather than 1.0.0
 reserved for tiers 0 and 1 complete on all five SDKs, and until then the number would be a promise
 the family does not keep. Implements client contract **1.0**.
 
+### Added (2026-10-29, single-chat ids)
+
+- **`singleConversationId(_:_:)`** — the id the server gives the single chat between two users,
+  as TypeScript's `singleConversationId` builds it, so a conversation can be addressed before you
+  hold a message from it. `"s_" + enc(A) + "_" + enc(B)`: the two raw user ids ordered by UTF-16
+  code unit (`a.utf16.lexicographicallyPrecedes(b.utf16)` — **not** `String`'s `<`, which compares
+  Unicode scalars and orders `😀` after `Ａ` where UTF-16 puts it before), each with `~` written `~0`
+  and `_` written `~1`, so every id names exactly one pair. The escape runs scalar by scalar, not
+  through `replacing(_:with:)`, which matches whole `Character`s and would miss a `~` or `_` that a
+  combining mark follows. Ids of users with neither `_` nor `~` are unchanged (`s_alice_bob`);
+  `u_alice` with `u_bob` is `s_u~1alice_u~1bob`. Which end comes first does not matter. An empty end
+  is not refused here — the id it builds does not parse, and the server answers `1001`. There is
+  deliberately no parser: nothing in the SDK needs to read an id back.
+  - The server changed the grammar in the same release, and with no translation: before it the two
+    ids were joined with a bare `_`, so `a` + `a_b` and `a_a` + `b` shared `s_a_a_b`. An id joined
+    that way by hand from users with `_` in their ids is now malformed.
+- Tests (`SingleChatIdTests`, 5): both orders of every build vector of the shared
+  [`single-chat-id-vectors.json`](../single-chat-id-vectors.json), every pair its parse vectors
+  name, no built id among the refused ones, the vectors easiest to get wrong still in the file — all
+  compared code unit by code unit, since `==` on `String` is canonical equivalence — and one case of
+  this SDK's own, a `~` and a `_` that a combining mark follows. `DeskTests`' desk conversation
+  fixture is now spelled the new way (`s_desk_v~101hh`); it is passed through, so no assertion
+  changed.
+- README: a "Single-chat ids" section.
+- **Not compiled or run locally**: there is no Swift toolchain on the machine this was written on.
+  The SDK repository's macOS job is the first thing to compile and run it.
+
 ### Added (2026-10-28, desk notices)
 
 - **`DeskNotification.read(_:)`** reads the 1801–1807 desk notices out of an ordinary `ImMessage`,

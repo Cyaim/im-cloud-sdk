@@ -10,6 +10,23 @@ to ask which platform.
 
 ### Added
 
+- **Single-chat ids (2026-10-29)**: `ImConversationIds.SingleConversationId(a, b)` gives the id the
+  server gives the single chat between two users, as TypeScript's `singleConversationId` builds it,
+  so a conversation can be addressed before you hold a message from it. `"s_" + enc(A) + "_" +
+  enc(B)`: the two raw user ids in UTF-16 ordinal order (`string.CompareOrdinal`), each with `~`
+  written `~0` and `_` written `~1`, so every id names exactly one pair. Ids of users with neither
+  `_` nor `~` are unchanged (`s_alice_bob`); `u_alice` with `u_bob` is `s_u~1alice_u~1bob`. Which
+  end comes first does not matter. A null end throws `ArgumentNullException`; an empty end is not
+  refused — the id it builds does not parse, and the server answers `1001`. There is deliberately no
+  parser: nothing in the SDK needs to read an id back. The server changed the grammar in the same
+  release, and with no translation: before it the two ids were joined with a bare `_`, so `a` +
+  `a_b` and `a_a` + `b` shared `s_a_a_b`; an id joined that way by hand from users with `_` in their
+  ids is now malformed. `SingleChatIdTests`, 4 cases: both orders of every build vector of the shared
+  `single-chat-id-vectors.json`, every pair its parse vectors name, no built id among the refused
+  ones, and the vectors easiest to get wrong still in the file. `DeskTests`' desk conversation
+  fixture is now spelled the new way (`s_desk_v~101hh`); it is passed through, so no assertion
+  changed. README: a "Single-chat ids" section and a row in "API at a glance". Run in im-cloud's
+  `IM.Tests.UnitySdk` (no Unity Editor): 325 tests, 325 succeeded.
 - **Desk notices (1801–1807)**: `ImDeskNotification.Read(message)` reads them out of an ordinary
   `ImMessage`, as TypeScript's `readDeskNotification` does, into the abstract `ImDeskNotification`
   (`SessionId`, `CustomerId`, `Skill`, `AgentId`, and `Code`) and its seven sealed subclasses —

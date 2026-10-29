@@ -152,6 +152,10 @@ tasks.test {
         providers.environmentVariable("IM_ENDPOINT_INVENTORY")
             .orElse(file("../endpoint-inventory.json").path),
     ).withPropertyName("endpointInventory").withPathSensitivity(PathSensitivity.NONE)
+    // SingleChatIdTest reads ../single-chat-id-vectors.json, outside this project for the same reason.
+    // 单聊 id 向量同样在本工程之外，同样要声明为输入。
+    inputs.files(file("../single-chat-id-vectors.json"))
+        .withPropertyName("singleChatIdVectors").withPathSensitivity(PathSensitivity.NONE)
 }
 
 publishing {

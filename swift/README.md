@@ -637,6 +637,28 @@ field without converting, so a mismatch is refused with `1000`. The `msg.*` endp
 message ids as `string` — put one in as `.string(String(messageId))` — while times and counts are
 numbers.
 
+## Single-chat ids
+
+A single chat's id is fixed by its two users, so it can be built from them alone — to open the
+chat's history or look it up with `im.conv.get` before you hold a message from it:
+
+```swift
+import CyaimIM
+
+singleConversationId("bob", "alice")      // "s_alice_bob"
+singleConversationId("u_alice", "u_bob")  // "s_u~1alice_u~1bob"
+```
+
+The rule is `"s_" + enc(A) + "_" + enc(B)`: the two **raw** user ids ordered by UTF-16 code unit,
+each with `~` written `~0` and `_` written `~1`, so the one `_` after the prefix is the separator and
+every id names exactly one pair. Which end you pass first does not matter. **Do not join the ids
+yourself**: `"s_\(a)_\(b)"` is right only while neither id contains `_` or `~`; past that, the id it
+gives is malformed (the server answers `1001`) or names a different pair. And do not order them with
+`String`'s `<`: it compares Unicode scalars, and for a character outside the Basic Multilingual Plane
+against one inside it (`😀` and `Ａ`) it gives the opposite answer to the server's UTF-16 order. The
+rule is shared with the server and the other SDKs through
+[`single-chat-id-vectors.json`](../single-chat-id-vectors.json), which `SingleChatIdTests` reads.
+
 ## Errors
 
 Every failure is an `ImError` carrying `code`, `message`, `traceId`, `target`, `isRetryable` and

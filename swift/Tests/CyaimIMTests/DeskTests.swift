@@ -21,7 +21,7 @@ struct DeskTests {
             "sessionId": .string("ds_1"),
             "appId": .string("demo"),
             "customerId": .string("v_01hh"),
-            "conversationId": .string("s_desk_v_01hh"),
+            "conversationId": .string("s_desk_v~101hh"),
             "state": .int(full ? 1 : 0),
             "priority": .int(full ? 3 : 0),
             "queuedAt": .int(1_755_000_000_000),
@@ -177,7 +177,7 @@ struct DeskTests {
         #expect(taken.appId == "demo")
         #expect(taken.customerId == "v_01hh")
         #expect(taken.agentId == "a_7")
-        #expect(taken.conversationId == "s_desk_v_01hh")
+        #expect(taken.conversationId == "s_desk_v~101hh")
         #expect(taken.state == .assigned)
         #expect(taken.skill == "billing")
         #expect(taken.priority == 3)

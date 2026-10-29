@@ -614,6 +614,25 @@ var reply = await im.InvokeAsync("feature.newCall", JsonValue.NewObject()
 `InvokeAsync` never touches a cursor: `InvokeAsync("msg.sync", …)` returns messages and moves
 nothing. `InvokeListAsync<T>` and `InvokePageAsync<T>` cover the list and page shapes.
 
+## Single-chat ids
+
+A single chat's id is fixed by its two users, so it can be built from them alone — to open the
+chat's history or look it up with `im.Conv.GetAsync` before you hold a message from it:
+
+```csharp
+ImConversationIds.SingleConversationId("bob", "alice");     // "s_alice_bob"
+ImConversationIds.SingleConversationId("u_alice", "u_bob"); // "s_u~1alice_u~1bob"
+```
+
+The rule is `"s_" + enc(A) + "_" + enc(B)`: the two **raw** user ids in UTF-16 ordinal order
+(`string.CompareOrdinal` — not `string.Compare`, which is culture-sensitive), each with `~` written
+`~0` and `_` written `~1`, so the one `_` after the prefix is the separator and every id names exactly
+one pair. Which end you pass first does not matter. **Do not join the ids yourself**:
+`"s_" + a + "_" + b` is right only while neither id contains `_` or `~`; past that, the id it gives is
+malformed (the server answers `1001`) or names a different pair. The rule is shared with the server
+and the other SDKs through `single-chat-id-vectors.json` at the root of the SDK repository, which
+`SingleChatIdTests` reads.
+
 ## Sending an image
 
 Bytes go straight to object storage and never through the gateway.
@@ -788,6 +807,7 @@ token fetch, and `test-framework` for the tests below. The runtime itself needs 
 | `InvokeAsync<T>(target, body)` | Any endpoint not yet typed |
 | `Connection` | The socket underneath: `ReconnectNow()`, `SetToken()`, `ReauthAsync()`, raw frames |
 | `ImSdk.ContractVersion` | Which contract this build implements. Quote it in a ticket |
+| `ImConversationIds.SingleConversationId(a, b)` | The id of the single chat between two users, built the server's way |
 
 ## Tests
 

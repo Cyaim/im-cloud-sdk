@@ -44,7 +44,7 @@ namespace Cyaim.Im.Tests
                 .Set("sessionId", "ds_1")
                 .Set("appId", "demo")
                 .Set("customerId", "v_01hh")
-                .Set("conversationId", "s_desk_v_01hh")
+                .Set("conversationId", "s_desk_v~101hh")
                 .Set("state", full ? 1L : 0L)
                 .Set("priority", full ? 3L : 0L)
                 .Set("queuedAt", 1755000000000L);
@@ -206,7 +206,7 @@ namespace Cyaim.Im.Tests
             Assert.That(taken.AppId, Is.EqualTo("demo"));
             Assert.That(taken.CustomerId, Is.EqualTo("v_01hh"));
             Assert.That(taken.AgentId, Is.EqualTo("a_7"));
-            Assert.That(taken.ConversationId, Is.EqualTo("s_desk_v_01hh"));
+            Assert.That(taken.ConversationId, Is.EqualTo("s_desk_v~101hh"));
             Assert.That(taken.State, Is.EqualTo(ImDeskSessionState.Assigned));
             Assert.That(taken.Skill, Is.EqualTo("billing"));
             Assert.That(taken.Priority, Is.EqualTo(3));

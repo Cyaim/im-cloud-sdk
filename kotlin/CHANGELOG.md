@@ -13,6 +13,29 @@ published as `ImSdk.contractVersion`.
 First published release. The version is deliberately below 1.0.0: `1.0.0` is reserved for contract
 tiers T0 and T1 complete on **all five** SDKs. Nothing before this was ever published.
 
+### Added (2026-10-29, single-chat ids)
+
+- **`singleConversationId(a, b)`** — the id the server gives the single chat between two users,
+  as TypeScript's `singleConversationId` builds it, so a conversation can be addressed before you
+  hold a message from it. `"s_" + enc(A) + "_" + enc(B)`: the two raw user ids ordered by UTF-16
+  code unit (`String.compareTo`), each with `~` written `~0` and `_` written `~1`, so every id names
+  exactly one pair. Ids of users with neither `_` nor `~` are unchanged (`s_alice_bob`); `u_alice`
+  with `u_bob` is `s_u~1alice_u~1bob`. Which end comes first does not matter. An empty end is not
+  refused here — the id it builds does not parse, and the server answers `1001`. There is
+  deliberately no parser: nothing in the SDK needs to read an id back.
+  - The server changed the grammar in the same release, and with no translation: before it the two
+    ids were joined with a bare `_`, so `a` + `a_b` and `a_a` + `b` shared `s_a_a_b`. An id joined
+    that way by hand from users with `_` in their ids is now malformed.
+- `SingleChatIdTest`, 4 cases: both orders of every build vector of the shared
+  [`single-chat-id-vectors.json`](../single-chat-id-vectors.json), every pair its parse vectors
+  name, no built id among the refused ones, and the vectors easiest to get wrong still in the file.
+  The test task declares the vectors file as an input, as it does the endpoint inventory.
+  `DeskTest`'s desk conversation fixture is now spelled the new way (`s_desk_v~101hh`); it is passed
+  through, so no assertion changed.
+- README: a "Single-chat ids" section.
+- Run locally (Windows, Temurin 17, Gradle 9.1.0): `./gradlew test --rerun-tasks --no-build-cache
+  --offline` — main and tests compile with no warnings, 207 tests, 207 passed.
+
 ### Added (2026-10-28, desk notices)
 
 - **`readDeskNotification(message)`** reads the 1801–1807 desk notices out of an ordinary
