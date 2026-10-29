@@ -16,6 +16,23 @@ endpoints. `1.0.0` is reserved for T0 + T1 complete on all five SDKs.
 
 Implements [`sdk/CONTRACT.md`](../CONTRACT.md) contract version `1.0`.
 
+### Added (2026-10-29, single-chat ids)
+
+- **`singleConversationId(a, b)`** — the id the server gives the single chat between two users,
+  so a conversation can be addressed before anyone has sent in it. `"s_" + enc(A) + "_" + enc(B)`:
+  the two raw user ids ordered by UTF-16 code unit, each with `~` written `~0` and `_` written `~1`,
+  so every id names exactly one pair. Ids of users with neither `_` nor `~` are unchanged
+  (`s_alice_bob`); `u_alice` with `u_bob` is `s_u~1alice_u~1bob`. Which end comes first does not
+  matter. An empty end is not refused here — the id it builds does not parse, and the server answers
+  `1001`. There is deliberately no parser: nothing in the SDK needs to read an id back.
+  - The server changed the grammar in the same release, and with no translation: before it the two
+    ids were joined with a bare `_`, so `a` + `a_b` and `a_a` + `b` shared `s_a_a_b`. An id joined
+    that way by hand from users with `_` in their ids is now malformed.
+- `test/single-chat-id.test.ts` holds it to every vector of the shared
+  [`single-chat-id-vectors.json`](../single-chat-id-vectors.json) — both orders of every build
+  vector, every pair the parse vectors name, and no built id among the refused ones.
+- README: a "Single-chat ids" section.
+
 ### Added (2026-10-22, key directory)
 
 - **`keys.*` typed whole — all seven: `im.keys.publish` `upload` `remaining` `claim` `devices`

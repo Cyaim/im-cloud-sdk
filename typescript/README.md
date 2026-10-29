@@ -249,6 +249,26 @@ mapping), and never touches a cursor.
 const result = await im.invoke<{ ok: boolean }>('example.newThing', { id });
 ```
 
+## Single-chat ids
+
+A single chat's id is fixed by its two users, so it can be built from them alone — to open the
+chat's history or look it up with `conv.get` before you hold a message from it:
+
+```ts
+import { singleConversationId } from '@cyaim/im-client';
+
+singleConversationId('bob', 'alice');      // 's_alice_bob'
+singleConversationId('u_alice', 'u_bob');  // 's_u~1alice_u~1bob'
+```
+
+The rule is `"s_" + enc(A) + "_" + enc(B)`: the two **raw** user ids ordered by UTF-16 code unit,
+each with `~` written `~0` and `_` written `~1`, so the one `_` after the prefix is the separator and
+every id names exactly one pair. Which end you pass first does not matter. **Do not join the ids
+yourself**: `'s_' + a + '_' + b` is right only while neither id contains `_` or `~`; past that, the
+id it gives is malformed (the server answers `1001`) or names a different pair. The rule is shared
+with the server and the other SDKs through [`single-chat-id-vectors.json`](../single-chat-id-vectors.json),
+which the test suite reads.
+
 ## Customer-service desk
 
 `desk.*` is the first tier-4 namespace that was typed, because a customer asked for it. Nine verbs move

@@ -57,6 +57,7 @@ export * from './room.js';
 export * from './stream.js';
 export * from './models.js';
 export * from './protocol.js';
+export { singleConversationId } from './conversation-id.js';
 export {
   BASE_DELAY_MS,
   DOUBLING_ATTEMPTS,

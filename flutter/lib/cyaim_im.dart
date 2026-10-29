@@ -25,6 +25,7 @@ export 'src/backoff.dart' show FullJitterBackoff;
 export 'src/cancel.dart' show ImCancelToken, ImCancelledException;
 export 'src/client.dart' show ImClient;
 export 'src/connection.dart' show ImConnection;
+export 'src/conversation_id.dart' show singleConversationId;
 export 'src/cursor_store.dart'
     show ImCursorScope, ImCursorSnapshot, ImCursorStore, ImInMemoryCursorStore;
 export 'src/desk.dart';

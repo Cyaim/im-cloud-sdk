@@ -20,7 +20,7 @@ void main() {
         'sessionId': 'ds_1',
         'appId': 'demo',
         'customerId': 'v_01hh',
-        'conversationId': 's_desk_v_01hh',
+        'conversationId': 's_desk_v~101hh',
         'state': full ? 1 : 0,
         'priority': full ? 3 : 0,
         'queuedAt': 1755000000000,
@@ -147,7 +147,7 @@ void main() {
       expect(taken.appId, 'demo');
       expect(taken.customerId, 'v_01hh');
       expect(taken.agentId, 'a_7');
-      expect(taken.conversationId, 's_desk_v_01hh');
+      expect(taken.conversationId, 's_desk_v~101hh');
       expect(taken.state, ImDeskSessionState.assigned);
       expect(taken.skill, 'billing');
       expect(taken.priority, 3);

@@ -72,6 +72,23 @@ app.MapPost("/im-callback", async (HttpContext ctx, ImServerClient im) =>
 The callback endpoint is reachable from the internet, so anything that fails verification is
 someone else's request. `VerifyCallback` compares in constant time and rejects stale timestamps.
 
+## Single-chat ids
+
+A single chat's id is fixed by its two users, so a call that names a conversation — a recall, a send
+by `ConversationId` — can build it from them alone:
+
+```csharp
+ImServerClient.SingleConversationId("bob", "alice");     // "s_alice_bob"
+ImServerClient.SingleConversationId("u_alice", "u_bob"); // "s_u~1alice_u~1bob"
+```
+
+The rule is `"s_" + enc(A) + "_" + enc(B)`: the two **raw** user ids in UTF-16 ordinal order, each
+with `~` written `~0` and `_` written `~1`, so the one `_` after the prefix is the separator and every
+id names exactly one pair. Which end you pass first does not matter. **Do not join the ids
+yourself**: `$"s_{a}_{b}"` is right only while neither id contains `_` or `~`; past that, the id it
+gives is malformed (the server answers 1001) or names a different pair. The rule is shared with the
+server and the client SDKs through `single-chat-id-vectors.json` at the root of the SDK repository.
+
 ## Errors
 
 Any non-zero business code throws `ImApiException` carrying `Code` and `TraceId`. The trace id is

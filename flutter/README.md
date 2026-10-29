@@ -630,6 +630,24 @@ effect** — a cancelled `msg.send` may well have sent the message, which is wha
 idempotency is for. It raises `ImCancelledException`, never an `ImException` with an invented code,
 so it does not land in the same `catch` as a rate limit.
 
+### Single-chat ids
+
+A single chat's id is fixed by its two users, so it can be built from them alone — to open the
+chat's history or look it up with `conv.get` before you hold a message from it:
+
+```dart
+singleConversationId('bob', 'alice');     // 's_alice_bob'
+singleConversationId('u_alice', 'u_bob'); // 's_u~1alice_u~1bob'
+```
+
+The rule is `'s_' + enc(A) + '_' + enc(B)`: the two **raw** user ids ordered by UTF-16 code unit,
+each with `~` written `~0` and `_` written `~1`, so the one `_` after the prefix is the separator and
+every id names exactly one pair. Which end you pass first does not matter. **Do not join the ids
+yourself**: `'s_${a}_$b'` is right only while neither id contains `_` or `~`; past that, the id it
+gives is malformed (the server answers `1001`) or names a different pair. The rule is shared with
+the server and the other SDKs through `single-chat-id-vectors.json` at the root of the SDK
+repository, which `test/single_chat_id_test.dart` reads.
+
 ## Errors
 
 Every failure is an `ImException` carrying `code`, `message`, `traceId`, `target`, `isRetryable`
@@ -685,7 +703,7 @@ dart pub get
 dart test
 ```
 
-212 cases, no Flutter toolchain required — the suite runs under the plain Dart SDK, which is worth
+216 cases, no Flutter toolchain required — the suite runs under the plain Dart SDK, which is worth
 preserving. It drives a fake socket, because every behaviour worth testing here is defined by what
 happens when a socket dies and a real one cannot be made to die on cue. The 26 conformance cases
 from `sdk/CONTRACT.md` §10 are named and numbered in `test/cursor_test.dart`, `test/push_test.dart`,

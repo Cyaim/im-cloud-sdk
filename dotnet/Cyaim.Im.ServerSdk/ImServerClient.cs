@@ -152,6 +152,46 @@ public sealed class ImServerClient : IDisposable
         SendAsync(HttpMethod.Post, $"v1/messages/{messageId}/recall",
             new { conversationId, reason }, ct);
 
+    /// <summary>
+    /// The id of the single chat between two users, the same one the server gives it — for a call
+    /// that names a conversation (<see cref="RecallMessageAsync"/>, <see cref="SendMessageDto.ConversationId"/>)
+    /// when all you hold is the two user ids.
+    /// 两个用户之间单聊的 id，与服务端给的同一个。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>"s_" + enc(A) + "_" + enc(B)</c>, where A and B are the two <b>raw</b> user ids in UTF-16
+    /// ordinal order (<see cref="string.CompareOrdinal(string, string)"/>, A first when they are equal)
+    /// and <c>enc</c> writes every '~' as <c>~0</c> and every '_' as <c>~1</c>. After escaping neither
+    /// half contains '_', so the one '_' after the prefix is the separator and every id names exactly
+    /// one pair: <c>u_alice</c> with <c>u_bob</c> is <c>s_u~1alice_u~1bob</c>, while ids with neither
+    /// '_' nor '~' come out as they always did (<c>s_alice_bob</c>). Which end comes first does not
+    /// matter; the order is decided on the raw ids, because escaping does not keep order. Do not join
+    /// the ids yourself: a bare '_' between them is right only while neither contains '_' or '~'.
+    /// 两个原始 user id 按 UTF-16 码元序数排序，'~' 写成 ~0、'_' 写成 ~1，前缀后唯一的 '_' 是分隔符，每个 id 恰好对应一对人。
+    /// 谁先传都一样；顺序按原始 id 比，不按转义后的两半。不要自己拼：直接用 '_' 连接只在两个 id 都不含 '_' 与 '~' 时才对。
+    /// </para>
+    /// <para>
+    /// An empty end is not a user: the id it produces does not parse, and the server answers 1001 for
+    /// it. The rule is a contract shared with the server and the client SDKs, and
+    /// <c>single-chat-id-vectors.json</c> at the root of the SDK repository is its executable form.
+    /// 空的一端不是用户，拼出的 id 解析不了，服务端答 1001。这条规则与服务端、各客户端 SDK 共用，SDK 仓库根上的 single-chat-id-vectors.json 是它的可执行形式。
+    /// </para>
+    /// </remarks>
+    public static string SingleConversationId(string userA, string userB)
+    {
+        ArgumentNullException.ThrowIfNull(userA);
+        ArgumentNullException.ThrowIfNull(userB);
+
+        return string.CompareOrdinal(userA, userB) <= 0
+            ? $"s_{EscapeSingleEnd(userA)}_{EscapeSingleEnd(userB)}"
+            : $"s_{EscapeSingleEnd(userB)}_{EscapeSingleEnd(userA)}";
+    }
+
+    // '~' first, then '_': the other way round would escape the '~' of every "~1" just written.
+    private static string EscapeSingleEnd(string userId) =>
+        userId.Replace("~", "~0", StringComparison.Ordinal).Replace("_", "~1", StringComparison.Ordinal);
+
     // ----------------------------------------------------------------- groups
 
     public Task<GroupDto> CreateGroupAsync(CreateGroupDto group, CancellationToken ct = default) =>
