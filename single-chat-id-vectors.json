@@ -1,0 +1,324 @@
+{
+  "$comment": [
+    "单聊会话 id 的固定向量。single-id = \"s_\" enc(A) \"_\" enc(B):A、B 是两个原始 user id,非空,按 UTF-16 码元序数 A <= B;",
+    "enc 把每个 \"~\" 写成 \"~0\"、每个 \"_\" 写成 \"~1\"(从左到右逐字符一遍)。转义之后两半都不含 \"_\",前缀后唯一的 \"_\" 就是分隔符,",
+    "所以每个 id 恰好对应一对人——第九十三轮之前直接用 \"_\" 拼接,a 与 a_b、a_a 与 b 两对人共用 s_a_a_b。",
+    "",
+    "这份文件是那条语法的可执行形式。第一个读取方是",
+    "  IM.Server/tests/IM.Tests.Unit/SingleChatIdVectorTests.cs   —— 服务端 Conversation.cs 的拼接与解析(C#)",
+    "访客插件与六份 SDK 的 singleConversationId 在同一轮里接上,各自的套件读同一份;接上一处,就在这里补一行它的路径。",
+    "各端读同一份,所以它们不可能各自漂移;若只让几个实现互相对照,它们会永远一致——包括一起错的那天。",
+    "",
+    "两个最容易写错的地方:",
+    "  顺序按原始 id 比,不按转义后的两半。转义不保序:\"_\"(0x5F)排在字母前,它的转义 \"~1\"(0x7E 开头)排在字母后。",
+    "  ord16 是 C# string.CompareOrdinal、JS / Kotlin / Dart 的默认字符串比较;Swift 必须比 a.utf16 与 b.utf16,",
+    "  String 的 < 按 Unicode 标量比,在 BMP 字符对代理对时给出相反的答案(见 Ａ / 😀 那一条)。",
+    "",
+    "build: a 与 b 无论谁先传,都拼出 id。",
+    "parse: 每个 build 拼出的 id(去重)按 id 里的顺序解出 a、b,外加 12 条反例。每条都带 ok 与 single:",
+    "  ok      解不解得出。服务端 TryParseSingle / IsSingleId 与它相同。",
+    "  single  id 在不在单聊命名空间里(以 s_ 开头)。single 为 true 而 ok 为 false 的是坏的单聊 id(服务端答 1001),",
+    "          single 为 false 的根本不是单聊 id。",
+    "",
+    "不含 \"_\" 与 \"~\" 的 user id 拼出的 id 与第九十三轮之前逐字节相同(s_alice_bob)。旧规则用带 \"_\" 的 user id 拼出的 id",
+    "(s_u_alice_u_bob)在新语法下是坏 id:干净切换,不做翻译。",
+    "",
+    "期望值按语法独立写出,不是从任何被测实现里抄来的。改动这份文件等于改动对外契约。"
+  ],
+  "grammar": "\"s_\" enc(A) \"_\" enc(B), ord16(A) <= ord16(B)",
+  "escape": {
+    "~": "~0",
+    "_": "~1"
+  },
+  "order": "UTF-16 code units, ordinal, on the raw user ids",
+  "build": [
+    {
+      "a": "alice",
+      "b": "bob",
+      "id": "s_alice_bob",
+      "note": "基础形状:不含 _ 与 ~ 的 id 与以前逐字节相同。"
+    },
+    {
+      "a": "bob",
+      "b": "alice",
+      "id": "s_alice_bob",
+      "note": "谁先传都一样:按原始 id 排序。"
+    },
+    {
+      "a": "u_alice",
+      "b": "u_bob",
+      "id": "s_u~1alice_u~1bob",
+      "note": "两端都带 _,每个 _ 写成 ~1。这一对在旧规则下读不出来。"
+    },
+    {
+      "a": "a",
+      "b": "a_b",
+      "id": "s_a_a~1b",
+      "note": "与下一条是旧规则下共用 s_a_a_b 的两对人,现在各有各的 id。"
+    },
+    {
+      "a": "a_a",
+      "b": "b",
+      "id": "s_a~1a_b",
+      "note": "与上一条分开。"
+    },
+    {
+      "a": "_x",
+      "b": "y",
+      "id": "s_~1x_y",
+      "note": "开头的 _。"
+    },
+    {
+      "a": "x_",
+      "b": "y",
+      "id": "s_x~1_y",
+      "note": "结尾的 _。"
+    },
+    {
+      "a": "__",
+      "b": "_",
+      "id": "s_~1_~1~1",
+      "note": "整个 id 就是 _ 与 __;_ 排在 __ 前面。"
+    },
+    {
+      "a": "a~b",
+      "b": "c",
+      "id": "s_a~0b_c",
+      "note": "原始的 ~ 写成 ~0。"
+    },
+    {
+      "a": "a~1",
+      "b": "c",
+      "id": "s_a~01_c",
+      "note": "原始的 ~1 写成 ~01,不会被读成 _。"
+    },
+    {
+      "a": "a~0",
+      "b": "c",
+      "id": "s_a~00_c",
+      "note": "原始的 ~0 写成 ~00。"
+    },
+    {
+      "a": "a",
+      "b": "a",
+      "id": "s_a_a",
+      "note": "与自己的会话。"
+    },
+    {
+      "a": "user_1",
+      "b": "user_10",
+      "id": "s_user~11_user~110",
+      "note": "~1 后面跟数字:转义固定两个字符,~11 与 ~110 只有一种读法。"
+    },
+    {
+      "a": "v_01HHXYZ",
+      "b": "a_m1",
+      "id": "s_a~1m1_v~101HHXYZ",
+      "note": "访客 id 的形状;按原始 id 排序,a_m1 在前。"
+    },
+    {
+      "a": "a.b@x.io",
+      "b": "a-b",
+      "id": "s_a-b_a.b@x.io",
+      "note": "邮箱形状;-(0x2D)排在 .(0x2E)前面。"
+    },
+    {
+      "a": "张三",
+      "b": "李四",
+      "id": "s_张三_李四",
+      "note": "非 ASCII 原样保留。"
+    },
+    {
+      "a": "Ａ",
+      "b": "😀",
+      "id": "s_😀_Ａ",
+      "note": "BMP 字符对代理对:UTF-16 里 😀(D83D DE00)排在 Ａ(FF21)前面,Swift String 的 < 给出相反的答案。"
+    }
+  ],
+  "parse": [
+    {
+      "id": "s_alice_bob",
+      "ok": true,
+      "single": true,
+      "a": "alice",
+      "b": "bob"
+    },
+    {
+      "id": "s_u~1alice_u~1bob",
+      "ok": true,
+      "single": true,
+      "a": "u_alice",
+      "b": "u_bob"
+    },
+    {
+      "id": "s_a_a~1b",
+      "ok": true,
+      "single": true,
+      "a": "a",
+      "b": "a_b"
+    },
+    {
+      "id": "s_a~1a_b",
+      "ok": true,
+      "single": true,
+      "a": "a_a",
+      "b": "b"
+    },
+    {
+      "id": "s_~1x_y",
+      "ok": true,
+      "single": true,
+      "a": "_x",
+      "b": "y"
+    },
+    {
+      "id": "s_x~1_y",
+      "ok": true,
+      "single": true,
+      "a": "x_",
+      "b": "y"
+    },
+    {
+      "id": "s_~1_~1~1",
+      "ok": true,
+      "single": true,
+      "a": "_",
+      "b": "__"
+    },
+    {
+      "id": "s_a~0b_c",
+      "ok": true,
+      "single": true,
+      "a": "a~b",
+      "b": "c"
+    },
+    {
+      "id": "s_a~01_c",
+      "ok": true,
+      "single": true,
+      "a": "a~1",
+      "b": "c"
+    },
+    {
+      "id": "s_a~00_c",
+      "ok": true,
+      "single": true,
+      "a": "a~0",
+      "b": "c"
+    },
+    {
+      "id": "s_a_a",
+      "ok": true,
+      "single": true,
+      "a": "a",
+      "b": "a"
+    },
+    {
+      "id": "s_user~11_user~110",
+      "ok": true,
+      "single": true,
+      "a": "user_1",
+      "b": "user_10"
+    },
+    {
+      "id": "s_a~1m1_v~101HHXYZ",
+      "ok": true,
+      "single": true,
+      "a": "a_m1",
+      "b": "v_01HHXYZ"
+    },
+    {
+      "id": "s_a-b_a.b@x.io",
+      "ok": true,
+      "single": true,
+      "a": "a-b",
+      "b": "a.b@x.io"
+    },
+    {
+      "id": "s_张三_李四",
+      "ok": true,
+      "single": true,
+      "a": "张三",
+      "b": "李四"
+    },
+    {
+      "id": "s_😀_Ａ",
+      "ok": true,
+      "single": true,
+      "a": "😀",
+      "b": "Ａ"
+    },
+    {
+      "id": "s_b_a",
+      "ok": false,
+      "single": true,
+      "why": "顺序反了:b 排在 a 后面。排错顺序拼出的是坏 id,不是第二个会话。"
+    },
+    {
+      "id": "s_a__b",
+      "ok": false,
+      "single": true,
+      "why": "两个相邻的 _:前缀后只能有一个。"
+    },
+    {
+      "id": "s__a",
+      "ok": false,
+      "single": true,
+      "why": "前一半为空。"
+    },
+    {
+      "id": "s_a_",
+      "ok": false,
+      "single": true,
+      "why": "后一半为空。"
+    },
+    {
+      "id": "s_a",
+      "ok": false,
+      "single": true,
+      "why": "没有分隔符。"
+    },
+    {
+      "id": "s_a_b_c",
+      "ok": false,
+      "single": true,
+      "why": "两个分隔符。"
+    },
+    {
+      "id": "s_a~_b",
+      "ok": false,
+      "single": true,
+      "why": "~ 后面是分隔符,不是 0 或 1。"
+    },
+    {
+      "id": "s_a~2_b",
+      "ok": false,
+      "single": true,
+      "why": "~ 后面是 2。"
+    },
+    {
+      "id": "s_a_b~",
+      "ok": false,
+      "single": true,
+      "why": "末尾落单的 ~。"
+    },
+    {
+      "id": "s_u_alice_u_bob",
+      "ok": false,
+      "single": true,
+      "why": "第九十三轮之前的格式(u_alice 与 u_bob):干净切换,不做翻译。"
+    },
+    {
+      "id": "sys_a_b",
+      "ok": false,
+      "single": false,
+      "why": "系统会话 id,不以 s_ 开头。"
+    },
+    {
+      "id": "g_a_b",
+      "ok": false,
+      "single": false,
+      "why": "群会话 id。"
+    }
+  ]
+}
