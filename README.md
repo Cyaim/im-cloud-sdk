@@ -23,6 +23,7 @@
 - [`endpoint-inventory.json`](endpoint-inventory.json) —— 端点清单,由服务端源码生成
 - [`catalog.json`](catalog.json) —— SDK 目录
 - [`signature-vectors.json`](signature-vectors.json) —— 签名测试向量,C# 与 TypeScript 共读同一份
+- [`single-chat-id-vectors.json`](single-chat-id-vectors.json) —— 单聊会话 id 的拼法与解析向量,服务端、访客插件、控制台与六份 SDK 共读同一份
 
 ## 这个仓库与平台仓库的关系
 
